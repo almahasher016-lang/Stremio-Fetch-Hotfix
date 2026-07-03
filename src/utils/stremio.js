@@ -1,0 +1,203 @@
+import { config } from '../config.js';
+import { parseRelease } from './releaseParser.js';
+import { detectSyncPlan } from './subtitleTiming.js';
+import { proxiedSubtitleUrl } from './encodingProxy.js';
+
+function boolish(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+}
+
+export function getBaseUrl(req) {
+  if (config.app.publicBaseUrl) return config.app.publicBaseUrl;
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  return `${proto}://${host}`.replace(/\/+$/, '');
+}
+
+export function createManifest() {
+  return {
+    id: config.app.id,
+    version: config.app.version,
+    name: config.app.name,
+    description: config.app.description,
+    logo: 'https://www.stremio.com/website/stremio-logo-small.png',
+    resources: ['subtitles'],
+    types: ['movie', 'series'],
+    idPrefixes: ['tt', 'tmdb:', 'kitsu:', 'anidb:', 'mal:'],
+    behaviorHints: {
+      configurable: config.ui.configureEnabled,
+      configurationRequired: false,
+    },
+    catalogs: [],
+  };
+}
+
+export function parseExtra(extra = '') {
+  const output = {};
+  if (!extra) return output;
+  const parts = String(extra).split('&');
+  for (const part of parts) {
+    const [rawKey, ...rawValue] = part.split('=');
+    if (!rawKey) continue;
+    const key = decodeURIComponent(rawKey);
+    const value = decodeURIComponent(rawValue.join('=') || '');
+    output[key] = value;
+  }
+  return output;
+}
+
+function cleanImdb(value) {
+  const match = String(value || '').match(/tt\d{5,12}/i);
+  return match ? match[0].toLowerCase() : null;
+}
+
+function extractNumericId(prefix, id) {
+  const str = String(id || '');
+  if (!str.startsWith(`${prefix}:`)) return null;
+  return str.slice(prefix.length + 1).split(':')[0] || null;
+}
+
+export function buildStremioSubtitleSearch({ type, id, extra = {} }) {
+  const imdbId = cleanImdb(id) || cleanImdb(extra.imdb_id || extra.imdbId || extra.videoId || extra.filename);
+  const tmdbId = extra.tmdb_id || extra.tmdbId || extractNumericId('tmdb', id);
+  const filename = extra.filename || extra.videoId || extra.name || '';
+  const parsed = parseRelease(filename || id || '');
+  const routeParts = String(id || '').split(':');
+
+  const season = Number(extra.season || parsed.season || (type === 'series' ? routeParts[1] : 0)) || null;
+  const episode = Number(extra.episode || parsed.episode || (type === 'series' ? routeParts[2] : 0)) || null;
+  const query = extra.query || extra.q || extra.title || filename || id;
+
+  return {
+    type,
+    id,
+    query,
+    imdbId,
+    tmdbId,
+    season,
+    episode,
+    year: Number(extra.year || parsed.year || 0) || null,
+    filename,
+    videoHash: extra.videoHash || extra.hash || null,
+    videoSize: extra.videoSize || extra.size || null,
+    extra,
+  };
+}
+
+
+function referenceForProxy(baseUrl, item) {
+  const ref = item.referenceSubtitle;
+  const download = ref?.download || ref?.url;
+  if (!download) return null;
+  return {
+    url: download.startsWith('/') ? `${baseUrl}${download}` : download,
+    provider: ref.provider,
+    name: ref.name || ref.releaseName || ref.fileName || 'English reference',
+  };
+}
+
+function qualityBadges(item, mode) {
+  if (!config.app.enableQualityBadges) return [];
+  const badges = [];
+  if (item.provider === 'vault') badges.push('💾 Personal');
+  if (item.sourceType === 'personal-vault-exact-hash') badges.push('🔑 Exact Hash');
+  if (item.trusted) badges.push('🏆 Verified');
+  if (mode === 'reference') badges.push('⚡ RefSync');
+  if (mode === 'sync') badges.push('⏱ AutoSync');
+  if (item.searchReason === 'hash-first' || item.movieHash) badges.push('🔑 Hash');
+  if (item.hearingImpaired || item.sdh) badges.push('👂 SDH');
+  if (item.machineTranslated || item.automatedTranslated) badges.push('🤖 MT');
+  return badges;
+}
+
+function subtitleName(item, mode = 'original') {
+  const parts = [config.app.subtitleDisplayName];
+  if (mode === 'sync') parts.push('Auto Sync');
+  else if (mode === 'reference') parts.push('Reference Sync');
+  else parts.push('Original');
+  parts.push(...qualityBadges(item, mode));
+  if (item.parsedRelease?.quality) parts.push(item.parsedRelease.quality.toUpperCase());
+  if (item.parsedRelease?.source) parts.push(item.parsedRelease.source.toUpperCase());
+  if (item.provider) parts.push(item.provider);
+  if (Number.isFinite(item.score)) parts.push(`score ${item.score}`);
+  return parts.join(' · ');
+}
+
+export function subtitleDisplayName(item, mode = 'original') {
+  return subtitleName(item, mode);
+}
+
+export function toStremioSubtitles(results, baseUrl, search = {}) {
+  const output = [];
+  const videoRelease = parseRelease(search.filename || search.query || '');
+  let referenceCount = 0;
+  let autoSyncCount = 0;
+  let originalCount = 0;
+
+  for (const item of results) {
+    if (output.length >= config.ranking.maxStremioSubtitles) break;
+    const originalUrl = proxiedSubtitleUrl(baseUrl, item, null);
+    if (!originalUrl) continue;
+
+    const reference = referenceForProxy(baseUrl, item);
+    const syncPlan = detectSyncPlan({
+      subtitleRelease: item.parsedRelease || parseRelease(item.releaseName || item.fileName || item.name),
+      videoRelease,
+      extra: search.extra || {},
+    });
+
+    const canAddReference = config.ranking.enableReferenceAutoSync
+      && reference
+      && referenceCount < config.ranking.maxReferenceOptions
+      && output.length < config.ranking.maxStremioSubtitles;
+
+    if (canAddReference) {
+      output.push({
+        id: `${item.id || item.providerId || output.length}-refsync`,
+        url: proxiedSubtitleUrl(baseUrl, item, null, reference),
+        lang: 'ara',
+        name: subtitleName(item, 'reference'),
+      });
+      referenceCount++;
+    }
+
+    const canAddAutoSync = config.ranking.enableAutoSyncOption
+      && syncPlan.enabled
+      && syncPlan.confidence >= config.ranking.autoSyncMinConfidence
+      && autoSyncCount < config.ranking.maxAutoSyncOptions
+      && output.length < config.ranking.maxStremioSubtitles;
+
+    if (canAddAutoSync) {
+      output.push({
+        id: `${item.id || item.providerId || output.length}-sync`,
+        url: proxiedSubtitleUrl(baseUrl, item, syncPlan),
+        lang: 'ara',
+        name: subtitleName(item, 'sync'),
+      });
+      autoSyncCount++;
+    }
+
+    const canAddOriginal = originalCount < config.ranking.maxOriginalOptions
+      && output.length < config.ranking.maxStremioSubtitles;
+
+    if (canAddOriginal) {
+      output.push({
+        id: `${item.id || item.providerId || output.length}-orig`,
+        url: originalUrl,
+        lang: 'ara',
+        name: subtitleName(item, 'original'),
+      });
+      originalCount++;
+    }
+  }
+
+  return output;
+}
+
+export function queryOptionsFromRequest(query = {}) {
+  return {
+    stripSdh: boolish(query.stripSdh),
+    stripMusicNotes: boolish(query.stripMusicNotes),
+  };
+}
