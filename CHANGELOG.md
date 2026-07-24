@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.0.0 - Exact Version Resolver
+- Added video identity normalization for Stremio metadata, video hash, size, release, and episode IDs.
+- Added staged provider search, hash-only exact matching, metadata resolution, and provider capability filtering.
+- Added a persistent trusted version registry with verify, reject, suggestion, and local-media records.
+- Added Arabic subtitle quality analysis and conservative piecewise reference synchronization.
+- Added `/resolver.html`, registry APIs, and a Windows local companion that calculates the OpenSubtitles hash and can import embedded Arabic subtitle streams.
+- Added persistent Docker volume support and focused v3 tests.
+- Made Railway deployment zero-config: automatic Railway public-domain detection, automatic `PORT` handling, and no required `.env` file.
+
 ## 2.3.3 - Stremio Fetch/CORS Hotfix
 - Fixed Stremio Desktop/Web `Failed to fetch` manifest issue by adding explicit unconditional cross-origin headers.
 - Disabled Helmet cross-origin resource blocking for manifest/subtitle resources.

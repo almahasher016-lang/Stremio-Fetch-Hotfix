@@ -81,6 +81,38 @@ export function detectSyncPlan({ subtitleRelease = {}, videoRelease = {}, extra 
 export function applySyncPlan(text, plan = {}) {
   let output = String(text || '');
   if (!plan || !plan.enabled) return output;
+  const anchors = Array.isArray(plan.anchorPoints) ? plan.anchorPoints
+    .filter(anchor => Number.isFinite(Number(anchor.sourceMs)) && Number.isFinite(Number(anchor.referenceMs)))
+    .sort((left, right) => Number(left.sourceMs) - Number(right.sourceMs)) : [];
+  if (plan.type === 'reference-piecewise' && anchors.length >= 4) {
+    const mapTime = value => {
+      const time = Number(value);
+      if (!Number.isFinite(time)) return 0;
+      let left = anchors[0];
+      let right = anchors[1];
+      for (let index = 1; index < anchors.length; index += 1) {
+        if (time <= Number(anchors[index].sourceMs)) {
+          left = anchors[index - 1];
+          right = anchors[index];
+          break;
+        }
+        left = anchors[Math.max(0, index - 1)];
+        right = anchors[index];
+      }
+      const sourceDelta = Number(right.sourceMs) - Number(left.sourceMs);
+      const referenceDelta = Number(right.referenceMs) - Number(left.referenceMs);
+      const ratio = sourceDelta > 0 ? referenceDelta / sourceDelta : Number(plan.ratio || 1);
+      return Number(left.referenceMs) + (time - Number(left.sourceMs)) * ratio;
+    };
+    return output.replace(SRT_TIME_RE, (_line, start, end) => {
+      const sourceStart = timeToMs(start);
+      const sourceEnd = timeToMs(end);
+      if (sourceStart === null || sourceEnd === null) return _line;
+      const mappedStart = mapTime(sourceStart);
+      const mappedEnd = Math.max(mappedStart + 1, mapTime(sourceEnd));
+      return `${msToTime(mappedStart)} --> ${msToTime(mappedEnd)}`;
+    });
+  }
   if (Math.abs(Number(plan.ratio || 1) - 1) > 0.0001) output = stretchSubtitleTiming(output, Number(plan.ratio));
   if (Number(plan.offsetMs || 0) !== 0) output = shiftSubtitleTiming(output, Number(plan.offsetMs));
   return output;

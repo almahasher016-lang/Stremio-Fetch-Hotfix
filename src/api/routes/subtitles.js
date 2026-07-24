@@ -10,6 +10,9 @@ import { resolveProxiedSubtitle, previewProxiedSubtitle } from '../../utils/enco
 import { buildStremioSubtitleSearch, getBaseUrl, parseExtra, toStremioSubtitles, subtitleDisplayName } from '../../utils/stremio.js';
 import { httpError } from '../../utils/httpError.js';
 import { config } from '../../config.js';
+import { buildVideoIdentity } from '../../utils/videoIdentity.js';
+import { versionRegistry } from '../../services/versionRegistryService.js';
+import { resolverHtml } from '../../ui/resolverHtml.js';
 
 const router = express.Router();
 const EMPTY_SUBTITLES_BUF = Buffer.from('{"subtitles":[]}');
@@ -25,6 +28,13 @@ function requireVaultAuth(req) {
   if (!config.vault.authToken) return;
   const supplied = req.headers['x-vault-token'] || req.query.token || req.body?.token;
   if (String(supplied || '') !== config.vault.authToken) throw httpError(401, 'Vault token is required');
+}
+
+function requireRegistryAuth(req) {
+  const expected = config.versionRegistry.authToken || config.vault.authToken;
+  if (!expected) return;
+  const supplied = req.headers['x-vault-token'] || req.headers['x-registry-token'] || req.query.token || req.body?.token;
+  if (String(supplied || '') !== expected) throw httpError(401, 'Registry token is required');
 }
 
 function vaultHtml() {
@@ -50,21 +60,35 @@ function toPublicResults(results, baseUrl) {
   }));
 }
 
-function toPublicPreview(results, baseUrl) {
-  const search = {};
+function toPublicPreview(results, baseUrl, search = {}) {
   const subtitles = toStremioSubtitles(results, baseUrl, search);
   return results.slice(0, config.ui.previewMaxItems).map((item, index) => ({
     id: item.id || item.providerId || index,
     name: subtitleDisplayName(item, item.referenceSubtitle ? 'reference' : 'original'),
     provider: item.provider,
     score: item.score,
-    quality: item.parsedRelease?.quality || null,
+    releaseQuality: item.parsedRelease?.quality || null,
     source: item.parsedRelease?.source || null,
     trusted: Boolean(item.trusted),
     hearingImpaired: Boolean(item.hearingImpaired || item.sdh),
     searchReason: item.searchReason,
     url: subtitles[index]?.url || null,
     previewUrl: subtitles[index]?.url ? subtitles[index].url.replace('/proxy/encoding/', '/preview/encoding/').replace(/\.srt$/, '.json') : null,
+    quality: item.quality || null,
+    asset: {
+      provider: item.originalProvider || item.provider,
+      originalProvider: item.originalProvider || '',
+      providerId: item.providerId || item.fileId || item.id,
+      id: item.id,
+      name: item.name,
+      releaseName: item.releaseName,
+      fileName: item.fileName,
+      lang: item.lang,
+      download: item.download,
+      movieHash: item.movieHash,
+      score: item.score,
+      quality: item.quality || null,
+    },
   }));
 }
 
@@ -76,6 +100,46 @@ router.get('/vault.html', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Content-Length', body.byteLength);
   res.end(body);
+});
+
+router.get('/resolver.html', (_req, res) => {
+  const body = Buffer.from(resolverHtml());
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Content-Length', body.byteLength);
+  res.end(body);
+});
+
+router.get('/api/versions', async (req, res, next) => {
+  try {
+    requireRegistryAuth(req);
+    const [items, status] = await Promise.all([versionRegistry.list({ limit: req.query.limit }), versionRegistry.status()]);
+    res.setHeader('Cache-Control', 'no-cache');
+    res.json({ success: true, status, items });
+  } catch (err) { next(err); }
+});
+
+router.post('/api/versions/:action', vaultBodyParser, async (req, res, next) => {
+  try {
+    requireRegistryAuth(req);
+    const action = String(req.params.action || '').toLowerCase();
+    if (!['verify', 'reject', 'suggest'].includes(action)) throw httpError(400, 'Unsupported version action');
+    const result = await versionRegistry.recordDecision({
+      action,
+      search: req.body?.search || {},
+      candidate: req.body?.candidate?.asset || req.body?.candidate || {},
+      note: req.body?.note || '',
+    });
+    res.json({ success: true, result });
+  } catch (err) { next(err); }
+});
+
+router.post('/api/companion/media', vaultBodyParser, async (req, res, next) => {
+  try {
+    requireRegistryAuth(req);
+    const identity = await versionRegistry.recordMedia(buildVideoIdentity(req.body || {}));
+    res.json({ success: true, identity });
+  } catch (err) { next(err); }
 });
 
 router.get('/api/vault', async (_req, res, next) => {
@@ -128,6 +192,9 @@ router.get('/api/subtitles', async (req, res, next) => {
       season: Number(req.query.season || 0) || null,
       episode: Number(req.query.episode || 0) || null,
       filename: req.query.filename || '',
+      videoHash: req.query.videoHash || req.query.hash || null,
+      videoSize: req.query.videoSize || req.query.size || null,
+      durationMs: req.query.durationMs || req.query.duration || null,
       extra,
     };
     const results = await searchSubtitles(search);
@@ -160,7 +227,7 @@ router.get('/api/preview', async (req, res, next) => {
     };
     const results = await searchSubtitles(search);
     res.setHeader('Cache-Control', 'no-cache');
-    res.json({ success: true, ms: Date.now() - started, count: results.length, results: toPublicPreview(results, getBaseUrl(req)) });
+    res.json({ success: true, ms: Date.now() - started, count: results.length, results: toPublicPreview(results, getBaseUrl(req), search) });
   } catch (err) {
     next(err);
   }

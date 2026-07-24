@@ -1,6 +1,6 @@
 {
   "name": "m7md-arabic-stremio-subtitles",
-  "version": "2.3.3",
+  "version": "3.0.0",
   "type": "module",
   "private": true,
   "description": "Private direct Stremio Arabic subtitles add-on with Personal Subtitle Vault, optional YIFY fallback provider, strict private ranking defaults, hash-first matching, smart cache, metrics, server-side Arabic encoding normalization, and deterministic reference auto-sync without ذكاء اصطناعي.",
@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
+    "companion:scan": "node src/companion/mediaCompanion.js scan",
     "test": "node --test src/tests/*.test.js"
   },
   "dependencies": {

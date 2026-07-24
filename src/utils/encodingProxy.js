@@ -6,6 +6,8 @@ import { processSubtitleBuffer } from './subtitleProcessor.js';
 import { applySyncPlan } from './subtitleTiming.js';
 import { deriveReferenceSyncPlan } from './referenceSync.js';
 import { httpError } from './httpError.js';
+import { analyzeSubtitleQuality } from './subtitleQuality.js';
+import { versionRegistry } from '../services/versionRegistryService.js';
 
 function b64url(input) {
   return Buffer.from(input).toString('base64url');
@@ -47,6 +49,32 @@ export function createEncodingToken(payload) {
       url: assertSafeUrl(payload.reference.url),
       name: payload.reference.name || '',
       provider: payload.reference.provider || 'unknown',
+    } : null,
+    candidate: payload.candidate ? {
+      provider: payload.candidate.provider || 'unknown',
+      originalProvider: payload.candidate.originalProvider || '',
+      providerId: payload.candidate.providerId || payload.candidate.fileId || payload.candidate.id || '',
+      id: payload.candidate.id || '',
+      name: payload.candidate.name || '',
+      releaseName: payload.candidate.releaseName || '',
+      fileName: payload.candidate.fileName || '',
+      lang: payload.candidate.lang || 'ara',
+      download: payload.url,
+      movieHash: payload.candidate.movieHash || payload.candidate.hash || '',
+    } : null,
+    context: payload.context ? {
+      type: payload.context.type || 'movie',
+      id: payload.context.id || '',
+      videoId: payload.context.videoId || '',
+      videoHash: payload.context.videoHash || '',
+      videoSize: payload.context.videoSize || null,
+      filename: payload.context.filename || '',
+      title: payload.context.title || '',
+      imdbId: payload.context.imdbId || '',
+      tmdbId: payload.context.tmdbId || '',
+      season: payload.context.season || null,
+      episode: payload.context.episode || null,
+      durationMs: payload.context.durationMs || null,
     } : null,
     expiresAt,
   };
@@ -107,6 +135,7 @@ function cacheKeyFor(payload) {
     options: payload.options || {},
     syncPlan: payload.syncPlan || null,
     reference: payload.reference || null,
+    context: payload.context || null,
   });
   return `encoding:${sign(normalized)}`;
 }
@@ -135,17 +164,32 @@ export async function resolveProxiedSubtitle(token) {
   }
 
   const text = applySyncPlan(processed.text, syncPlan || {});
+  const quality = config.qualityGate.enabled ? analyzeSubtitleQuality(text, {
+    expectedDurationMs: payload.context?.durationMs || null,
+    minCues: config.qualityGate.minCues,
+    minArabicRatio: config.qualityGate.minArabicRatio,
+    minCoverageRatio: config.qualityGate.minCoverageRatio,
+  }) : null;
   const result = {
     text,
     encoding: processed.encoding,
     format: processed.format,
     sync: syncPlan?.enabled ? syncPlan : null,
+    quality,
   };
+  if (payload.context && payload.candidate) {
+    await versionRegistry.recordObservation({
+      search: payload.context,
+      candidate: { ...payload.candidate, quality },
+      quality,
+      sync: result.sync,
+    });
+  }
   await cacheSet(key, result, config.cache.subtitleTtlSeconds || config.encodingProxy.cacheTtlSeconds, config.cache.staleSeconds);
   return { ...result, cache: 'miss' };
 }
 
-export function proxiedSubtitleUrl(baseUrl, item, syncPlan = null, reference = null) {
+export function proxiedSubtitleUrl(baseUrl, item, syncPlan = null, reference = null, context = null) {
   const download = item.download || item.url;
   if (!config.encodingProxy.enabled || !download) return download;
   const absolute = download.startsWith('/') ? `${baseUrl}${download}` : download;
@@ -155,6 +199,8 @@ export function proxiedSubtitleUrl(baseUrl, item, syncPlan = null, reference = n
     name: item.name || item.releaseName,
     syncPlan,
     reference,
+    candidate: item,
+    context,
   });
   return `${baseUrl}/proxy/encoding/${token}.srt`;
 }
@@ -183,6 +229,7 @@ export async function previewProxiedSubtitle(token, { maxCues = 6 } = {}) {
     encoding: resolved.encoding,
     format: resolved.format,
     sync: resolved.sync || null,
+    quality: resolved.quality || null,
     cues: previewCuesFromSrt(resolved.text, maxCues),
   };
 }

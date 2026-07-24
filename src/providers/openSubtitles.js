@@ -21,7 +21,7 @@ function addParam(params, key, value) {
   if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
 }
 
-function normalizeItem(item, expectedLanguage = 'ar') {
+function normalizeItem(item, expectedLanguage = 'ar', variant = {}) {
   const attr = item.attributes || item;
   const files = attr.files || item.files || [];
   const firstFile = files[0] || {};
@@ -30,6 +30,9 @@ function normalizeItem(item, expectedLanguage = 'ar') {
   if (!isExpected) return null;
 
   const fileId = firstFile.file_id || firstFile.fileId || attr.file_id || item.file_id;
+  const movieHash = attr.moviehash || attr.movie_hash || attr.feature_details?.moviehash || null;
+  const matchedByHash = Boolean(attr.moviehash_match || attr.movie_hash_match)
+    || Boolean(variant.videoHash && movieHash && String(movieHash).toLowerCase() === String(variant.videoHash).toLowerCase());
   return {
     provider: 'opensubtitles',
     id: `os-${item.id || fileId || attr.subtitle_id}`,
@@ -44,7 +47,8 @@ function normalizeItem(item, expectedLanguage = 'ar') {
     season: attr.feature_details?.season_number || attr.season_number || null,
     episode: attr.feature_details?.episode_number || attr.episode_number || null,
     imdbId: attr.feature_details?.imdb_id ? `tt${attr.feature_details.imdb_id}` : null,
-    movieHash: attr.moviehash || attr.movie_hash || attr.feature_details?.moviehash || null,
+    movieHash,
+    matchedByHash,
     tmdbId: attr.feature_details?.tmdb_id || null,
     hearingImpaired: Boolean(attr.hearing_impaired),
     machineTranslated: Boolean(attr.machine_translated),
@@ -77,7 +81,7 @@ export async function searchOpenSubtitles(variant) {
   const url = `${config.openSubtitles.baseUrl}/subtitles?${params.toString()}`;
   const json = await fetchJson(url, { headers: osHeaders() });
   const data = Array.isArray(json?.data) ? json.data : [];
-  return data.map(item => normalizeItem(item, expectedLanguage)).filter(Boolean).slice(0, config.providers.maxProviderItems);
+  return data.map(item => normalizeItem(item, expectedLanguage, variant)).filter(Boolean).slice(0, config.providers.maxProviderItems);
 }
 
 export async function getOpenSubtitlesDownloadLink(fileId) {

@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { parseRelease } from './releaseParser.js';
 import { detectSyncPlan } from './subtitleTiming.js';
 import { proxiedSubtitleUrl } from './encodingProxy.js';
+import { buildVideoIdentity } from './videoIdentity.js';
 
 function boolish(value) {
   if (value === undefined || value === null || value === '') return undefined;
@@ -59,30 +60,7 @@ function extractNumericId(prefix, id) {
 }
 
 export function buildStremioSubtitleSearch({ type, id, extra = {} }) {
-  const imdbId = cleanImdb(id) || cleanImdb(extra.imdb_id || extra.imdbId || extra.videoId || extra.filename);
-  const tmdbId = extra.tmdb_id || extra.tmdbId || extractNumericId('tmdb', id);
-  const filename = extra.filename || extra.videoId || extra.name || '';
-  const parsed = parseRelease(filename || id || '');
-  const routeParts = String(id || '').split(':');
-
-  const season = Number(extra.season || parsed.season || (type === 'series' ? routeParts[1] : 0)) || null;
-  const episode = Number(extra.episode || parsed.episode || (type === 'series' ? routeParts[2] : 0)) || null;
-  const query = extra.query || extra.q || extra.title || filename || id;
-
-  return {
-    type,
-    id,
-    query,
-    imdbId,
-    tmdbId,
-    season,
-    episode,
-    year: Number(extra.year || parsed.year || 0) || null,
-    filename,
-    videoHash: extra.videoHash || extra.hash || null,
-    videoSize: extra.videoSize || extra.size || null,
-    extra,
-  };
+  return buildVideoIdentity({ type, id, extra });
 }
 
 
@@ -101,6 +79,8 @@ function qualityBadges(item, mode) {
   if (!config.app.enableQualityBadges) return [];
   const badges = [];
   if (item.provider === 'vault') badges.push('💾 Personal');
+  if (item.provider === 'registry') badges.push('📌 Verified Version');
+  if (item.sourceType === 'version-registry-exact-hash') badges.push('🔒 Exact Version');
   if (item.sourceType === 'personal-vault-exact-hash') badges.push('🔑 Exact Hash');
   if (item.trusted) badges.push('🏆 Verified');
   if (mode === 'reference') badges.push('⚡ RefSync');
@@ -108,6 +88,7 @@ function qualityBadges(item, mode) {
   if (item.searchReason === 'hash-first' || item.movieHash) badges.push('🔑 Hash');
   if (item.hearingImpaired || item.sdh) badges.push('👂 SDH');
   if (item.machineTranslated || item.automatedTranslated) badges.push('🤖 MT');
+  if (item.quality?.score) badges.push(`✓ Q${item.quality.score}`);
   return badges;
 }
 
@@ -137,7 +118,7 @@ export function toStremioSubtitles(results, baseUrl, search = {}) {
 
   for (const item of results) {
     if (output.length >= config.ranking.maxStremioSubtitles) break;
-    const originalUrl = proxiedSubtitleUrl(baseUrl, item, null);
+    const originalUrl = proxiedSubtitleUrl(baseUrl, item, null, null, search);
     if (!originalUrl) continue;
 
     const reference = referenceForProxy(baseUrl, item);
@@ -155,7 +136,7 @@ export function toStremioSubtitles(results, baseUrl, search = {}) {
     if (canAddReference) {
       output.push({
         id: `${item.id || item.providerId || output.length}-refsync`,
-        url: proxiedSubtitleUrl(baseUrl, item, null, reference),
+        url: proxiedSubtitleUrl(baseUrl, item, null, reference, search),
         lang: 'ara',
         name: subtitleName(item, 'reference'),
       });
@@ -171,7 +152,7 @@ export function toStremioSubtitles(results, baseUrl, search = {}) {
     if (canAddAutoSync) {
       output.push({
         id: `${item.id || item.providerId || output.length}-sync`,
-        url: proxiedSubtitleUrl(baseUrl, item, syncPlan),
+        url: proxiedSubtitleUrl(baseUrl, item, syncPlan, null, search),
         lang: 'ara',
         name: subtitleName(item, 'sync'),
       });

@@ -5,10 +5,9 @@ const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
 const PRIVATE_DEFAULTS = Object.freeze({
   PROJECT_LOCKED_DEFAULTS: 'true',
   NODE_ENV: 'production',
-  PUBLIC_BASE_URL: 'https://pleasing-gentleness-production.up.railway.app',
-  ADDON_ID: 'community.m7md-arabic-direct-v233-private',
-  ADDON_NAME: 'm7md Arabic Direct 2.3.3',
-  ADDON_DESCRIPTION: 'Private Arabic-first Stremio subtitle add-on with locked private defaults, precision ranking, Personal Vault, hash-first fetching, optional YIFY fallback, smart cache, metrics, server-side Arabic encoding normalization, and deterministic reference auto-sync without ذكاء اصطناعي.',
+  ADDON_ID: 'community.m7md-arabic-resolver-v3-private',
+  ADDON_NAME: 'm7md Arabic Resolver v3',
+  ADDON_DESCRIPTION: 'Private Arabic-first Stremio subtitle resolver with exact-version matching, hash-first search, quality validation, trusted version registry, and deterministic timeline sync without ذكاء اصطناعي.',
   SUBTITLE_DISPLAY_NAME: 'm7md Arabic',
   PRIVATE_MODE: 'true',
   ENABLE_QUALITY_BADGES: 'true',
@@ -87,6 +86,30 @@ const PRIVATE_DEFAULTS = Object.freeze({
   REFERENCE_SYNC_MAX_ANCHORS: '48',
   REFERENCE_SYNC_ATTACH_TOP: '1',
   REFERENCE_SYNC_AGGRESSIVE_STRETCH: 'false',
+  REFERENCE_SYNC_PIECEWISE: 'true',
+  REFERENCE_SYNC_MIN_REFERENCE_MATCH_SCORE: '420',
+  REFERENCE_SYNC_MIN_ANCHOR_COVERAGE: '0.45',
+  REFERENCE_SYNC_MIN_TEMPORAL_AGREEMENT: '0.68',
+
+  RESOLVER_ENABLED: 'true',
+  RESOLVER_METADATA_ENABLED: 'true',
+  RESOLVER_METADATA_BASE_URL: 'https://v3-cinemeta.strem.io/meta',
+  RESOLVER_METADATA_TIMEOUT_MS: '1800',
+  RESOLVER_METADATA_CACHE_TTL: '86400',
+  RESOLVER_STAGE_DEADLINE_MS: '4500',
+  RESOLVER_MAX_PROVIDERS_PER_STAGE: '3',
+  RESOLVER_MAX_REFERENCE_PROVIDERS: '2',
+  RESOLVER_UPGRADE_MIN_DELTA: '180',
+
+  VERSION_REGISTRY_ENABLED: 'true',
+  VERSION_REGISTRY_PATH: './data/version-registry.json',
+  VERSION_REGISTRY_MAX_ITEMS: '5000',
+  VERSION_REGISTRY_TOKEN: 'm7md_vault_2026_private_9c82f4a71b',
+
+  QUALITY_GATE_ENABLED: 'true',
+  QUALITY_MIN_CUES: '8',
+  QUALITY_MIN_ARABIC_RATIO: '0.18',
+  QUALITY_MIN_COVERAGE_RATIO: '0.55',
 
   ENABLE_CONFIGURE_UI: 'true',
   ENABLE_TEST_UI: 'true',
@@ -115,7 +138,7 @@ function setting(key, fallback = '') {
   return fallback;
 }
 
-const RELEASE_VERSION = '2.3.3';
+const RELEASE_VERSION = '3.0.0';
 const RELEASE_ID = PRIVATE_DEFAULTS.ADDON_ID;
 const RELEASE_NAME = PRIVATE_DEFAULTS.ADDON_NAME;
 const RELEASE_USER_AGENT = `m7mdArabicDirect/${RELEASE_VERSION}`;
@@ -152,10 +175,7 @@ export const config = Object.freeze({
     version: RELEASE_VERSION,
     description: setting('ADDON_DESCRIPTION', 'Arabic-first private Stremio subtitle add-on with Personal Vault, hash-first fetching, optional YIFY fallback, and deterministic reference auto-sync. بدون ذكاء اصطناعي, no local proxy dependency.'),
     userAgent: RELEASE_USER_AGENT,
-    publicBaseUrl: cleanBaseUrl(
-      setting('PUBLIC_BASE_URL') ||
-      (process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : '')
-    ),
+    publicBaseUrl: cleanBaseUrl(process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : ''),
     subtitleDisplayName: setting('SUBTITLE_DISPLAY_NAME', 'm7md Arabic'),
     privateMode: toBool(setting('PRIVATE_MODE'), true),
     enableQualityBadges: toBool(setting('ENABLE_QUALITY_BADGES'), true),
@@ -197,6 +217,19 @@ export const config = Object.freeze({
     maxAutoSyncOptions: toInt(setting('STREMIO_AUTOSYNC_TOP'), 1, 0, 10),
     maxOriginalOptions: toInt(setting('STREMIO_ORIGINAL_TOP'), 5, 0, 20),
   },
+  resolver: {
+    enabled: toBool(setting('RESOLVER_ENABLED'), true),
+    stageDeadlineMs: toInt(setting('RESOLVER_STAGE_DEADLINE_MS'), 4500, 500, 20000),
+    maxProvidersPerStage: toInt(setting('RESOLVER_MAX_PROVIDERS_PER_STAGE'), 3, 1, 10),
+    maxReferenceProviders: toInt(setting('RESOLVER_MAX_REFERENCE_PROVIDERS'), 2, 1, 10),
+    upgradeMinDelta: toInt(setting('RESOLVER_UPGRADE_MIN_DELTA'), 180, 1, 5000),
+    metadata: {
+      enabled: toBool(setting('RESOLVER_METADATA_ENABLED'), true),
+      baseUrl: cleanBaseUrl(setting('RESOLVER_METADATA_BASE_URL', 'https://v3-cinemeta.strem.io/meta')),
+      timeoutMs: toInt(setting('RESOLVER_METADATA_TIMEOUT_MS'), 1800, 300, 10000),
+      cacheTtlSeconds: toInt(setting('RESOLVER_METADATA_CACHE_TTL'), 86400, 60, 604800),
+    },
+  },
   ui: {
     configureEnabled: toBool(setting('ENABLE_CONFIGURE_UI'), true),
     testUiEnabled: toBool(setting('ENABLE_TEST_UI'), true),
@@ -214,6 +247,22 @@ export const config = Object.freeze({
     maxAnchors: toInt(setting('REFERENCE_SYNC_MAX_ANCHORS'), 48, 4, 200),
     attachTopReferences: toInt(setting('REFERENCE_SYNC_ATTACH_TOP'), 1, 0, 3),
     allowAggressiveStretch: toBool(setting('REFERENCE_SYNC_AGGRESSIVE_STRETCH'), false),
+    piecewise: toBool(setting('REFERENCE_SYNC_PIECEWISE'), true),
+    minReferenceMatchScore: toInt(setting('REFERENCE_SYNC_MIN_REFERENCE_MATCH_SCORE'), 420, 0, 5000),
+    minAnchorCoverage: Number(setting('REFERENCE_SYNC_MIN_ANCHOR_COVERAGE') || 0.45),
+    minTemporalAgreement: Number(setting('REFERENCE_SYNC_MIN_TEMPORAL_AGREEMENT') || 0.68),
+  },
+  versionRegistry: {
+    enabled: toBool(setting('VERSION_REGISTRY_ENABLED'), true),
+    storagePath: setting('VERSION_REGISTRY_PATH', './data/version-registry.json'),
+    maxItems: toInt(setting('VERSION_REGISTRY_MAX_ITEMS'), 5000, 100, 50000),
+    authToken: setting('VERSION_REGISTRY_TOKEN') || setting('PERSONAL_VAULT_TOKEN') || '',
+  },
+  qualityGate: {
+    enabled: toBool(setting('QUALITY_GATE_ENABLED'), true),
+    minCues: toInt(setting('QUALITY_MIN_CUES'), 8, 2, 100),
+    minArabicRatio: Number(setting('QUALITY_MIN_ARABIC_RATIO') || 0.18),
+    minCoverageRatio: Number(setting('QUALITY_MIN_COVERAGE_RATIO') || 0.55),
   },
   encodingProxy: {
     enabled: toBool(setting('ENCODING_PROXY_ENABLED'), true),

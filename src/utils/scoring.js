@@ -23,6 +23,7 @@ function addReason(reasons, scoreRef, value, reason) {
 function providerPriority(provider) {
   const name = lower(provider);
   if (name === 'vault') return 900;
+  if (name === 'registry') return 1100;
   if (name === 'opensubtitles') return 140;
   if (name === 'subdl') return 120;
   if (name === 'subsource') return 85;
@@ -31,7 +32,7 @@ function providerPriority(provider) {
 }
 
 export function scoreSubtitle(candidate, search = {}) {
-  const filename = search.extra?.filename || search.extra?.videoId || search.filename || '';
+  const filename = search.extra?.filename || search.extra?.videoId || search.extra?.videoID || search.filename || '';
   const target = parseRelease(filename || search.query || '');
   const release = parseRelease(candidate.releaseName || candidate.fileName || candidate.name || candidate.title || '');
 
@@ -49,7 +50,7 @@ export function scoreSubtitle(candidate, search = {}) {
 
   const hasExactHash = Boolean(search.videoHash && lower(candidate.movieHash || candidate.hash) === lower(search.videoHash));
   if (hasExactHash) add(1800, 'exact-video-hash-match');
-  if (search.videoHash && candidate.searchReason === 'hash-first') add(700, 'hash-first-provider-result');
+  if (candidate.matchedByHash) add(700, 'provider-confirmed-hash-match');
 
   if (search.imdbId && lower(candidate.imdbId) === lower(search.imdbId)) add(420, 'imdb-match');
   if (search.tmdbId && lower(candidate.tmdbId) === lower(search.tmdbId)) add(260, 'tmdb-match');
@@ -103,6 +104,8 @@ export function scoreSubtitle(candidate, search = {}) {
   if (rating > 0) add(Math.min(45, rating * 8), 'rating-capped');
 
   if (candidate.trusted || candidate.uploaderRank === 'trusted' || candidate.fromTrustedSource) add(90, 'trusted');
+  const qualityScore = Number(candidate.quality?.score ?? candidate.qualityScore ?? 0);
+  if (qualityScore > 0) add(Math.min(180, qualityScore * 1.8), 'verified-subtitle-quality');
   if (candidate.hearingImpaired || candidate.sdh || /\b(sdh|hi|hearing impaired)\b/i.test(candidate.name || '')) add(-260, 'hearing-impaired');
   if (candidate.machineTranslated || candidate.automatedTranslated || candidate.autoTranslated) add(-1200, 'machine-or-ai-translated');
   if (!candidate.download && !candidate.url) add(-2000, 'missing-download-url');
@@ -135,6 +138,7 @@ export function rankAndFilter(results, search = {}, config = {}) {
     if (outputArabicOnly && !isArabicLanguage(item.lang || item.language || item.name || item.releaseName)) continue;
     if (excludeHI && (item.hearingImpaired || item.sdh)) continue;
     if (excludeMachine && (item.machineTranslated || item.automatedTranslated || item.autoTranslated)) continue;
+    if (config.strictQualityFilters && item.quality && item.quality.valid === false) continue;
     const scoring = scoreSubtitle(item, search);
     if (scoring.score < minRankScore) continue;
     ranked.push({ ...item, score: scoring.score, scoreReasons: scoring.reasons, parsedRelease: scoring.release });

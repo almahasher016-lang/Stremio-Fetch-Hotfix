@@ -1,86 +1,64 @@
-# m7md Arabic Direct v2.3.3 — Fully Locked Private Ready
+# m7md Arabic Resolver v3
 
-إضافة Stremio عربية خاصة لجلب الترجمات العربية وترتيبها حسب دقة المطابقة والتوقيت، بدون ذكاء اصطناعي وبدون الاعتماد على بروكسي Stremio المحلي.
+إضافة Stremio خاصة للترجمات العربية. الإصدار v3 يطابق **نسخة ملف الفيديو نفسها** قبل أن يرتب النتائج، ويعمل بدون أي ذكاء اصطناعي.
 
-## الحالة
+## ما الذي تغيّر فعلياً
 
-هذه نسخة خاصة ومقفلة الإعدادات. جميع أرقام المشروع ومفاتيح المزودات وتفضيلات Stremio موجودة مباشرة داخل:
+- هوية موحدة للفيديو تجمع `videoHash` و`videoSize` واسم الإصدار وIMDb/TMDB والحلقة.
+- بحث مرحلي: hash دقيق أولاً، ثم بيانات العمل، ثم اسم الإصدار، ثم العنوان فقط عند الحاجة.
+- سجل نسخ دائم: اعتمد أو ارفض الترجمة لنسخة فيديو محددة، فتظهر الاختيارات الموثوقة أولاً لاحقاً.
+- فحص جودة بعد تنزيل الترجمة: عدد المقاطع، نسبة العربية، التغطية الزمنية، التكرار، وسرعة القراءة.
+- مزامنة مرجعية حذرة تعتمد على توافق البنية الزمنية؛ لا تستخدم المطابقة الموضعية العمياء.
+- واجهة الإدارة `/resolver.html` ومساعد Windows محلي لفحص ملفاتك وإرسال بصمة OpenSubtitles الصحيحة.
 
-```text
-src/config.js
+## تشغيل الخادم
+
+```bash
+npm install
+npm start
 ```
 
-لا تحتاج إلى لصق أرقام المشروع داخل Railway Variables لهذه النسخة.
+الروابط المهمة بعد التشغيل:
 
-## القيم المقفلة داخل المشروع
+- `/manifest.json` لإضافته في Stremio.
+- `/resolver.html` للبحث، المعاينة، الاعتماد، والرفض.
+- `/vault.html` لإدارة الترجمات الشخصية.
+- `/health` للحالة المختصرة.
 
-```env
-NODE_ENV=production
-PUBLIC_BASE_URL=https://pleasing-gentleness-production.up.railway.app
-SUBTITLE_PROVIDERS=opensubtitles,subdl,subsource,yify
-TOP_N=5
-MAX_PROVIDER_ITEMS=60
-STREMIO_MAX_SUBTITLES=6
-STREMIO_REFERENCE_TOP=2
-STREMIO_AUTOSYNC_TOP=1
-STREMIO_ORIGINAL_TOP=5
-MIN_RANK_SCORE=180
-STRICT_RELEASE_MATCHING=true
-PROVIDER_EXCLUDE_HEARING_IMPAIRED=true
-PROVIDER_EXCLUDE_MACHINE_TRANSLATED=false
-PROVIDER_TIMEOUT_MS=10000
-PROVIDER_RETRIES=3
-CACHE_TTL=3600
-CACHE_STALE_SECONDS=21600
-SEARCH_CACHE_TTL=3600
-SUBTITLE_CACHE_TTL=86400
-FAILURE_CACHE_TTL=120
-CACHE_REFRESH_LOCK_TTL=60
-MEMORY_CACHE_MAX_ITEMS=750
-RATE_LIMIT_WINDOW_MS=60000
-RATE_LIMIT_MAX=180
-YIFY_ENABLED=true
-YIFY_MAX_ITEMS=8
-PERSONAL_VAULT_ENABLED=true
-PERSONAL_VAULT_UPLOAD_ENABLED=true
-PERSONAL_VAULT_PREFER=true
-PERSONAL_VAULT_MAX_ITEMS=500
-PERSONAL_VAULT_MAX_SUBTITLE_BYTES=2000000
-REFERENCE_SYNC_MIN_CONFIDENCE=72
-REFERENCE_SYNC_MIN_CUES=8
-REFERENCE_SYNC_MIN_CUE_RATIO=0.55
-REFERENCE_SYNC_MAX_ANCHORS=48
-REFERENCE_SYNC_ATTACH_TOP=1
-AUTO_SYNC_MIN_CONFIDENCE=70
-ENCODING_PROXY_CACHE_TTL=86400
-ENCODING_PROXY_LINK_TTL=604800
-ENCODING_PROXY_MAX_BYTES=1500000
-ENCODING_PROXY_MAX_REDIRECTS=4
+## المساعد المحلي للملفات
+
+لا يستطيع خادم Stremio رؤية ملف الفيديو الموجود على جهازك. المساعد المحلي يحسب hash OpenSubtitles من أول وآخر 64 KiB، ويرسل الحجم والمدة ومسارات الترجمة المدمجة إلى السجل. بذلك يصبح البحث بالـ hash فعلياً وليس تخميناً باسم الملف.
+
+يلزم Node.js 20 أو أحدث. يقرأ `ffprobe` المدة والمسارات إن كان FFmpeg مثبتاً؛ حساب الـ hash يعمل بدونه.
+
+```powershell
+npm run companion:scan -- "D:\Movies\Movie.mkv" --server "https://your-addon.example" --imdb tt1375666
 ```
 
-## روابط بعد النشر
+لمسلسل مع استخراج الترجمات العربية المدمجة وحفظها تلقائياً في الـ Vault:
 
-```text
-https://pleasing-gentleness-production.up.railway.app/manifest.json
-https://pleasing-gentleness-production.up.railway.app/health
-https://pleasing-gentleness-production.up.railway.app/test.html
-https://pleasing-gentleness-production.up.railway.app/vault.html
-https://pleasing-gentleness-production.up.railway.app/metrics
+```powershell
+npm run companion:scan -- "D:\Shows\Episode.mkv" --server "https://your-addon.example" --imdb tt11198330 --type series --season 1 --episode 1 --extract-arabic
 ```
 
-## الرفع إلى GitHub
+للفحص فقط من دون إرسال أي شيء:
 
-فك الضغط، ثم ارفع محتويات المجلد إلى جذر المستودع مباشرة:
-
-```text
-src/
-package.json
-Dockerfile
-railway.json
-README.md
-CHANGELOG.md
-.env.example
-.gitignore
+```powershell
+npm run companion:scan -- "D:\Movies\Movie.mkv" --imdb tt1375666 --dry-run --json
 ```
 
-لا ترفع ملف ZIP نفسه، ولا ترفع `package-lock.json`.
+خيارات مفيدة: `--tmdb` و`--title` و`--duration-ms` و`--ffprobe` و`--ffmpeg`. لا يرفع `--extract-arabic` إلا المسارات المعلمة بالعربية من FFmpeg.
+
+## النشر بلا إعدادات
+
+ارفع المشروع إلى GitHub ثم اختر المستودع داخل Railway. لا تكتب أي Variables أو منفذ أو رابط: Railway يكتشف `Dockerfile`، يمرر `PORT` بنفسه، والإضافة تلتقط نطاق Railway العام تلقائياً. بعد أن يصبح النشر Active، انسخ فقط رابط `/manifest.json` من صفحة Railway إلى Stremio.
+
+يعمل السجل والـ Vault مباشرة بعد النشر. إن أردت لاحقاً بقاء اعتماداتك وترجماتك حتى بعد إعادة النشر، فـ Volume عند `/app/data` خيار إضافي وليس شرطاً للتشغيل الأول.
+
+## التحقق
+
+```bash
+npm test
+```
+
+تشمل الاختبارات بصمة OpenSubtitles، هوية Stremio، مخطط البحث، تقييم الجودة، السجل الدائم، والمزامنة الزمنية.
