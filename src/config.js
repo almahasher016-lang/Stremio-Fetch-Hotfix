@@ -5,7 +5,7 @@ const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
 const PRIVATE_DEFAULTS = Object.freeze({
   PROJECT_LOCKED_DEFAULTS: 'true',
   NODE_ENV: 'production',
-  ADDON_ID: 'community.m7md-arabic-resolver-v3-private',
+  ADDON_ID: 'community.m7md-arabic-direct-v233-private',
   ADDON_NAME: 'm7md Arabic Resolver v3',
   ADDON_DESCRIPTION: 'Private Arabic-first Stremio subtitle resolver with exact-version matching, hash-first search, quality validation, trusted version registry, and deterministic timeline sync without ذكاء اصطناعي.',
   SUBTITLE_DISPLAY_NAME: 'm7md Arabic',
