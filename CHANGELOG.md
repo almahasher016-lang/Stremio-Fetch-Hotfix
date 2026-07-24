@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.0.1 - Direct Stremio Update
+- Preserved the original Stremio addon ID so existing installations update in place.
+- Removed the unsupported Docker volume instruction so Railway builds and deploys successfully.
+- Bumped the public release version after the production deployment fixes.
+
 ## 3.0.0 - Exact Version Resolver
 - Added video identity normalization for Stremio metadata, video hash, size, release, and episode IDs.
 - Added staged provider search, hash-only exact matching, metadata resolution, and provider capability filtering.

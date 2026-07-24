@@ -138,7 +138,7 @@ function setting(key, fallback = '') {
   return fallback;
 }
 
-const RELEASE_VERSION = '3.0.0';
+const RELEASE_VERSION = '3.0.1';
 const RELEASE_ID = PRIVATE_DEFAULTS.ADDON_ID;
 const RELEASE_NAME = PRIVATE_DEFAULTS.ADDON_NAME;
 const RELEASE_USER_AGENT = `m7mdArabicDirect/${RELEASE_VERSION}`;
