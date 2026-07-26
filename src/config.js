@@ -6,8 +6,8 @@ const PRIVATE_DEFAULTS = Object.freeze({
   PROJECT_LOCKED_DEFAULTS: 'true',
   NODE_ENV: 'production',
   ADDON_ID: 'community.m7md-arabic-direct-v233-private',
-  ADDON_NAME: 'm7md Arabic Resolver v3',
-  ADDON_DESCRIPTION: 'Private Arabic-first Stremio subtitle resolver with exact-version matching, hash-first search, quality validation, trusted version registry, and deterministic timeline sync without ذكاء اصطناعي.',
+  ADDON_NAME: 'm7md Arabic Resolver v3.1',
+  ADDON_DESCRIPTION: 'Private Arabic-first Stremio subtitle resolver with exact-version matching, safe ZIP/GZIP/XZ extraction, quality validation, trusted version registry, and deterministic DTW timeline sync without ذكاء اصطناعي.',
   SUBTITLE_DISPLAY_NAME: 'm7md Arabic',
   PRIVATE_MODE: 'true',
   ENABLE_QUALITY_BADGES: 'true',
@@ -23,6 +23,8 @@ const PRIVATE_DEFAULTS = Object.freeze({
   ENCODING_PROXY_CACHE_TTL: '86400',
   ENCODING_PROXY_LINK_TTL: '604800',
   ENCODING_PROXY_MAX_BYTES: '1500000',
+  ENCODING_PROXY_MAX_DECOMPRESSED_BYTES: '5000000',
+  ENCODING_PROXY_MAX_ARCHIVE_ENTRIES: '32',
   ENCODING_PROXY_MAX_REDIRECTS: '4',
   ENCODING_PROXY_STRIP_MUSIC: 'true',
   ENCODING_PROXY_STRIP_SDH: 'true',
@@ -90,6 +92,11 @@ const PRIVATE_DEFAULTS = Object.freeze({
   REFERENCE_SYNC_MIN_REFERENCE_MATCH_SCORE: '420',
   REFERENCE_SYNC_MIN_ANCHOR_COVERAGE: '0.45',
   REFERENCE_SYNC_MIN_TEMPORAL_AGREEMENT: '0.68',
+  REFERENCE_SYNC_DTW_ENABLED: 'true',
+  REFERENCE_SYNC_DTW_BAND_RATIO: '0.18',
+  REFERENCE_SYNC_DTW_MAX_CUES: '192',
+  REFERENCE_SYNC_DTW_GAP_PENALTY: '0.42',
+  REFERENCE_SYNC_DTW_MAX_MATCH_COST: '0.52',
 
   RESOLVER_ENABLED: 'true',
   RESOLVER_METADATA_ENABLED: 'true',
@@ -138,7 +145,7 @@ function setting(key, fallback = '') {
   return fallback;
 }
 
-const RELEASE_VERSION = '3.0.1';
+const RELEASE_VERSION = '3.1.0';
 const RELEASE_ID = PRIVATE_DEFAULTS.ADDON_ID;
 const RELEASE_NAME = PRIVATE_DEFAULTS.ADDON_NAME;
 const RELEASE_USER_AGENT = `m7mdArabicDirect/${RELEASE_VERSION}`;
@@ -251,6 +258,11 @@ export const config = Object.freeze({
     minReferenceMatchScore: toInt(setting('REFERENCE_SYNC_MIN_REFERENCE_MATCH_SCORE'), 420, 0, 5000),
     minAnchorCoverage: Number(setting('REFERENCE_SYNC_MIN_ANCHOR_COVERAGE') || 0.45),
     minTemporalAgreement: Number(setting('REFERENCE_SYNC_MIN_TEMPORAL_AGREEMENT') || 0.68),
+    dtwEnabled: toBool(setting('REFERENCE_SYNC_DTW_ENABLED'), true),
+    dtwBandRatio: Number(setting('REFERENCE_SYNC_DTW_BAND_RATIO') || 0.18),
+    dtwMaxCues: toInt(setting('REFERENCE_SYNC_DTW_MAX_CUES'), 192, 16, 500),
+    dtwGapPenalty: Number(setting('REFERENCE_SYNC_DTW_GAP_PENALTY') || 0.42),
+    dtwMaxMatchCost: Number(setting('REFERENCE_SYNC_DTW_MAX_MATCH_COST') || 0.52),
   },
   versionRegistry: {
     enabled: toBool(setting('VERSION_REGISTRY_ENABLED'), true),
@@ -269,6 +281,8 @@ export const config = Object.freeze({
     cacheTtlSeconds: toInt(setting('ENCODING_PROXY_CACHE_TTL'), 86400, 300, 2592000),
     linkTtlSeconds: toInt(setting('ENCODING_PROXY_LINK_TTL'), 86400 * 7, 300, 2592000),
     maxBytes: toInt(setting('ENCODING_PROXY_MAX_BYTES'), 1500000, 50000, 10000000),
+    maxDecompressedBytes: toInt(setting('ENCODING_PROXY_MAX_DECOMPRESSED_BYTES'), 5000000, 50000, 20000000),
+    maxArchiveEntries: toInt(setting('ENCODING_PROXY_MAX_ARCHIVE_ENTRIES'), 32, 1, 200),
     maxRedirects: toInt(setting('ENCODING_PROXY_MAX_REDIRECTS'), 4, 0, 10),
     stripSdhDefault: toBool(setting('ENCODING_PROXY_STRIP_SDH'), false),
     stripMusicNotes: toBool(setting('ENCODING_PROXY_STRIP_MUSIC'), true),

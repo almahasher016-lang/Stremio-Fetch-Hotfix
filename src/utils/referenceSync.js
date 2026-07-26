@@ -49,6 +49,180 @@ function anchorCoverage(anchors, sourceLength, referenceLength) {
   return Math.min(sourceSpread, referenceSpread);
 }
 
+function sampleCueSequence(cues, maxCues) {
+  const safeMax = Math.max(4, Math.floor(Number(maxCues) || 192));
+  if (cues.length <= safeMax) return cues.map((cue, index) => ({ cue, index }));
+  const indexes = Array.from(
+    { length: safeMax },
+    (_, index) => Math.round((index / (safeMax - 1)) * (cues.length - 1)),
+  );
+  return [...new Set(indexes)].map(index => ({ cue: cues[index], index }));
+}
+
+function sequenceScales(sequence) {
+  const cues = sequence.map(item => item.cue);
+  const durations = cues.map(cue => cue.end - cue.start).filter(value => value > 0);
+  const intervals = cues.slice(1).map((cue, index) => cue.start - cues[index].start).filter(value => value > 0);
+  const gaps = cues.slice(1).map((cue, index) => Math.abs(cue.start - cues[index].end)).filter(Number.isFinite);
+  return {
+    duration: Math.max(250, median(durations) || 1500),
+    interval: Math.max(500, median(intervals) || 4000),
+    gap: Math.max(250, median(gaps) || 1000),
+  };
+}
+
+function positiveFeatureDistance(left, right) {
+  const a = Math.log1p(Math.max(0, left));
+  const b = Math.log1p(Math.max(0, right));
+  return clamp(Math.abs(a - b) / 1.6, 0, 1);
+}
+
+function signedFeatureDistance(left, right) {
+  return clamp(Math.abs(Math.asinh(left) - Math.asinh(right)) / 2.5, 0, 1);
+}
+
+function cueFeature(sequence, index, scales) {
+  const current = sequence[index]?.cue;
+  const previous = sequence[index - 1]?.cue;
+  const next = sequence[index + 1]?.cue;
+  if (!current) return null;
+  return {
+    duration: (current.end - current.start) / scales.duration,
+    intervalBefore: previous ? (current.start - previous.start) / scales.interval : 1,
+    intervalAfter: next ? (next.start - current.start) / scales.interval : 1,
+    gapBefore: previous ? (current.start - previous.end) / scales.gap : 0,
+    gapAfter: next ? (next.start - current.end) / scales.gap : 0,
+  };
+}
+
+function dtwMatchCost(source, reference, sourceIndex, referenceIndex, sourceScales, referenceScales) {
+  const left = cueFeature(source, sourceIndex, sourceScales);
+  const right = cueFeature(reference, referenceIndex, referenceScales);
+  if (!left || !right) return 1;
+  const durationDistance = positiveFeatureDistance(left.duration, right.duration);
+  const intervalBeforeDistance = positiveFeatureDistance(left.intervalBefore, right.intervalBefore);
+  const intervalAfterDistance = positiveFeatureDistance(left.intervalAfter, right.intervalAfter);
+  const gapBeforeDistance = signedFeatureDistance(left.gapBefore, right.gapBefore);
+  const gapAfterDistance = signedFeatureDistance(left.gapAfter, right.gapAfter);
+  const sourcePosition = sourceIndex / Math.max(1, source.length - 1);
+  const referencePosition = referenceIndex / Math.max(1, reference.length - 1);
+  const positionDistance = Math.abs(sourcePosition - referencePosition);
+
+  const structuralDistance = durationDistance * 0.16
+    + intervalBeforeDistance * 0.22
+    + intervalAfterDistance * 0.22
+    + gapBeforeDistance * 0.15
+    + gapAfterDistance * 0.15
+    + positionDistance * 0.10;
+  return clamp(structuralDistance, 0, 1);
+}
+
+export function buildDtwAnchors(sourceCues, referenceCues, options = {}) {
+  const sourceInput = Array.isArray(sourceCues) ? sourceCues : [];
+  const referenceInput = Array.isArray(referenceCues) ? referenceCues : [];
+  if (sourceInput.length < 4 || referenceInput.length < 4) return [];
+
+  const maxCues = Number(options.maxCues ?? 192);
+  const maxAnchors = Number(options.maxAnchors ?? 48);
+  const bandRatio = clamp(Number(options.bandRatio ?? 0.18), 0.05, 0.5);
+  const gapPenalty = clamp(Number(options.gapPenalty ?? 0.42), 0.1, 1);
+  const maxMatchCost = clamp(Number(options.maxMatchCost ?? 0.52), 0.1, 0.9);
+  const source = sampleCueSequence(sourceInput, maxCues);
+  const reference = sampleCueSequence(referenceInput, maxCues);
+  const sourceScales = sequenceScales(source);
+  const referenceScales = sequenceScales(reference);
+  const rows = source.length + 1;
+  const columns = reference.length + 1;
+  const band = Math.max(
+    3,
+    Math.abs(source.length - reference.length) + 2,
+    Math.ceil(Math.max(source.length, reference.length) * bandRatio),
+  );
+  const costs = new Float64Array(rows * columns);
+  const trace = new Uint8Array(rows * columns);
+  costs.fill(Number.POSITIVE_INFINITY);
+  costs[0] = 0;
+
+  for (let sourceIndex = 1; sourceIndex <= Math.min(source.length, band); sourceIndex += 1) {
+    costs[sourceIndex * columns] = sourceIndex * gapPenalty;
+    trace[sourceIndex * columns] = 2;
+  }
+  for (let referenceIndex = 1; referenceIndex <= Math.min(reference.length, band); referenceIndex += 1) {
+    costs[referenceIndex] = referenceIndex * gapPenalty;
+    trace[referenceIndex] = 3;
+  }
+
+  for (let sourceIndex = 1; sourceIndex <= source.length; sourceIndex += 1) {
+    const expectedReference = Math.round((sourceIndex / source.length) * reference.length);
+    const firstReference = Math.max(1, expectedReference - band);
+    const lastReference = Math.min(reference.length, expectedReference + band);
+    for (let referenceIndex = firstReference; referenceIndex <= lastReference; referenceIndex += 1) {
+      const position = sourceIndex * columns + referenceIndex;
+      const localCost = dtwMatchCost(
+        source,
+        reference,
+        sourceIndex - 1,
+        referenceIndex - 1,
+        sourceScales,
+        referenceScales,
+      );
+      const diagonal = costs[(sourceIndex - 1) * columns + referenceIndex - 1] + localCost;
+      const deleteSource = costs[(sourceIndex - 1) * columns + referenceIndex] + gapPenalty;
+      const insertReference = costs[sourceIndex * columns + referenceIndex - 1] + gapPenalty;
+      if (diagonal <= deleteSource && diagonal <= insertReference) {
+        costs[position] = diagonal;
+        trace[position] = 1;
+      } else if (deleteSource <= insertReference) {
+        costs[position] = deleteSource;
+        trace[position] = 2;
+      } else {
+        costs[position] = insertReference;
+        trace[position] = 3;
+      }
+    }
+  }
+
+  if (!Number.isFinite(costs[source.length * columns + reference.length])) return [];
+  const matches = [];
+  let sourceIndex = source.length;
+  let referenceIndex = reference.length;
+  while (sourceIndex > 0 || referenceIndex > 0) {
+    const direction = trace[sourceIndex * columns + referenceIndex];
+    if (direction === 1) {
+      const localCost = dtwMatchCost(
+        source,
+        reference,
+        sourceIndex - 1,
+        referenceIndex - 1,
+        sourceScales,
+        referenceScales,
+      );
+      if (localCost <= maxMatchCost) {
+        const sourceItem = source[sourceIndex - 1];
+        const referenceItem = reference[referenceIndex - 1];
+        matches.push({
+          sourceMs: sourceItem.cue.start,
+          referenceMs: referenceItem.cue.start,
+          sourceIndex: sourceItem.index,
+          referenceIndex: referenceItem.index,
+          agreement: Number((1 - localCost).toFixed(3)),
+        });
+      }
+      sourceIndex -= 1;
+      referenceIndex -= 1;
+    } else if (direction === 2) {
+      sourceIndex -= 1;
+    } else if (direction === 3) {
+      referenceIndex -= 1;
+    } else {
+      return [];
+    }
+  }
+  matches.reverse();
+  if (matches.length <= maxAnchors) return matches;
+  return spreadIndexes(matches.length, maxAnchors).map(index => matches[index]);
+}
+
 export function parseCueTimes(text = '') {
   const cues = [];
   const input = String(text || '');
@@ -163,6 +337,94 @@ export function deriveLinearSyncFromAnchors(anchors = [], options = {}) {
   };
 }
 
+function removeIsolatedAnchorOutliers(anchors, plan) {
+  if (anchors.length < 5) return anchors;
+  const signedResiduals = anchors.map(anchor => (
+    anchor.referenceMs - (anchor.sourceMs * plan.ratio + plan.offsetMs)
+  ));
+  return anchors.filter((_anchor, index) => {
+    const neighbors = [];
+    for (let offset = -2; offset <= 2; offset += 1) {
+      if (offset === 0) continue;
+      const value = signedResiduals[index + offset];
+      if (Number.isFinite(value)) neighbors.push(value);
+    }
+    if (neighbors.length < 2) return true;
+    const localMedian = median(neighbors);
+    const localDeviation = median(neighbors.map(value => Math.abs(value - localMedian)));
+    const threshold = Math.max(2500, localDeviation * 4 + 500);
+    return Math.abs(signedResiduals[index] - localMedian) <= threshold;
+  });
+}
+
+function evaluateAnchorPlan(anchors, sourceCues, referenceCues, options, strategy) {
+  if (anchors.length < 4) {
+    return {
+      enabled: false,
+      type: strategy === 'dtw' ? 'reference-dtw-piecewise' : 'reference-piecewise',
+      ratio: 1,
+      offsetMs: 0,
+      confidence: 0,
+      hints: [`reference:insufficient-${strategy}-anchors:${anchors.length}`],
+      anchors: anchors.length,
+      temporalAgreement: 0,
+      anchorCoverage: 0,
+      anchorPoints: [],
+      strategy,
+    };
+  }
+
+  const initialPlan = deriveLinearSyncFromAnchors(anchors, options);
+  const stableAnchors = removeIsolatedAnchorOutliers(anchors, initialPlan);
+  const evaluatedAnchors = stableAnchors.length >= 4 ? stableAnchors : anchors;
+  const plan = deriveLinearSyncFromAnchors(evaluatedAnchors, options);
+  const agreement = evaluatedAnchors.reduce((sum, anchor) => sum + Number(anchor.agreement ?? 0), 0) / evaluatedAnchors.length;
+  const coverage = anchorCoverage(evaluatedAnchors, sourceCues.length, referenceCues.length);
+  const minAgreement = Number(options.minTemporalAgreement ?? 0.68);
+  let confidence = plan.confidence;
+  if (agreement >= 0.75) confidence += 8;
+  else if (agreement < 0.58) confidence -= 24;
+  if (coverage >= 0.65) confidence += 6;
+  else if (coverage < Number(options.minAnchorCoverage ?? 0.45)) confidence -= 25;
+  confidence = clamp(Math.round(confidence), 0, 100);
+  const enabled = plan.enabled
+    && agreement >= minAgreement
+    && coverage >= Number(options.minAnchorCoverage ?? 0.45)
+    && confidence >= Number(options.minConfidence ?? 72);
+  const piecewise = options.piecewise !== false;
+
+  return {
+    ...plan,
+    enabled,
+    type: strategy === 'dtw'
+      ? (piecewise ? 'reference-dtw-piecewise' : 'reference-dtw-linear')
+      : (piecewise ? 'reference-piecewise' : 'reference-linear'),
+    confidence,
+    hints: [
+      ...plan.hints,
+      `reference:strategy:${strategy}`,
+      `reference:outliers-removed:${anchors.length - evaluatedAnchors.length}`,
+      `reference:agreement:${agreement.toFixed(2)}`,
+      `reference:minimumAgreement:${minAgreement.toFixed(2)}`,
+      `reference:coverage:${coverage.toFixed(2)}`,
+    ],
+    temporalAgreement: Number(agreement.toFixed(3)),
+    anchorCoverage: Number(coverage.toFixed(3)),
+    anchorPoints: enabled && piecewise
+      ? evaluatedAnchors.map(anchor => ({ sourceMs: anchor.sourceMs, referenceMs: anchor.referenceMs }))
+      : [],
+    strategy,
+  };
+}
+
+function candidateScore(candidate) {
+  return Number(candidate.confidence || 0)
+    + Number(candidate.temporalAgreement || 0) * 15
+    + Number(candidate.anchorCoverage || 0) * 10
+    - Math.min(20, Number(candidate.residualMedianMs || 0) / 500)
+    + (candidate.enabled ? 1000 : 0);
+}
+
 export function deriveReferenceSyncPlan(sourceText, referenceText, options = {}) {
   const sourceCues = parseCueTimes(sourceText);
   const referenceCues = parseCueTimes(referenceText);
@@ -175,42 +437,28 @@ export function deriveReferenceSyncPlan(sourceText, referenceText, options = {})
     return { enabled: false, type: 'reference-piecewise', ratio: 1, offsetMs: 0, confidence: 0, hints: [`reference:cue-ratio-low:${cueRatio.toFixed(2)}`], sourceCueCount: sourceCues.length, referenceCueCount: referenceCues.length };
   }
   const temporalAnchors = buildTemporalAnchors(sourceCues, referenceCues, options.maxAnchors ?? 48);
-  if (temporalAnchors.length < 4) {
-    return {
-      enabled: false,
-      type: 'reference-piecewise',
-      ratio: 1,
-      offsetMs: 0,
-      confidence: 0,
-      hints: [`reference:insufficient-temporal-anchors:${temporalAnchors.length}`],
-      sourceCueCount: sourceCues.length,
-      referenceCueCount: referenceCues.length,
-      cueRatio: Number(cueRatio.toFixed(3)),
-    };
+  const candidates = [
+    evaluateAnchorPlan(temporalAnchors, sourceCues, referenceCues, options, 'temporal'),
+  ];
+  if (options.dtwEnabled !== false) {
+    const dtwAnchors = buildDtwAnchors(sourceCues, referenceCues, {
+      maxCues: options.dtwMaxCues ?? 192,
+      maxAnchors: options.maxAnchors ?? 48,
+      bandRatio: options.dtwBandRatio ?? 0.18,
+      gapPenalty: options.dtwGapPenalty ?? 0.42,
+      maxMatchCost: options.dtwMaxMatchCost ?? 0.52,
+    });
+    candidates.push(evaluateAnchorPlan(dtwAnchors, sourceCues, referenceCues, options, 'dtw'));
   }
-  const plan = deriveLinearSyncFromAnchors(temporalAnchors, options);
-  const agreement = temporalAnchors.reduce((sum, anchor) => sum + Number(anchor.agreement ?? 0), 0) / temporalAnchors.length;
-  const coverage = anchorCoverage(temporalAnchors, sourceCues.length, referenceCues.length);
-  const minAgreement = Number(options.minTemporalAgreement ?? 0.68);
-  let confidence = plan.confidence;
-  if (agreement >= 0.75) confidence += 8;
-  else if (agreement < 0.58) confidence -= 24;
-  if (coverage >= 0.65) confidence += 6;
-  else if (coverage < Number(options.minAnchorCoverage ?? 0.45)) confidence -= 25;
-  confidence = clamp(Math.round(confidence), 0, 100);
-  const enabled = plan.enabled && agreement >= minAgreement && coverage >= Number(options.minAnchorCoverage ?? 0.45) && confidence >= Number(options.minConfidence ?? 72);
+
+  const selected = candidates.reduce((best, candidate) => (
+    candidateScore(candidate) > candidateScore(best) ? candidate : best
+  ));
   return {
-    ...plan,
-    enabled,
-    type: options.piecewise === false ? 'reference-linear' : 'reference-piecewise',
-    confidence,
-    hints: [...plan.hints, `reference:agreement:${agreement.toFixed(2)}`, `reference:minimumAgreement:${minAgreement.toFixed(2)}`, `reference:coverage:${coverage.toFixed(2)}`],
+    ...selected,
     sourceCueCount: sourceCues.length,
     referenceCueCount: referenceCues.length,
     cueRatio: Number(cueRatio.toFixed(3)),
-    temporalAgreement: Number(agreement.toFixed(3)),
-    anchorCoverage: Number(coverage.toFixed(3)),
-    anchorPoints: enabled && options.piecewise !== false ? temporalAnchors.map(anchor => ({ sourceMs: anchor.sourceMs, referenceMs: anchor.referenceMs })) : [],
   };
 }
 

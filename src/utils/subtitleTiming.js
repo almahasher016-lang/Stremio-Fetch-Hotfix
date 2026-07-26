@@ -84,7 +84,7 @@ export function applySyncPlan(text, plan = {}) {
   const anchors = Array.isArray(plan.anchorPoints) ? plan.anchorPoints
     .filter(anchor => Number.isFinite(Number(anchor.sourceMs)) && Number.isFinite(Number(anchor.referenceMs)))
     .sort((left, right) => Number(left.sourceMs) - Number(right.sourceMs)) : [];
-  if (plan.type === 'reference-piecewise' && anchors.length >= 4) {
+  if (String(plan.type || '').endsWith('piecewise') && anchors.length >= 4) {
     const mapTime = value => {
       const time = Number(value);
       if (!Number.isFinite(time)) return 0;

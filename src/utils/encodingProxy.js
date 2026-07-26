@@ -8,6 +8,7 @@ import { deriveReferenceSyncPlan } from './referenceSync.js';
 import { httpError } from './httpError.js';
 import { analyzeSubtitleQuality } from './subtitleQuality.js';
 import { versionRegistry } from '../services/versionRegistryService.js';
+import { extractSubtitlePayload } from './subtitleArchive.js';
 
 function b64url(input) {
   return Buffer.from(input).toString('base64url');
@@ -137,7 +138,7 @@ function cacheKeyFor(payload) {
     reference: payload.reference || null,
     context: payload.context || null,
   });
-  return `encoding:${sign(normalized)}`;
+  return `encoding:v4:${sign(normalized)}`;
 }
 
 export async function resolveProxiedSubtitle(token) {
@@ -147,13 +148,23 @@ export async function resolveProxiedSubtitle(token) {
   if (cached) return { ...cached, cache: 'hit' };
 
   const buffer = await fetchBufferFollowingRedirects(payload.url);
-  const processed = processSubtitleBuffer(buffer, payload.options || {});
+  const extracted = await extractSubtitlePayload(buffer, {
+    maxDecompressedBytes: config.encodingProxy.maxDecompressedBytes,
+    maxArchiveEntries: config.encodingProxy.maxArchiveEntries,
+    sourceName: payload.name,
+  });
+  const processed = processSubtitleBuffer(extracted.buffer, payload.options || {});
 
   let syncPlan = payload.syncPlan || null;
   if (payload.reference?.url) {
     try {
       const referenceBuffer = await fetchBufferFollowingRedirects(payload.reference.url);
-      const referenceProcessed = processSubtitleBuffer(referenceBuffer, { ...payload.options, stripSdh: true });
+      const referenceExtracted = await extractSubtitlePayload(referenceBuffer, {
+        maxDecompressedBytes: config.encodingProxy.maxDecompressedBytes,
+        maxArchiveEntries: config.encodingProxy.maxArchiveEntries,
+        sourceName: payload.reference.name,
+      });
+      const referenceProcessed = processSubtitleBuffer(referenceExtracted.buffer, { ...payload.options, stripSdh: true });
       const referencePlan = deriveReferenceSyncPlan(processed.text, referenceProcessed.text, config.referenceSync);
       if (referencePlan.enabled) {
         syncPlan = { ...referencePlan, enabled: true, referenceProvider: payload.reference.provider, referenceName: payload.reference.name };
@@ -174,6 +185,8 @@ export async function resolveProxiedSubtitle(token) {
     text,
     encoding: processed.encoding,
     format: processed.format,
+    archive: extracted.archive,
+    archiveEntry: extracted.entryName,
     sync: syncPlan?.enabled ? syncPlan : null,
     quality,
   };
@@ -228,6 +241,8 @@ export async function previewProxiedSubtitle(token, { maxCues = 6 } = {}) {
     cache: resolved.cache,
     encoding: resolved.encoding,
     format: resolved.format,
+    archive: resolved.archive || null,
+    archiveEntry: resolved.archiveEntry || null,
     sync: resolved.sync || null,
     quality: resolved.quality || null,
     cues: previewCuesFromSrt(resolved.text, maxCues),

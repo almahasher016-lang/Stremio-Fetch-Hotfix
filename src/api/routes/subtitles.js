@@ -263,6 +263,7 @@ router.get('/proxy/encoding/:token.srt', async (req, res, next) => {
     res.setHeader('Cache-Control', result.cache === 'hit' ? 'public, max-age=604800, immutable' : 'public, max-age=86400');
     res.setHeader('X-Source-Encoding', result.encoding || 'utf-8');
     res.setHeader('X-Source-Format', result.format || 'srt');
+    if (result.archive) res.setHeader('X-Source-Archive', result.archive);
     if (result.sync) res.setHeader('X-Sync-Confidence', String(result.sync.confidence));
     res.end(result.text);
   } catch (err) {

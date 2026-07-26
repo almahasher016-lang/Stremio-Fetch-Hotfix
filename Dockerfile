@@ -1,8 +1,8 @@
-FROM node:20-slim
+FROM node:24-slim
 WORKDIR /app
 ENV NODE_ENV=production
-COPY package.json ./
-RUN npm install --omit=dev --ignore-scripts
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
 COPY src ./src
 COPY README.md CHANGELOG.md .env.example ./
 RUN mkdir -p /app/data

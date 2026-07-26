@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.1.0 - Deterministic Hardening
+- Added signature-based ZIP, GZIP, and XZ extraction with strict expanded-size and archive-entry limits.
+- Added deterministic Arabic subtitle selection for multi-file ZIP archives.
+- Added bounded deterministic DTW alignment, robust anchor outlier removal, and conservative strategy selection.
+- Added weekly live provider search-contract checks without subtitle download calls.
+- Upgraded the supported production runtime and CI to Node.js 24 LTS.
+- Added and committed a reproducible npm lockfile and switched Docker/CI installs to `npm ci`.
+
 ## 3.0.1 - Direct Stremio Update
 - Preserved the original Stremio addon ID so existing installations update in place.
 - Removed the unsupported Docker volume instruction so Railway builds and deploys successfully.

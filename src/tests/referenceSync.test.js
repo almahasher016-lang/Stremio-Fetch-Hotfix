@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildPositionalAnchors, deriveReferenceSyncPlan, parseCueTimes } from '../utils/referenceSync.js';
+import {
+  buildDtwAnchors,
+  buildPositionalAnchors,
+  deriveLinearSyncFromAnchors,
+  deriveReferenceSyncPlan,
+  parseCueTimes,
+} from '../utils/referenceSync.js';
 
 function makeSrt(times) {
   return times.map((start, index) => {
@@ -45,4 +51,62 @@ test('deriveReferenceSyncPlan rejects very different cue counts', () => {
   const reference = makeSrt([10000, 20000]);
   const plan = deriveReferenceSyncPlan(source, reference, { minCues: 4 });
   assert.equal(plan.enabled, false);
+});
+
+test('deterministic DTW keeps the correct offset when one subtitle has an extra cue', () => {
+  const sourceStarts = [10000, 14500, 23000, 35500, 41000, 59000, 68000, 80500, 97000, 110000];
+  const referenceStarts = [...sourceStarts.map(start => start + 2300), 31700].sort((left, right) => left - right);
+  const source = parseCueTimes(makeSrt(sourceStarts));
+  const reference = parseCueTimes(makeSrt(referenceStarts));
+  const anchors = buildDtwAnchors(source, reference, { maxAnchors: 48 });
+  const closeMatches = anchors.filter(anchor => Math.abs((anchor.referenceMs - anchor.sourceMs) - 2300) <= 100);
+  const plan = deriveLinearSyncFromAnchors(anchors, { minConfidence: 60 });
+
+  assert.ok(closeMatches.length >= 8);
+  assert.equal(plan.enabled, true);
+  assert.equal(plan.offsetMs, 2300);
+});
+
+test('reference synchronization removes structural outliers before piecewise mapping', () => {
+  const sourceStarts = [10000, 14500, 23000, 35500, 41000, 59000, 68000, 80500, 97000, 110000];
+  const referenceStarts = [...sourceStarts.map(start => start + 2300), 31700].sort((left, right) => left - right);
+  const plan = deriveReferenceSyncPlan(makeSrt(sourceStarts), makeSrt(referenceStarts), {
+    minConfidence: 60,
+    minCues: 4,
+  });
+
+  assert.equal(plan.enabled, true);
+  assert.equal(plan.offsetMs, 2300);
+  assert.ok(plan.hints.some(hint => /^reference:outliers-removed:[1-9]/.test(hint)));
+  assert.ok(plan.anchorPoints.every(anchor => Math.abs((anchor.referenceMs - anchor.sourceMs) - 2300) <= 100));
+});
+
+test('outlier filtering preserves a sustained piecewise timeline change', () => {
+  const sourceStarts = [10000, 15000, 23000, 34000, 49000, 58000, 70000, 85000, 97000, 115000, 128000, 146000];
+  const referenceStarts = sourceStarts.map((start, index) => start + (index < 6 ? 2000 : 6000));
+  const plan = deriveReferenceSyncPlan(makeSrt(sourceStarts), makeSrt(referenceStarts), {
+    minConfidence: 60,
+    minCues: 4,
+  });
+  const offsets = new Set(plan.anchorPoints.map(anchor => anchor.referenceMs - anchor.sourceMs));
+
+  assert.equal(plan.enabled, true);
+  assert.deepEqual([...offsets].sort((left, right) => left - right), [2000, 6000]);
+  assert.ok(plan.hints.includes('reference:outliers-removed:0'));
+});
+
+test('deterministic synchronization rejects unrelated timelines', () => {
+  const source = makeSrt([1000, 5000, 12000, 18000, 30000, 45000, 49000, 70000, 90000, 110000]);
+  const reference = makeSrt([2000, 3000, 4000, 30000, 31000, 32000, 33000, 100000, 101000, 160000]);
+  const plan = deriveReferenceSyncPlan(source, reference, { minConfidence: 72, minCues: 4 });
+  assert.equal(plan.enabled, false);
+});
+
+test('deterministic synchronization does not alter an already aligned subtitle', () => {
+  const starts = [10000, 14500, 23000, 35500, 41000, 59000, 68000, 80500];
+  const text = makeSrt(starts);
+  const plan = deriveReferenceSyncPlan(text, text, { minConfidence: 60, minCues: 4 });
+  assert.equal(plan.enabled, false);
+  assert.equal(plan.offsetMs, 0);
+  assert.equal(plan.ratio, 1);
 });
