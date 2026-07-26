@@ -272,6 +272,7 @@ router.get('/proxy/encoding/:token.srt', async (req, res, next) => {
     res.setHeader('X-Source-Format', result.format || 'srt');
     if (result.archive) res.setHeader('X-Source-Archive', result.archive);
     if (result.sync) res.setHeader('X-Sync-Confidence', String(result.sync.confidence));
+    if (result.fallbackIndex > 0) res.setHeader('X-Subtitle-Fallback', String(result.fallbackIndex));
     res.end(result.text);
   } catch (err) {
     next(err);

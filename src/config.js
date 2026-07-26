@@ -6,7 +6,7 @@ const PRIVATE_DEFAULTS = Object.freeze({
   PROJECT_LOCKED_DEFAULTS: 'true',
   NODE_ENV: 'production',
   ADDON_ID: 'community.m7md-arabic-direct-v233-private',
-  ADDON_NAME: 'm7md Arabic Resolver v3.1.2',
+  ADDON_NAME: 'm7md Arabic Resolver v3.1.3',
   ADDON_DESCRIPTION: 'Private Arabic-first Stremio subtitle resolver with exact-version matching, SSRF-safe bounded downloads, ZIP/GZIP/XZ extraction, SRT/VTT/ASS/SSA normalization, quality validation, and deterministic DTW timeline sync without ذكاء اصطناعي.',
   SUBTITLE_DISPLAY_NAME: 'm7md Arabic',
   PRIVATE_MODE: 'true',
@@ -25,6 +25,7 @@ const PRIVATE_DEFAULTS = Object.freeze({
   ENCODING_PROXY_MAX_BYTES: '1500000',
   ENCODING_PROXY_MAX_DECOMPRESSED_BYTES: '5000000',
   ENCODING_PROXY_MAX_ARCHIVE_ENTRIES: '32',
+  ENCODING_PROXY_MAX_FALLBACKS: '2',
   ENCODING_PROXY_MAX_REDIRECTS: '4',
   ENCODING_PROXY_STRIP_MUSIC: 'true',
   ENCODING_PROXY_STRIP_SDH: 'true',
@@ -146,7 +147,7 @@ function setting(key, fallback = '') {
   return fallback;
 }
 
-const RELEASE_VERSION = '3.1.2';
+const RELEASE_VERSION = '3.1.3';
 const RELEASE_ID = PRIVATE_DEFAULTS.ADDON_ID;
 const RELEASE_NAME = PRIVATE_DEFAULTS.ADDON_NAME;
 const RELEASE_USER_AGENT = `m7mdArabicDirect/${RELEASE_VERSION}`;
@@ -285,6 +286,7 @@ export const config = Object.freeze({
     maxBytes: toInt(setting('ENCODING_PROXY_MAX_BYTES'), 1500000, 50000, 10000000),
     maxDecompressedBytes: toInt(setting('ENCODING_PROXY_MAX_DECOMPRESSED_BYTES'), 5000000, 50000, 20000000),
     maxArchiveEntries: toInt(setting('ENCODING_PROXY_MAX_ARCHIVE_ENTRIES'), 32, 1, 200),
+    maxFallbacks: toInt(setting('ENCODING_PROXY_MAX_FALLBACKS'), 2, 0, 4),
     maxRedirects: toInt(setting('ENCODING_PROXY_MAX_REDIRECTS'), 4, 0, 10),
     stripSdhDefault: toBool(setting('ENCODING_PROXY_STRIP_SDH'), false),
     stripMusicNotes: toBool(setting('ENCODING_PROXY_STRIP_MUSIC'), true),

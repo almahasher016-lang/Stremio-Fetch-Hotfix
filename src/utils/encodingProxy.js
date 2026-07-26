@@ -37,10 +37,37 @@ function assertSafeUrl(url) {
   return parsePublicRemoteUrl(url).toString();
 }
 
+function compactTokenCandidate(candidate, download) {
+  if (!candidate) return null;
+  return {
+    provider: candidate.provider || 'unknown',
+    originalProvider: candidate.originalProvider || '',
+    providerId: candidate.providerId || candidate.fileId || candidate.id || '',
+    id: candidate.id || '',
+    name: candidate.name || '',
+    releaseName: candidate.releaseName || '',
+    fileName: candidate.fileName || '',
+    lang: candidate.lang || 'ara',
+    download,
+    movieHash: candidate.movieHash || candidate.hash || '',
+  };
+}
+
+function compactTokenFallback(fallback) {
+  const url = assertSafeUrl(fallback.url);
+  return {
+    url,
+    name: fallback.name || '',
+    provider: fallback.provider || 'unknown',
+    candidate: compactTokenCandidate(fallback.candidate, url),
+  };
+}
+
 export function createEncodingToken(payload) {
   const expiresAt = Math.floor(Date.now() / 1000) + config.encodingProxy.linkTtlSeconds;
+  const primaryUrl = assertSafeUrl(payload.url);
   const safePayload = {
-    url: assertSafeUrl(payload.url),
+    url: primaryUrl,
     name: payload.name || '',
     provider: payload.provider || 'unknown',
     options: {
@@ -54,18 +81,10 @@ export function createEncodingToken(payload) {
       name: payload.reference.name || '',
       provider: payload.reference.provider || 'unknown',
     } : null,
-    candidate: payload.candidate ? {
-      provider: payload.candidate.provider || 'unknown',
-      originalProvider: payload.candidate.originalProvider || '',
-      providerId: payload.candidate.providerId || payload.candidate.fileId || payload.candidate.id || '',
-      id: payload.candidate.id || '',
-      name: payload.candidate.name || '',
-      releaseName: payload.candidate.releaseName || '',
-      fileName: payload.candidate.fileName || '',
-      lang: payload.candidate.lang || 'ara',
-      download: payload.url,
-      movieHash: payload.candidate.movieHash || payload.candidate.hash || '',
-    } : null,
+    candidate: compactTokenCandidate(payload.candidate, primaryUrl),
+    fallbacks: Array.isArray(payload.fallbacks)
+      ? payload.fallbacks.slice(0, config.encodingProxy.maxFallbacks).map(compactTokenFallback)
+      : [],
     context: payload.context ? {
       type: payload.context.type || 'movie',
       id: payload.context.id || '',
@@ -106,6 +125,11 @@ export function verifyEncodingToken(token) {
   if (payload.expiresAt && payload.expiresAt < Math.floor(Date.now() / 1000)) throw httpError(410, 'Subtitle token expired');
   payload.url = assertSafeUrl(payload.url);
   if (payload.reference?.url) payload.reference.url = assertSafeUrl(payload.reference.url);
+  if (payload.fallbacks !== undefined && !Array.isArray(payload.fallbacks)) throw httpError(400, 'Invalid subtitle fallback payload');
+  payload.fallbacks = (payload.fallbacks || []).slice(0, config.encodingProxy.maxFallbacks).map(fallback => ({
+    ...fallback,
+    url: assertSafeUrl(fallback?.url),
+  }));
   return payload;
 }
 
@@ -225,12 +249,78 @@ function assertValidProcessedSubtitle(text) {
 function cacheKeyFor(payload) {
   const normalized = JSON.stringify({
     url: payload.url,
+    fallbacks: payload.fallbacks || [],
     options: payload.options || {},
     syncPlan: payload.syncPlan || null,
     reference: payload.reference || null,
     context: payload.context || null,
   });
-  return `encoding:v4:${sign(normalized)}`;
+  return `encoding:v5:${sign(normalized)}`;
+}
+
+function analyzeProcessedSubtitle(text, context) {
+  if (!config.qualityGate.enabled) return null;
+  return analyzeSubtitleQuality(text, {
+    expectedDurationMs: context?.durationMs || null,
+    minCues: config.qualityGate.minCues,
+    minArabicRatio: config.qualityGate.minArabicRatio,
+    minCoverageRatio: config.qualityGate.minCoverageRatio,
+  });
+}
+
+async function loadProcessedSource(source, payload) {
+  const buffer = await fetchRemoteSubtitleBuffer(source.url, { provider: source.provider });
+  const extracted = await extractSubtitlePayload(buffer, {
+    maxDecompressedBytes: config.encodingProxy.maxDecompressedBytes,
+    maxArchiveEntries: config.encodingProxy.maxArchiveEntries,
+    sourceName: source.name,
+  });
+  const processed = processSubtitleBuffer(extracted.buffer, payload.options || {});
+  assertValidProcessedSubtitle(processed.text);
+  const quality = analyzeProcessedSubtitle(processed.text, payload.context);
+  if (quality?.reasons.includes('low-arabic-ratio')) {
+    const error = httpError(422, 'Subtitle payload failed Arabic language validation');
+    error.code = 'LOW_ARABIC_RATIO';
+    error.quality = quality;
+    throw error;
+  }
+  return { source, extracted, processed };
+}
+
+async function rejectMislabeledSource(payload, source, quality) {
+  if (!payload.context || !source.candidate) return;
+  try {
+    await versionRegistry.recordDecision({
+      action: 'reject',
+      search: payload.context,
+      candidate: { ...source.candidate, quality },
+      note: 'Automatic rejection: downloaded content failed the Arabic language gate',
+    });
+  } catch (error) {
+    console.warn('[quality-gate:reject]', error.message);
+  }
+}
+
+async function selectProcessedSource(payload) {
+  const sources = [{
+    url: payload.url,
+    name: payload.name,
+    provider: payload.provider,
+    candidate: payload.candidate,
+  }, ...(payload.fallbacks || [])];
+  let lastError = null;
+  for (const [fallbackIndex, source] of sources.entries()) {
+    try {
+      return { ...(await loadProcessedSource(source, payload)), fallbackIndex };
+    } catch (error) {
+      lastError = error;
+      if (error?.name === 'AbortError') throw error;
+      if (error?.code === 'LOW_ARABIC_RATIO') {
+        await rejectMislabeledSource(payload, source, error.quality);
+      }
+    }
+  }
+  throw lastError || httpError(502, 'No usable Arabic subtitle source');
 }
 
 export async function resolveProxiedSubtitle(token) {
@@ -239,16 +329,10 @@ export async function resolveProxiedSubtitle(token) {
   const cached = await cacheGet(key);
   if (cached) return { ...cached, cache: 'hit' };
 
-  const buffer = await fetchRemoteSubtitleBuffer(payload.url, { provider: payload.provider });
-  const extracted = await extractSubtitlePayload(buffer, {
-    maxDecompressedBytes: config.encodingProxy.maxDecompressedBytes,
-    maxArchiveEntries: config.encodingProxy.maxArchiveEntries,
-    sourceName: payload.name,
-  });
-  const processed = processSubtitleBuffer(extracted.buffer, payload.options || {});
-  assertValidProcessedSubtitle(processed.text);
+  const selected = await selectProcessedSource(payload);
+  const { source, extracted, processed, fallbackIndex } = selected;
 
-  let syncPlan = payload.syncPlan || null;
+  let syncPlan = fallbackIndex === 0 ? (payload.syncPlan || null) : null;
   if (payload.reference?.url) {
     try {
       const referenceBuffer = await fetchRemoteSubtitleBuffer(payload.reference.url, { provider: payload.reference.provider });
@@ -269,12 +353,7 @@ export async function resolveProxiedSubtitle(token) {
 
   const text = applySyncPlan(processed.text, syncPlan || {});
   assertValidProcessedSubtitle(text);
-  const quality = config.qualityGate.enabled ? analyzeSubtitleQuality(text, {
-    expectedDurationMs: payload.context?.durationMs || null,
-    minCues: config.qualityGate.minCues,
-    minArabicRatio: config.qualityGate.minArabicRatio,
-    minCoverageRatio: config.qualityGate.minCoverageRatio,
-  }) : null;
+  const quality = analyzeProcessedSubtitle(text, payload.context);
   const result = {
     text,
     encoding: processed.encoding,
@@ -283,11 +362,12 @@ export async function resolveProxiedSubtitle(token) {
     archiveEntry: extracted.entryName,
     sync: syncPlan?.enabled ? syncPlan : null,
     quality,
+    fallbackIndex,
   };
-  if (payload.context && payload.candidate) {
+  if (payload.context && source.candidate) {
     await versionRegistry.recordObservation({
       search: payload.context,
-      candidate: { ...payload.candidate, quality },
+      candidate: { ...source.candidate, quality },
       quality,
       sync: result.sync,
     });
@@ -296,10 +376,27 @@ export async function resolveProxiedSubtitle(token) {
   return { ...result, cache: 'miss' };
 }
 
-export function proxiedSubtitleUrl(baseUrl, item, syncPlan = null, reference = null, context = null) {
+function absoluteDownloadUrl(baseUrl, item) {
   const download = item.download || item.url;
-  if (!config.encodingProxy.enabled || !download) return download;
-  const absolute = download.startsWith('/') ? `${baseUrl}${download}` : download;
+  if (!download) return null;
+  return download.startsWith('/') ? `${baseUrl}${download}` : download;
+}
+
+export function proxiedSubtitleUrl(baseUrl, item, syncPlan = null, reference = null, context = null, fallbackItems = []) {
+  const absolute = absoluteDownloadUrl(baseUrl, item);
+  if (!config.encodingProxy.enabled || !absolute) return absolute;
+  const fallbacks = fallbackItems
+    .map(fallback => {
+      const url = absoluteDownloadUrl(baseUrl, fallback);
+      return url ? {
+        url,
+        provider: fallback.provider,
+        name: fallback.name || fallback.releaseName,
+        candidate: fallback,
+      } : null;
+    })
+    .filter(Boolean)
+    .slice(0, config.encodingProxy.maxFallbacks);
   const token = createEncodingToken({
     url: absolute,
     provider: item.provider,
@@ -308,6 +405,7 @@ export function proxiedSubtitleUrl(baseUrl, item, syncPlan = null, reference = n
     reference,
     candidate: item,
     context,
+    fallbacks,
   });
   return `${baseUrl}/proxy/encoding/${token}.srt`;
 }
@@ -339,6 +437,7 @@ export async function previewProxiedSubtitle(token, { maxCues = 6 } = {}) {
     archiveEntry: resolved.archiveEntry || null,
     sync: resolved.sync || null,
     quality: resolved.quality || null,
+    fallbackIndex: resolved.fallbackIndex || 0,
     cues: previewCuesFromSrt(resolved.text, maxCues),
   };
 }

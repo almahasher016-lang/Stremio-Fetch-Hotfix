@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.3 - Arabic Content Fallback
+- Enforced the existing Arabic quality gate against provider files that are mislabeled as Arabic.
+- Added a bounded, signed fallback chain so a bad or unavailable top result transparently falls through to the next ranked Arabic candidate.
+- Automatically records low-Arabic provider assets as rejected for the matched movie or episode.
+- Added fallback observability through `X-Subtitle-Fallback` and token-chain regression coverage.
+
 ## 3.1.2 - End-to-End Download Recovery
 - Normalized outbound header names case-insensitively so OpenSubtitles receives exactly one required User-Agent value.
 - Converted YIFY detail links into direct subtitle ZIP links instead of proxying HTML pages.
