@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.1.2 - End-to-End Download Recovery
+- Normalized outbound header names case-insensitively so OpenSubtitles receives exactly one required User-Agent value.
+- Converted YIFY detail links into direct subtitle ZIP links instead of proxying HTML pages.
+- Added the browser-compatible User-Agent and detail-page referrer required for YIFY archive downloads while retaining DNS-pinned URL validation.
+- Added regression coverage for provider headers, YIFY link parsing, and provider-specific archive request headers.
+
 ## 3.1.1 - Live Provider Recovery
 - Restored Railway provider connectivity by using normal platform DNS for fixed trusted API origins while retaining DNS-pinned SSRF protection for untrusted subtitle URLs and cross-origin redirects.
 - Corrected SubSource availability detection so a missing API key cannot consume a provider slot.

@@ -14,6 +14,7 @@ import { createSafeRemoteDispatcher, parsePublicRemoteUrl } from './safeRemoteUr
 const MAX_TOKEN_LENGTH = 32_768;
 const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
 const SRT_CUE_RE = /\d{2,3}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2,3}:\d{2}:\d{2},\d{3}/;
+const YIFY_BROWSER_USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
 function b64url(input) {
   return Buffer.from(input).toString('base64url');
@@ -121,11 +122,33 @@ function destroyBody(body) {
   body?.destroy?.();
 }
 
+export function buildRemoteSubtitleHeaders(url, provider = '') {
+  const headers = {
+    'user-agent': config.app.userAgent,
+    accept: 'application/x-subrip,text/vtt,text/plain,application/zip,application/gzip,application/x-xz,*/*;q=0.8',
+  };
+  if (provider !== 'yify') return headers;
+  try {
+    const target = new URL(url);
+    const trusted = new URL(config.yify.baseUrl);
+    const match = target.origin === trusted.origin
+      ? target.pathname.match(/^\/subtitle\/([^/]+)\.zip$/i)
+      : null;
+    if (!match) return headers;
+    headers['user-agent'] = YIFY_BROWSER_USER_AGENT;
+    headers.referer = `${trusted.origin}/subtitles/${match[1]}`;
+  } catch {
+    // The URL is validated before this helper is used; retain generic headers.
+  }
+  return headers;
+}
+
 export async function fetchRemoteSubtitleBuffer(url, {
   maxBytes = config.encodingProxy.maxBytes,
   maxRedirects = config.encodingProxy.maxRedirects,
   timeoutMs = config.providers.timeoutMs,
   signal,
+  provider = '',
 } = {}) {
   let currentUrl = assertSafeUrl(url);
   for (let attempt = 0; attempt <= maxRedirects; attempt += 1) {
@@ -135,10 +158,7 @@ export async function fetchRemoteSubtitleBuffer(url, {
     try {
       response = await request(resolved.url, {
         method: 'GET',
-        headers: {
-          'user-agent': config.app.userAgent,
-          accept: 'application/x-subrip,text/vtt,text/plain,application/zip,application/gzip,application/x-xz,*/*;q=0.8',
-        },
+        headers: buildRemoteSubtitleHeaders(currentUrl, provider),
         dispatcher: resolved.dispatcher,
         maxRedirections: 0,
         headersTimeout: timeoutMs,
@@ -219,7 +239,7 @@ export async function resolveProxiedSubtitle(token) {
   const cached = await cacheGet(key);
   if (cached) return { ...cached, cache: 'hit' };
 
-  const buffer = await fetchRemoteSubtitleBuffer(payload.url);
+  const buffer = await fetchRemoteSubtitleBuffer(payload.url, { provider: payload.provider });
   const extracted = await extractSubtitlePayload(buffer, {
     maxDecompressedBytes: config.encodingProxy.maxDecompressedBytes,
     maxArchiveEntries: config.encodingProxy.maxArchiveEntries,
@@ -231,7 +251,7 @@ export async function resolveProxiedSubtitle(token) {
   let syncPlan = payload.syncPlan || null;
   if (payload.reference?.url) {
     try {
-      const referenceBuffer = await fetchRemoteSubtitleBuffer(payload.reference.url);
+      const referenceBuffer = await fetchRemoteSubtitleBuffer(payload.reference.url, { provider: payload.reference.provider });
       const referenceExtracted = await extractSubtitlePayload(referenceBuffer, {
         maxDecompressedBytes: config.encodingProxy.maxDecompressedBytes,
         maxArchiveEntries: config.encodingProxy.maxArchiveEntries,

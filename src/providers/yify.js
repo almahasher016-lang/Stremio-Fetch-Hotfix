@@ -24,20 +24,44 @@ function normalizeUrl(value) {
   return `${config.yify.baseUrl}/${raw}`;
 }
 
-function parseRows(html, imdbId) {
+function directDownloadUrl(value) {
+  const normalized = normalizeUrl(value);
+  if (!normalized) return null;
+  try {
+    const target = new URL(normalized);
+    const trusted = new URL(config.yify.baseUrl);
+    if (target.origin !== trusted.origin || target.username || target.password) return null;
+    const details = target.pathname.match(/^\/subtitles\/([^/]+)\/?$/i);
+    if (details) target.pathname = `/subtitle/${details[1]}.zip`;
+    else if (!/^\/subtitle\/[^/]+\.zip$/i.test(target.pathname)) return null;
+    target.search = '';
+    target.hash = '';
+    return target.toString();
+  } catch {
+    return null;
+  }
+}
+
+export function parseYifyRows(html, imdbId) {
   const rows = [];
   const blocks = String(html || '').split(/<tr\b/i).slice(1);
   for (const block of blocks) {
     if (!/Arabic|\bAR\b|العربية|arab/i.test(block)) continue;
-    const href = block.match(/href=["']([^"']+(?:subtitle|download|subtitles)[^"']*)["']/i)?.[1]
-      || block.match(/href=["']([^"']+\.srt[^"']*)["']/i)?.[1];
-    const name = decodeHtml(block.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()).slice(0, 180);
-    const download = normalizeUrl(href);
+    const anchor = block.match(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    const href = anchor?.[1];
+    const download = directDownloadUrl(href);
     if (!download) continue;
+    const providerId = block.match(/\bdata-id=["']?(\d{1,20})/i)?.[1] || `${rows.length}`;
+    const name = decodeHtml(String(anchor?.[2] || '')
+      .replace(/<br\s*\/?>/gi, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\bsubtitle\b/i, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()).slice(0, 180);
     rows.push({
       provider: 'yify',
-      id: `yify-${imdbId}-${rows.length}`,
-      providerId: `${imdbId}-${rows.length}`,
+      id: `yify-${imdbId}-${providerId}`,
+      providerId,
       name: name || 'YIFY Arabic',
       releaseName: name || '',
       fileName: '',
@@ -74,7 +98,7 @@ export async function searchYify(variant) {
         signal: variant.signal,
         trustedOrigin: config.yify.baseUrl,
       });
-      const rows = parseRows(html, imdbId).slice(0, config.yify.maxItems);
+      const rows = parseYifyRows(html, imdbId).slice(0, config.yify.maxItems);
       if (rows.length) return rows;
     } catch (error) {
       if (variant.signal?.aborted || error?.name === 'AbortError') throw error;

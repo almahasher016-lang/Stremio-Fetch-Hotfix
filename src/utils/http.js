@@ -20,6 +20,15 @@ function destroyBody(body) {
   body?.destroy?.();
 }
 
+function mergeHeaders(defaults, overrides) {
+  const merged = {};
+  for (const [name, value] of [...Object.entries(defaults || {}), ...Object.entries(overrides || {})]) {
+    if (value === undefined || value === null) continue;
+    merged[String(name).toLowerCase()] = value;
+  }
+  return merged;
+}
+
 function trustedTargetUrl(value, trustedOrigin) {
   if (!trustedOrigin) return null;
   try {
@@ -112,11 +121,10 @@ export async function fetchJson(url, {
   for (let attempt = 0; attempt <= redirects; attempt++) {
     const { response, text, targetUrl } = await requestText(currentUrl, {
       method,
-      headers: {
+      headers: mergeHeaders({
         'user-agent': config.app.userAgent,
         accept: 'application/json',
-        ...headers,
-      },
+      }, headers),
       body,
       bodyTimeout: timeoutMs,
       headersTimeout: timeoutMs,
@@ -175,11 +183,10 @@ export async function fetchText(url, {
   for (let attempt = 0; attempt <= redirects; attempt++) {
     const { response, text, targetUrl } = await requestText(currentUrl, {
       method,
-      headers: {
+      headers: mergeHeaders({
         'user-agent': config.app.userAgent,
         accept: 'text/html,application/xhtml+xml,application/xml,text/plain,*/*',
-        ...headers,
-      },
+      }, headers),
       body,
       bodyTimeout: timeoutMs,
       headersTimeout: timeoutMs,

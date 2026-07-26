@@ -77,3 +77,20 @@ test('fetchJson uses a fixed trusted provider origin without weakening redirect 
     );
   });
 });
+
+test('fetchJson sends one case-insensitive User-Agent override', async () => {
+  await withServer((req, res) => {
+    const rawNames = req.rawHeaders.filter((_value, index) => index % 2 === 0);
+    const userAgentCount = rawNames.filter(name => name.toLowerCase() === 'user-agent').length;
+    res.end(JSON.stringify({ userAgent: req.headers['user-agent'], userAgentCount }));
+  }, async baseUrl => {
+    const result = await fetchJson(`${baseUrl}/headers`, {
+      allowPrivateNetwork: true,
+      headers: { 'User-Agent': 'provider-contract/1.0' },
+    });
+    assert.deepEqual(result, {
+      userAgent: 'provider-contract/1.0',
+      userAgentCount: 1,
+    });
+  });
+});
