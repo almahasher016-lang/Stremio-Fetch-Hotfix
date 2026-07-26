@@ -82,7 +82,10 @@ function expandSubtitles(rows, expectedLanguage) {
 }
 
 async function requestSubdl(params, signal) {
-  const json = await fetchJson(`${config.subdl.baseUrl}?${params.toString()}`, { signal });
+  const json = await fetchJson(`${config.subdl.baseUrl}?${params.toString()}`, {
+    signal,
+    trustedOrigin: config.subdl.baseUrl,
+  });
   if (json && json.status === false) {
     const err = new Error(`SubDL: ${json.error || 'API returned status=false'}`);
     err.statusCode = 400;

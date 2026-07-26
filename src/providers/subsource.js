@@ -53,7 +53,11 @@ async function findMovieIds(variant) {
   const seen = new Set();
 
   async function addFrom(url) {
-    const json = await fetchJson(url, { headers: subsourceHeaders(), signal: variant.signal });
+    const json = await fetchJson(url, {
+      headers: subsourceHeaders(),
+      signal: variant.signal,
+      trustedOrigin: config.subsource.baseUrl,
+    });
     for (const item of rowsFrom(json)) {
       const id = movieIdOf(item);
       if (id && !seen.has(String(id))) {
@@ -92,6 +96,7 @@ export async function searchSubsource(variant) {
     const json = await fetchJson(`${config.subsource.baseUrl}/subtitles?${params.toString()}`, {
       headers: subsourceHeaders(),
       signal: variant.signal,
+      trustedOrigin: config.subsource.baseUrl,
     });
     for (const item of rowsFrom(json).map(row => normalizeItem(row, expectedLanguage)).filter(Boolean)) {
       const key = item.download || item.releaseName || item.id;
@@ -108,6 +113,7 @@ export async function searchSubsource(variant) {
 export async function getSubsourceDownloadLink(subtitleId) {
   const json = await fetchJson(`${config.subsource.baseUrl}/subtitles/${encodeURIComponent(subtitleId)}/download`, {
     headers: subsourceHeaders(),
+    trustedOrigin: config.subsource.baseUrl,
   });
   const link = json?.download || json?.download_url || json?.url || json?.link || json?.data?.download || json?.data?.url;
   if (!link) throw new Error('SubSource download link is missing');

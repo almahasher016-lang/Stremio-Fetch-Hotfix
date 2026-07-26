@@ -47,9 +47,11 @@ export function recordProviderCall(name, { ok, count = 0, ms = 0, error = null }
   const calls = state.success + state.fail;
   state.avgMs = calls ? Math.round(state.totalMs / calls) : 0;
   state.lastStatus = ok ? (count > 0 ? 'ok' : 'empty') : 'fail';
-  state.lastError = error ? String(error).slice(0, 240) : null;
+  const currentError = error ? String(error).slice(0, 240) : null;
+  if (ok) state.lastError = null;
+  else if (currentError && currentError !== 'circuit-breaker-open') state.lastError = currentError;
   state.lastAt = new Date().toISOString();
-  state.recent.push({ ok: Boolean(ok), count, ms: Math.round(ms || 0), error: state.lastError, at: state.lastAt });
+  state.recent.push({ ok: Boolean(ok), count, ms: Math.round(ms || 0), error: currentError, at: state.lastAt });
   while (state.recent.length > config.metrics.windowSize) state.recent.shift();
 }
 

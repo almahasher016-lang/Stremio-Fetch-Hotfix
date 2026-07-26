@@ -24,7 +24,7 @@ export const providerDefinitions = Object.freeze({
     label: 'SubSource',
     search: searchSubsource,
     supports: { movie: true, series: true, hash: false, reference: true },
-    configured: () => Boolean(config.subsource.baseUrl),
+    configured: () => Boolean(config.subsource.apiKey && config.subsource.baseUrl),
   },
   yify: {
     name: 'yify',

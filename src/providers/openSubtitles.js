@@ -79,7 +79,11 @@ export async function searchOpenSubtitles(variant) {
   if (config.openSubtitles.trustedOnly) addParam(params, 'trusted_sources', 'only');
 
   const url = `${config.openSubtitles.baseUrl}/subtitles?${params.toString()}`;
-  const json = await fetchJson(url, { headers: osHeaders(), signal: variant.signal });
+  const json = await fetchJson(url, {
+    headers: osHeaders(),
+    signal: variant.signal,
+    trustedOrigin: config.openSubtitles.baseUrl,
+  });
   const data = Array.isArray(json?.data) ? json.data : [];
   return data.map(item => normalizeItem(item, expectedLanguage, variant)).filter(Boolean).slice(0, config.providers.maxProviderItems);
 }
@@ -93,6 +97,7 @@ export async function getOpenSubtitlesDownloadLink(fileId) {
     },
     body: JSON.stringify({ file_id: Number(fileId), sub_format: 'srt' }),
     timeoutMs: config.providers.timeoutMs,
+    trustedOrigin: config.openSubtitles.baseUrl,
   });
   const link = json?.link || json?.url;
   if (!link) throw new Error('OpenSubtitles download link is missing');

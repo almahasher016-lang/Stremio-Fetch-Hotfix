@@ -69,7 +69,11 @@ export async function searchYify(variant) {
 
   for (const url of urls) {
     try {
-      const html = await fetchText(url, { timeoutMs: config.providers.timeoutMs, signal: variant.signal });
+      const html = await fetchText(url, {
+        timeoutMs: config.providers.timeoutMs,
+        signal: variant.signal,
+        trustedOrigin: config.yify.baseUrl,
+      });
       const rows = parseRows(html, imdbId).slice(0, config.yify.maxItems);
       if (rows.length) return rows;
     } catch (error) {

@@ -20,6 +20,29 @@ function destroyBody(body) {
   body?.destroy?.();
 }
 
+function trustedTargetUrl(value, trustedOrigin) {
+  if (!trustedOrigin) return null;
+  try {
+    const target = new URL(value);
+    const trusted = new URL(trustedOrigin);
+    if (
+      !['https:', 'http:'].includes(target.protocol)
+      || !['https:', 'http:'].includes(trusted.protocol)
+      || target.username
+      || target.password
+      || trusted.username
+      || trusted.password
+      || target.origin !== trusted.origin
+    ) {
+      return null;
+    }
+    target.hash = '';
+    return target.toString();
+  } catch {
+    return null;
+  }
+}
+
 async function readTextLimited(response, maxBytes) {
   const declaredLength = Number(response.headers['content-length']);
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
@@ -44,9 +67,13 @@ async function readTextLimited(response, maxBytes) {
   return Buffer.concat(chunks, total).toString('utf8');
 }
 
-async function requestText(url, options, { maxBytes, allowPrivateNetwork }) {
-  const resolved = allowPrivateNetwork ? null : await createSafeRemoteDispatcher(url);
-  const targetUrl = resolved?.url || url;
+async function requestText(url, options, { maxBytes, allowPrivateNetwork, trustedOrigin }) {
+  // Provider API origins are fixed by this application rather than supplied by
+  // users. Let the platform resolve those origins normally; keep DNS pinning
+  // for every untrusted subtitle URL and for cross-origin redirects.
+  const trustedTarget = allowPrivateNetwork ? null : trustedTargetUrl(url, trustedOrigin);
+  const resolved = allowPrivateNetwork || trustedTarget ? null : await createSafeRemoteDispatcher(url);
+  const targetUrl = trustedTarget || resolved?.url || url;
   try {
     const response = await request(targetUrl, {
       ...options,
@@ -79,6 +106,7 @@ export async function fetchJson(url, {
   maxBytes = config.providers.maxResponseBytes,
   signal,
   allowPrivateNetwork = false,
+  trustedOrigin,
 } = {}) {
   let currentUrl = url;
   for (let attempt = 0; attempt <= redirects; attempt++) {
@@ -93,7 +121,7 @@ export async function fetchJson(url, {
       bodyTimeout: timeoutMs,
       headersTimeout: timeoutMs,
       signal,
-    }, { maxBytes, allowPrivateNetwork });
+    }, { maxBytes, allowPrivateNetwork, trustedOrigin });
     const location = response.headers.location;
     if (REDIRECT_STATUS_CODES.has(response.statusCode) && location) {
       if (attempt >= redirects) throw redirectLimitError(url);
@@ -141,6 +169,7 @@ export async function fetchText(url, {
   maxBytes = config.providers.maxResponseBytes,
   signal,
   allowPrivateNetwork = false,
+  trustedOrigin,
 } = {}) {
   let currentUrl = url;
   for (let attempt = 0; attempt <= redirects; attempt++) {
@@ -155,7 +184,7 @@ export async function fetchText(url, {
       bodyTimeout: timeoutMs,
       headersTimeout: timeoutMs,
       signal,
-    }, { maxBytes, allowPrivateNetwork });
+    }, { maxBytes, allowPrivateNetwork, trustedOrigin });
     const location = response.headers.location;
     if (REDIRECT_STATUS_CODES.has(response.statusCode) && location) {
       if (attempt >= redirects) throw redirectLimitError(url);

@@ -6,7 +6,7 @@ const PRIVATE_DEFAULTS = Object.freeze({
   PROJECT_LOCKED_DEFAULTS: 'true',
   NODE_ENV: 'production',
   ADDON_ID: 'community.m7md-arabic-direct-v233-private',
-  ADDON_NAME: 'm7md Arabic Resolver v3.1.0',
+  ADDON_NAME: 'm7md Arabic Resolver v3.1.1',
   ADDON_DESCRIPTION: 'Private Arabic-first Stremio subtitle resolver with exact-version matching, SSRF-safe bounded downloads, ZIP/GZIP/XZ extraction, SRT/VTT/ASS/SSA normalization, quality validation, and deterministic DTW timeline sync without ذكاء اصطناعي.',
   SUBTITLE_DISPLAY_NAME: 'm7md Arabic',
   PRIVATE_MODE: 'true',
@@ -146,7 +146,7 @@ function setting(key, fallback = '') {
   return fallback;
 }
 
-const RELEASE_VERSION = '3.1.0';
+const RELEASE_VERSION = '3.1.1';
 const RELEASE_ID = PRIVATE_DEFAULTS.ADDON_ID;
 const RELEASE_NAME = PRIVATE_DEFAULTS.ADDON_NAME;
 const RELEASE_USER_AGENT = `m7mdArabicDirect/${RELEASE_VERSION}`;

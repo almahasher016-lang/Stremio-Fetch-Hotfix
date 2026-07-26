@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.1.1 - Live Provider Recovery
+- Restored Railway provider connectivity by using normal platform DNS for fixed trusted API origins while retaining DNS-pinned SSRF protection for untrusted subtitle URLs and cross-origin redirects.
+- Corrected SubSource availability detection so a missing API key cannot consume a provider slot.
+- Restored the YIFY movie fallback when SubSource is not configured.
+- Preserved the underlying provider failure in health metrics when the circuit breaker skips later requests.
+- Bumped the resolver release key to invalidate cached empty v3.1.0 searches.
+
 ## 3.1.0 - Deterministic Hardening
 - Added signature-based ZIP, GZIP, and XZ extraction with strict expanded-size and archive-entry limits.
 - Added deterministic Arabic subtitle selection for multi-file ZIP archives, including ASS and SSA entries.

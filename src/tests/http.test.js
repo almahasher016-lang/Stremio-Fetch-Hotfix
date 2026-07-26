@@ -48,3 +48,32 @@ test('fetchJson forwards AbortSignal to the HTTP client', async () => {
     await assert.rejects(task, error => error?.name === 'AbortError');
   });
 });
+
+test('fetchJson uses a fixed trusted provider origin without weakening redirect checks', async () => {
+  await withServer((req, res) => {
+    if (req.url === '/redirect-same-origin') {
+      res.writeHead(302, { location: '/provider' });
+      res.end();
+      return;
+    }
+    if (req.url === '/redirect-private') {
+      res.writeHead(302, { location: 'http://127.0.0.2/private' });
+      res.end();
+      return;
+    }
+    res.end('{"ok":true}');
+  }, async baseUrl => {
+    assert.deepEqual(
+      await fetchJson(`${baseUrl}/provider`, { trustedOrigin: baseUrl }),
+      { ok: true },
+    );
+    assert.deepEqual(
+      await fetchJson(`${baseUrl}/redirect-same-origin`, { trustedOrigin: baseUrl }),
+      { ok: true },
+    );
+    await assert.rejects(
+      fetchJson(`${baseUrl}/redirect-private`, { trustedOrigin: baseUrl }),
+      error => error?.status === 400,
+    );
+  });
+});

@@ -68,7 +68,11 @@ export async function resolveMetadata(search = {}) {
     try {
       const type = identity.type === 'series' ? 'series' : 'movie';
       const url = `${config.resolver.metadata.baseUrl}/${type}/${encodeURIComponent(identity.catalogId)}.json`;
-      const payload = await fetchJson(url, { timeoutMs: config.resolver.metadata.timeoutMs, redirects: 1 });
+      const payload = await fetchJson(url, {
+        timeoutMs: config.resolver.metadata.timeoutMs,
+        redirects: 1,
+        trustedOrigin: config.resolver.metadata.baseUrl,
+      });
       const resolved = normalizeMeta(payload, identity);
       const value = buildVideoIdentity({ ...identity, ...resolved, query: resolved.title || identity.query });
       cache.set(key, { value, expiresAt: Date.now() + config.resolver.metadata.cacheTtlSeconds * 1000 });
