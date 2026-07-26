@@ -3,7 +3,7 @@
   "version": "3.1.0",
   "type": "module",
   "private": true,
-  "description": "Private direct Stremio Arabic subtitles add-on with Personal Subtitle Vault, optional YIFY fallback provider, strict private ranking defaults, hash-first matching, smart cache, metrics, server-side Arabic encoding normalization, and deterministic reference auto-sync without ذكاء اصطناعي.",
+  "description": "Private direct Stremio Arabic subtitles add-on with exact-version matching, bounded SSRF-safe downloads, Arabic SRT/VTT/ASS/SSA normalization, Personal Vault, smart cache, and deterministic reference synchronization without ذكاء اصطناعي.",
   "engines": {
     "node": ">=24.12 <25"
   },
@@ -17,13 +17,12 @@
   "dependencies": {
     "@napi-rs/lzma": "1.5.1",
     "compression": "^1.8.1",
-    "cors": "^2.8.6",
-    "express": "^4.19.2",
-    "express-rate-limit": "^7.3.1",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.0",
     "fflate": "0.8.3",
-    "helmet": "^7.1.0",
+    "helmet": "^8.3.0",
     "ioredis": "^5.4.1",
     "morgan": "^1.10.0",
-    "undici": "^7.25.0"
+    "undici": "^8.9.0"
   }
 }

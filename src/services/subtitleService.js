@@ -67,8 +67,12 @@ async function runProvider(providerName, variant) {
     const results = await withRetry(() => handler(variant), {
       retries: config.providers.retries,
       baseMs: config.providers.retryBaseMs,
-      shouldRetry: error => !error.statusCode || error.statusCode >= 500 || error.statusCode === 429,
+      signal: variant.signal,
+      shouldRetry: error => !variant.signal?.aborted
+        && error?.name !== 'AbortError'
+        && (!error.statusCode || error.statusCode >= 500 || error.statusCode === 429),
     });
+    variant.signal?.throwIfAborted();
     breaker?.recordSuccess();
     recordProviderCall(providerName, { ok: true, count: results.length, ms: Date.now() - started });
     return results.map(item => ({
@@ -77,6 +81,10 @@ async function runProvider(providerName, variant) {
       matchedByHash: Boolean(item.matchedByHash || exactHashMatch(item, variant)),
     }));
   } catch (error) {
+    if (variant.signal?.aborted || error?.name === 'AbortError') {
+      recordProviderCall(providerName, { ok: false, count: 0, ms: Date.now() - started, error: 'stage-deadline' });
+      return [];
+    }
     breaker?.recordFailure();
     recordProviderCall(providerName, { ok: false, count: 0, ms: Date.now() - started, error: error.message });
     console.warn(`[provider:${providerName}]`, error.message);
@@ -94,12 +102,13 @@ function deadline(ms) {
 }
 
 async function runStage(stage, search, language = 'ar') {
+  const controller = new AbortController();
   const collected = [];
   const tasks = [];
   for (const providerName of stage.providers) {
     if (!providerAvailable(providerName, language, search.type)) continue;
     for (const item of stage.variants) {
-      tasks.push(runProvider(providerName, { ...item, language }).then(results => {
+      tasks.push(runProvider(providerName, { ...item, language, signal: controller.signal }).then(results => {
         collected.push(...results);
       }));
     }
@@ -107,7 +116,13 @@ async function runStage(stage, search, language = 'ar') {
   if (!tasks.length) return collected;
   const limit = deadline(config.resolver.stageDeadlineMs);
   try {
-    await Promise.race([Promise.all(tasks), limit.promise]);
+    const outcome = await Promise.race([
+      Promise.all(tasks).then(() => 'complete'),
+      limit.promise,
+    ]);
+    if (outcome === 'deadline') {
+      controller.abort(new DOMException('Provider stage deadline exceeded', 'AbortError'));
+    }
   } finally {
     limit.cancel();
   }

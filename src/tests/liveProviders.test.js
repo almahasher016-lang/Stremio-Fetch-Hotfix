@@ -18,6 +18,7 @@ const SEARCH = Object.freeze({
 
 function assertNormalizedResults(provider, results) {
   assert.ok(Array.isArray(results), `${provider} must return an array`);
+  assert.ok(results.length > 0, `${provider} must return at least one Arabic result for the contract title`);
   for (const item of results.slice(0, 10)) {
     assert.equal(item.provider, provider);
     assert.equal(typeof item.id, 'string');

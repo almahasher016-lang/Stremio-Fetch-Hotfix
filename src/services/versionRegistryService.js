@@ -54,38 +54,56 @@ export class VersionRegistry {
     this.maxItems = maxItems;
     this.state = initialState();
     this.loaded = false;
+    this.loadPromise = null;
     this.writeQueue = Promise.resolve();
   }
 
   async ensureLoaded() {
     if (this.loaded || !this.enabled) return;
-    this.loaded = true;
-    try {
-      const raw = await fs.readFile(this.storagePath, 'utf8');
-      const parsed = JSON.parse(raw);
-      this.state = {
-        ...initialState(),
-        ...parsed,
-        assets: parsed?.assets && typeof parsed.assets === 'object' ? parsed.assets : {},
-        associations: parsed?.associations && typeof parsed.associations === 'object' ? parsed.associations : {},
-        decisions: Array.isArray(parsed?.decisions) ? parsed.decisions : [],
-        media: parsed?.media && typeof parsed.media === 'object' ? parsed.media : {},
-      };
-    } catch (error) {
-      if (error.code !== 'ENOENT') console.warn('[version-registry:load]', error.message);
+    if (!this.loadPromise) {
+      this.loadPromise = (async () => {
+        try {
+          const raw = await fs.readFile(this.storagePath, 'utf8');
+          const parsed = JSON.parse(raw);
+          this.state = {
+            ...initialState(),
+            ...parsed,
+            assets: parsed?.assets && typeof parsed.assets === 'object' ? parsed.assets : {},
+            associations: parsed?.associations && typeof parsed.associations === 'object' ? parsed.associations : {},
+            decisions: Array.isArray(parsed?.decisions) ? parsed.decisions : [],
+            media: parsed?.media && typeof parsed.media === 'object' ? parsed.media : {},
+          };
+        } catch (error) {
+          if (error.code !== 'ENOENT') console.warn('[version-registry:load]', error.message);
+        } finally {
+          this.loaded = true;
+          this.loadPromise = null;
+        }
+      })();
     }
+    await this.loadPromise;
   }
 
   async persist() {
     if (!this.enabled || !this.storagePath) return;
     const snapshot = JSON.stringify(this.state, null, 2);
-    this.writeQueue = this.writeQueue.then(async () => {
+    const temporaryPath = `${this.storagePath}.${process.pid}.${randomUUID()}.tmp`;
+    const operation = this.writeQueue.then(async () => {
       await fs.mkdir(path.dirname(this.storagePath), { recursive: true });
-      const temporaryPath = `${this.storagePath}.${process.pid}.${Date.now()}.tmp`;
-      await fs.writeFile(temporaryPath, snapshot, 'utf8');
-      await fs.rename(temporaryPath, this.storagePath);
-    }).catch(error => console.warn('[version-registry:save]', error.message));
-    return this.writeQueue;
+      try {
+        await fs.writeFile(temporaryPath, snapshot, { encoding: 'utf8', mode: 0o600 });
+        await fs.rename(temporaryPath, this.storagePath);
+      } catch (error) {
+        await fs.unlink(temporaryPath).catch(() => {});
+        throw error;
+      }
+    });
+    this.writeQueue = operation.catch(error => console.warn('[version-registry:save]', error.message));
+    return operation;
+  }
+
+  async flush() {
+    await this.writeQueue;
   }
 
   async upsertAsset(item) {

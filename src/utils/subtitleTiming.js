@@ -1,8 +1,8 @@
-const SRT_TIME_RE = /(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})/g;
+const SRT_TIME_RE = /(\d{2,3}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2,3}:\d{2}:\d{2}[,.]\d{3})/g;
 
 export function timeToMs(value) {
   const normalized = String(value || '').replace(',', '.');
-  const match = normalized.match(/^(\d{2}):(\d{2}):(\d{2})\.(\d{3})$/);
+  const match = normalized.match(/^(\d{2,3}):(\d{2}):(\d{2})\.(\d{3})$/);
   if (!match) return null;
   const [, hh, mm, ss, ms] = match;
   return Number(hh) * 3600000 + Number(mm) * 60000 + Number(ss) * 1000 + Number(ms);

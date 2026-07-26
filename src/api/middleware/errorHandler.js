@@ -1,3 +1,5 @@
+import { redactRequestUrl } from '../../utils/logging.js';
+
 export function errorHandler(err, req, res, _next) {
   const status = Number.isInteger(err?.status) ? err.status : 500;
   const payload = {
@@ -11,7 +13,7 @@ export function errorHandler(err, req, res, _next) {
   if (status >= 500) {
     console.error('[error]', {
       requestId: req.id,
-      path: req.originalUrl,
+      path: redactRequestUrl(req.originalUrl),
       message: err?.message,
       stack: err?.stack,
     });

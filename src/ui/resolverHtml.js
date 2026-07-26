@@ -1,10 +1,12 @@
+import { config } from '../config.js';
+
 export function resolverHtml() {
   return `<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>m7md Arabic Resolver v3</title>
+  <title>${config.app.name}</title>
   <style>
     body{font-family:system-ui;margin:24px;line-height:1.65;max-width:1120px;background:#fafafa;color:#16202a}
     h1{margin-bottom:.15rem}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.6rem}
@@ -15,10 +17,11 @@ export function resolverHtml() {
     .preview{display:inline-block;background:#475569;color:#fff;padding:.65rem;border-radius:.5rem;text-decoration:none;font-weight:700}
     .status{white-space:pre-wrap;background:#0f172a;color:#e2e8f0;padding:.9rem;border-radius:.5rem;min-height:1.4rem}
     code{direction:ltr;unicode-bidi:embed}table{border-collapse:collapse;width:100%;background:#fff}th,td{border:1px solid #dbe4ee;padding:.5rem;text-align:right;font-size:.9rem}
+    footer{margin-top:2rem;color:#64748b}
   </style>
 </head>
 <body>
-  <h1>m7md Arabic Resolver v3</h1>
+  <h1>${config.app.name}</h1>
   <p>ابحث، افحص النتيجة، ثم اعتمدها أو ارفضها لنفس نسخة الفيديو.</p>
   <form id="search">
     <div class="grid">
@@ -36,6 +39,7 @@ export function resolverHtml() {
   <h2>سجل النسخ</h2>
   <p><button id="loadRegistry" class="secondary" type="button">تحديث السجل</button></p>
   <div id="registry"></div>
+  <footer><small>الإصدار ${config.app.version} · معالجة حتمية بدون ذكاء اصطناعي</small></footer>
   <script>
     const form = document.getElementById('search');
     const status = document.getElementById('status');

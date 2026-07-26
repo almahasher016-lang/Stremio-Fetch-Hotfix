@@ -32,6 +32,32 @@ function replacementRatio(text) {
   return count / Math.max(1, text.length);
 }
 
+function decodeUtf16Be(bytes, offset = 0) {
+  const length = bytes.length - offset - ((bytes.length - offset) % 2);
+  const swapped = Buffer.alloc(length);
+  for (let index = 0; index < length; index += 2) {
+    swapped[index] = bytes[offset + index + 1];
+    swapped[index + 1] = bytes[offset + index];
+  }
+  return swapped.toString('utf16le');
+}
+
+function detectBomlessUtf16(bytes) {
+  const sampleLength = Math.min(bytes.length - (bytes.length % 2), 8_192);
+  if (sampleLength < 16) return null;
+  const pairs = sampleLength / 2;
+  let evenZeros = 0;
+  let oddZeros = 0;
+  for (let index = 0; index < sampleLength; index += 2) {
+    if (bytes[index] === 0) evenZeros += 1;
+    if (bytes[index + 1] === 0) oddZeros += 1;
+  }
+  const threshold = Math.max(4, Math.floor(pairs * 0.18));
+  if (oddZeros >= threshold && oddZeros >= Math.max(1, evenZeros) * 3) return 'utf-16le';
+  if (evenZeros >= threshold && evenZeros >= Math.max(1, oddZeros) * 3) return 'utf-16be';
+  return null;
+}
+
 export function decodeSubtitleBuffer(buffer) {
   const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || '');
   if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
@@ -41,12 +67,15 @@ export function decodeSubtitleBuffer(buffer) {
     return { text: bytes.slice(2).toString('utf16le'), encoding: 'utf-16le' };
   }
   if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
-    const swapped = Buffer.alloc(bytes.length - 2);
-    for (let i = 2; i < bytes.length; i += 2) {
-      swapped[i - 2] = bytes[i + 1] || 0;
-      swapped[i - 1] = bytes[i];
-    }
-    return { text: swapped.toString('utf16le'), encoding: 'utf-16be' };
+    return { text: decodeUtf16Be(bytes, 2), encoding: 'utf-16be' };
+  }
+
+  const bomlessUtf16 = detectBomlessUtf16(bytes);
+  if (bomlessUtf16 === 'utf-16le') {
+    return { text: bytes.subarray(0, bytes.length - (bytes.length % 2)).toString('utf16le'), encoding: 'utf-16le' };
+  }
+  if (bomlessUtf16 === 'utf-16be') {
+    return { text: decodeUtf16Be(bytes), encoding: 'utf-16be' };
   }
 
   const utf8 = bytes.toString('utf8');
@@ -85,20 +114,92 @@ function stripSdhLines(text, options = {}) {
 }
 
 export function vttToSrt(text) {
-  let input = String(text || '').replace(/^WEBVTT[^\n]*(\n|$)/i, '').replace(/\r/g, '');
-  input = input.replace(/^NOTE[\s\S]*?(?:\n\n|$)/gmi, '');
-  input = input.replace(/(\d{2}:\d{2}:\d{2})\.(\d{3})/g, '$1,$2');
-  const blocks = input.split(/\n{2,}/).map(b => b.trim()).filter(Boolean);
+  const input = String(text || '').replace(/^WEBVTT[^\n]*(\n|$)/i, '').replace(/\r/g, '');
+  const blocks = input
+    .split(/\n{2,}/)
+    .map(block => block.trim())
+    .filter(Boolean)
+    .filter(block => !/^(?:NOTE|STYLE|REGION)(?:\s|$)/i.test(block));
   const output = [];
   let index = 1;
+
+  function timestamp(value) {
+    const match = String(value || '').trim().match(/^(?:(\d{1,3}):)?(\d{2}):(\d{2})\.(\d{3})$/);
+    if (!match) return null;
+    const hours = match[1] === undefined ? '00' : match[1].padStart(2, '0');
+    return `${hours}:${match[2]}:${match[3]},${match[4]}`;
+  }
+
   for (const block of blocks) {
     const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
     const timeIndex = lines.findIndex(l => /-->/.test(l));
     if (timeIndex === -1) continue;
+    const timing = lines[timeIndex].match(/^(\S+)\s*-->\s*(\S+)/);
+    const start = timestamp(timing?.[1]);
+    const end = timestamp(timing?.[2]);
+    if (!start || !end) continue;
     output.push(String(index++));
-    output.push(lines[timeIndex].replace(/\s+(align|position|line|size):[^\s]+/g, ''));
+    output.push(`${start} --> ${end}`);
     output.push(...lines.slice(timeIndex + 1));
     output.push('');
+  }
+  return output.join('\n');
+}
+
+function splitAssFields(value, count) {
+  const fields = [];
+  let remaining = String(value || '');
+  for (let index = 0; index < count - 1; index += 1) {
+    const comma = remaining.indexOf(',');
+    if (comma === -1) return [];
+    fields.push(remaining.slice(0, comma));
+    remaining = remaining.slice(comma + 1);
+  }
+  fields.push(remaining);
+  return fields;
+}
+
+function assTimestamp(value) {
+  const match = String(value || '').trim().match(/^(\d{1,3}):(\d{2}):(\d{2})[.](\d{1,3})$/);
+  if (!match) return null;
+  const milliseconds = match[4].padEnd(3, '0').slice(0, 3);
+  return `${match[1].padStart(2, '0')}:${match[2]}:${match[3]},${milliseconds}`;
+}
+
+export function assToSrt(text) {
+  const lines = String(text || '').replace(/\r/g, '').split('\n');
+  const defaultFormat = ['layer', 'start', 'end', 'style', 'name', 'marginl', 'marginr', 'marginv', 'effect', 'text'];
+  let format = defaultFormat;
+  let inEvents = false;
+  let index = 1;
+  const output = [];
+
+  for (const rawLine of lines) {
+    const section = rawLine.trim().match(/^\[([^\]]+)]$/);
+    if (section) {
+      inEvents = section[1].trim().toLowerCase() === 'events';
+      continue;
+    }
+    if (!inEvents) continue;
+
+    const formatMatch = rawLine.match(/^\s*Format\s*:\s*(.+)$/i);
+    if (formatMatch) {
+      const fields = formatMatch[1].split(',').map(field => field.trim().toLowerCase()).filter(Boolean);
+      if (fields.includes('start') && fields.includes('end') && fields.includes('text')) format = fields;
+      continue;
+    }
+
+    const dialogue = rawLine.match(/^\s*Dialogue\s*:\s*(.*)$/i);
+    if (!dialogue) continue;
+    const values = splitAssFields(dialogue[1], format.length);
+    if (!values.length) continue;
+    const start = assTimestamp(values[format.indexOf('start')]);
+    const end = assTimestamp(values[format.indexOf('end')]);
+    let cueText = values[format.indexOf('text')] || '';
+    if (!start || !end || !cueText.trim()) continue;
+    if (/\{\\p[1-9]\}/i.test(cueText) && !/\{\\p0\}/i.test(cueText)) continue;
+    cueText = cueText.replace(/\\[Nn]/g, '\n').replace(/\\h/g, ' ');
+    output.push(String(index++), `${start} --> ${end}`, cueText, '');
   }
   return output.join('\n');
 }
@@ -109,11 +210,11 @@ export function normalizeSrtIndexes(text) {
   let index = 1;
   for (const block of blocks) {
     const lines = block.split('\n').map(l => l.trimEnd());
-    const timeIndex = lines.findIndex(line => /\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,.]\d{3}/.test(line));
+    const timeIndex = lines.findIndex(line => /\d{2,3}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2,3}:\d{2}:\d{2}[,.]\d{3}/.test(line));
     if (timeIndex === -1) continue;
     output.push(String(index++));
-    output.push(lines[timeIndex].replace(/\./g, ','));
-    output.push(...lines.slice(timeIndex + 1).filter(l => !/^\d+$/.test(l) || lines.length <= 2));
+    output.push(lines[timeIndex].replace(/(\d{2}:\d{2})\.(\d{3})/g, '$1,$2'));
+    output.push(...lines.slice(timeIndex + 1));
     output.push('');
   }
   return output.join('\n').trim() + '\n';
@@ -122,10 +223,12 @@ export function normalizeSrtIndexes(text) {
 export function processSubtitleBuffer(buffer, options = {}) {
   const decoded = decodeSubtitleBuffer(buffer);
   let text = stripControlMarks(decoded.text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const isVtt = /^\s*WEBVTT/i.test(text) || /\d{2}:\d{2}:\d{2}\.\d{3}\s*-->/.test(text);
-  if (isVtt) text = vttToSrt(text);
+  const isAss = /^\s*\[(?:Script Info|Events)]/im.test(text) && /^\s*Dialogue\s*:/im.test(text);
+  const isVtt = !isAss && (/^\s*WEBVTT/i.test(text) || /(?:^|\n)(?:\d{1,3}:)?\d{2}:\d{2}\.\d{3}\s*-->/.test(text));
+  if (isAss) text = assToSrt(text);
+  else if (isVtt) text = vttToSrt(text);
   text = text.split('\n').map(stripTags).join('\n');
   text = stripSdhLines(text, options);
   text = normalizeSrtIndexes(text);
-  return { text, encoding: decoded.encoding, format: isVtt ? 'vtt' : 'srt' };
+  return { text, encoding: decoded.encoding, format: isAss ? 'ass' : isVtt ? 'vtt' : 'srt' };
 }

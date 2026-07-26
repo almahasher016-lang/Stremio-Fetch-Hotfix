@@ -3,6 +3,9 @@ import { parseRelease } from './releaseParser.js';
 import { detectSyncPlan } from './subtitleTiming.js';
 import { proxiedSubtitleUrl } from './encodingProxy.js';
 import { buildVideoIdentity } from './videoIdentity.js';
+import { httpError } from './httpError.js';
+
+const FORBIDDEN_OBJECT_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
 
 function boolish(value) {
   if (value === undefined || value === null || value === '') return undefined;
@@ -11,9 +14,24 @@ function boolish(value) {
 
 export function getBaseUrl(req) {
   if (config.app.publicBaseUrl) return config.app.publicBaseUrl;
-  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
-  const host = req.headers['x-forwarded-host'] || req.headers.host;
-  return `${proto}://${host}`.replace(/\/+$/, '');
+  const forwardedProto = Array.isArray(req.headers['x-forwarded-proto'])
+    ? req.headers['x-forwarded-proto'][0]
+    : req.headers['x-forwarded-proto'];
+  const forwardedHost = Array.isArray(req.headers['x-forwarded-host'])
+    ? req.headers['x-forwarded-host'][0]
+    : req.headers['x-forwarded-host'];
+  const proto = String(forwardedProto || req.protocol || 'http').split(',')[0].trim().toLowerCase();
+  const host = String(forwardedHost || req.headers.host || '').split(',')[0].trim();
+  if (!['https', 'http'].includes(proto) || !host || host.length > 512) throw httpError(400, 'Invalid request origin');
+  try {
+    const parsed = new URL(`${proto}://${host}`);
+    if (parsed.username || parsed.password || parsed.pathname !== '/' || parsed.search || parsed.hash) {
+      throw new Error('invalid origin');
+    }
+    return parsed.origin;
+  } catch {
+    throw httpError(400, 'Invalid request origin');
+  }
 }
 
 export function createManifest() {
@@ -41,9 +59,16 @@ export function parseExtra(extra = '') {
   for (const part of parts) {
     const [rawKey, ...rawValue] = part.split('=');
     if (!rawKey) continue;
-    const key = decodeURIComponent(rawKey);
-    const value = decodeURIComponent(rawValue.join('=') || '');
-    output[key] = value;
+    try {
+      const key = decodeURIComponent(rawKey);
+      const value = decodeURIComponent(rawValue.join('=') || '');
+      if (!key || key.length > 80 || value.length > 2_000 || FORBIDDEN_OBJECT_KEYS.has(key.toLowerCase())) {
+        throw httpError(400, 'Invalid Stremio extra parameters');
+      }
+      output[key] = value;
+    } catch {
+      throw httpError(400, 'Invalid Stremio extra parameters');
+    }
   }
   return output;
 }

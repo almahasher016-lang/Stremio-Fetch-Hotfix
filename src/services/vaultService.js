@@ -4,11 +4,15 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { isArabicLanguage, normalizeStremioLanguage } from '../utils/language.js';
 import { parseRelease, stableFingerprint } from '../utils/releaseParser.js';
+import { processSubtitleBuffer } from '../utils/subtitleProcessor.js';
+import { httpError } from '../utils/httpError.js';
+
+const TIMED_CUE_RE = /\d{2,3}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2,3}:\d{2}:\d{2},\d{3}/;
 
 const vaultItems = new Map();
 let loaded = false;
-let dirty = false;
-let saveTimer = null;
+let loadPromise = null;
+let writeQueue = Promise.resolve();
 
 function sha(value) {
   return createHash('sha256').update(String(value || '')).digest('hex');
@@ -20,7 +24,15 @@ function cleanImdb(value) {
 }
 
 function normalizeText(value) {
-  return String(value || '').replace(/\r\n/g, '\n').trim();
+  const raw = String(value || '').replace(/\r\n/g, '\n').trim();
+  if (!raw || raw.length < 12) throw httpError(400, 'Subtitle text is required');
+  if (Buffer.byteLength(raw, 'utf8') > config.vault.maxSubtitleBytes) throw httpError(413, 'Subtitle is too large');
+  const processed = processSubtitleBuffer(Buffer.from(raw, 'utf8'), {
+    stripSdh: false,
+    stripMusicNotes: false,
+  });
+  if (!TIMED_CUE_RE.test(processed.text)) throw httpError(422, 'Subtitle text does not contain valid timed cues');
+  return processed.text;
 }
 
 function normalizeEpisode(value) {
@@ -58,38 +70,45 @@ function itemKeys(item = {}) {
 
 async function ensureLoaded() {
   if (loaded || !config.vault.enabled) return;
-  loaded = true;
-  try {
-    const raw = await fs.readFile(config.vault.storagePath, 'utf8');
-    const parsed = JSON.parse(raw);
-    const items = Array.isArray(parsed?.items) ? parsed.items : [];
-    for (const item of items) {
-      if (item?.id && item?.text) vaultItems.set(item.id, item);
-    }
-  } catch (err) {
-    if (err.code !== 'ENOENT') console.warn('[vault:load]', err.message);
+  if (!loadPromise) {
+    loadPromise = (async () => {
+      try {
+        const raw = await fs.readFile(config.vault.storagePath, 'utf8');
+        const parsed = JSON.parse(raw);
+        const items = Array.isArray(parsed?.items) ? parsed.items : [];
+        for (const item of items) {
+          if (item?.id && item?.text) vaultItems.set(item.id, item);
+        }
+      } catch (err) {
+        if (err.code !== 'ENOENT') console.warn('[vault:load]', err.message);
+      } finally {
+        loaded = true;
+        loadPromise = null;
+      }
+    })();
   }
+  await loadPromise;
 }
 
-async function flushNow() {
-  if (!dirty || !config.vault.enabled) return;
-  dirty = false;
-  try {
+async function persistVault() {
+  if (!config.vault.enabled) return;
+  const items = [...vaultItems.values()].slice(-config.vault.maxItems);
+  const snapshot = JSON.stringify({ version: 1, items }, null, 2);
+  const temporaryPath = `${config.vault.storagePath}.${process.pid}.${randomUUID()}.tmp`;
+  const operation = writeQueue.then(async () => {
     await fs.mkdir(path.dirname(config.vault.storagePath), { recursive: true });
-    const items = [...vaultItems.values()].slice(-config.vault.maxItems);
-    await fs.writeFile(config.vault.storagePath, JSON.stringify({ version: 1, items }, null, 2));
-  } catch (err) {
-    console.warn('[vault:save]', err.message);
-  }
-}
-
-function scheduleSave() {
-  dirty = true;
-  if (saveTimer) return;
-  saveTimer = setTimeout(async () => {
-    saveTimer = null;
-    await flushNow();
-  }, 250).unref?.();
+    try {
+      await fs.writeFile(temporaryPath, snapshot, { encoding: 'utf8', mode: 0o600 });
+      await fs.rename(temporaryPath, config.vault.storagePath);
+    } catch (error) {
+      await fs.unlink(temporaryPath).catch(() => {});
+      throw error;
+    }
+  });
+  writeQueue = operation.catch(error => {
+    console.warn('[vault:save]', error.message);
+  });
+  return operation;
 }
 
 function toProviderItem(item, search = {}) {
@@ -144,9 +163,11 @@ export async function addVaultSubtitle(input = {}) {
   await ensureLoaded();
   const text = normalizeText(input.text || input.subtitle || input.srt);
   const byteLength = Buffer.byteLength(text, 'utf8');
-  if (!text || text.length < 12) throw new Error('Subtitle text is required');
-  if (byteLength > config.vault.maxSubtitleBytes) throw new Error('Subtitle is too large');
-  const id = input.id || sha(`${input.imdbId || ''}:${input.season || ''}:${input.episode || ''}:${input.videoHash || ''}:${input.releaseName || input.filename || ''}:${text}`).slice(0, 32) || randomUUID();
+  const requestedId = String(input.id || '').trim();
+  if (requestedId && !/^[A-Za-z0-9_-]{1,64}$/.test(requestedId)) throw httpError(400, 'Invalid vault subtitle ID');
+  const videoHash = String(input.videoHash || '').trim().toLowerCase();
+  if (videoHash.length > 128 || /[^a-z0-9_-]/i.test(videoHash)) throw httpError(400, 'Invalid video hash');
+  const id = requestedId || sha(`${input.imdbId || ''}:${input.season || ''}:${input.episode || ''}:${videoHash}:${input.releaseName || input.filename || ''}:${text}`).slice(0, 32) || randomUUID();
   const item = {
     id,
     name: String(input.name || input.releaseName || input.filename || 'Personal Arabic Subtitle').slice(0, 180),
@@ -154,7 +175,7 @@ export async function addVaultSubtitle(input = {}) {
     tmdbId: input.tmdbId || null,
     season: normalizeEpisode(input.season),
     episode: normalizeEpisode(input.episode),
-    videoHash: input.videoHash ? String(input.videoHash).toLowerCase() : null,
+    videoHash: videoHash || null,
     filename: String(input.filename || '').slice(0, 260),
     releaseName: String(input.releaseName || input.filename || '').slice(0, 260),
     lang: normalizeStremioLanguage(input.lang || 'ar'),
@@ -166,10 +187,10 @@ export async function addVaultSubtitle(input = {}) {
     updatedAt: new Date().toISOString(),
   };
   item.keys = itemKeys(item);
-  if (!item.keys.length) throw new Error('Add imdbId or videoHash to index this subtitle');
+  if (!item.keys.length) throw httpError(400, 'Add imdbId or videoHash to index this subtitle');
   vaultItems.set(item.id, item);
   while (vaultItems.size > config.vault.maxItems) vaultItems.delete(vaultItems.keys().next().value);
-  scheduleSave();
+  await persistVault();
   return { ...item, text: undefined };
 }
 
@@ -189,8 +210,12 @@ export async function deleteVaultSubtitle(id) {
   if (!config.vault.enabled) return false;
   await ensureLoaded();
   const ok = vaultItems.delete(String(id));
-  if (ok) scheduleSave();
+  if (ok) await persistVault();
   return ok;
+}
+
+export async function flushVaultWrites() {
+  await writeQueue;
 }
 
 export async function getVaultStatus() {

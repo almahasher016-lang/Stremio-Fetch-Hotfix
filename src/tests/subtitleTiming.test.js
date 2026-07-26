@@ -9,6 +9,11 @@ test('time conversion roundtrip', () => {
   assert.equal(msToTime(62345), '00:01:02,345');
 });
 
+test('time conversion supports long-form subtitles beyond 99 hours', () => {
+  assert.equal(timeToMs('100:00:00,000'), 360_000_000);
+  assert.equal(msToTime(360_000_000), '100:00:00,000');
+});
+
 test('shiftSubtitleTiming shifts all cues', () => {
   const shifted = shiftSubtitleTiming(SAMPLE, 2000);
   assert.match(shifted, /00:00:12,000 --> 00:00:14,000/);

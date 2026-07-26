@@ -79,7 +79,7 @@ export async function searchOpenSubtitles(variant) {
   if (config.openSubtitles.trustedOnly) addParam(params, 'trusted_sources', 'only');
 
   const url = `${config.openSubtitles.baseUrl}/subtitles?${params.toString()}`;
-  const json = await fetchJson(url, { headers: osHeaders() });
+  const json = await fetchJson(url, { headers: osHeaders(), signal: variant.signal });
   const data = Array.isArray(json?.data) ? json.data : [];
   return data.map(item => normalizeItem(item, expectedLanguage, variant)).filter(Boolean).slice(0, config.providers.maxProviderItems);
 }

@@ -6,8 +6,9 @@ import { decodeSubtitleBuffer } from './subtitleProcessor.js';
 import { httpError } from './httpError.js';
 
 const gunzipAsync = promisify(gunzip);
-const SUBTITLE_EXTENSIONS = new Set(['srt', 'vtt', 'txt']);
-const TIMESTAMP_RE = /\d{2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2}:\d{2}:\d{2}[,.]\d{3}/g;
+const SUBTITLE_EXTENSIONS = new Set(['srt', 'vtt', 'ass', 'ssa', 'txt']);
+const TIMESTAMP_RE = /(?:\d{1,3}:)?\d{2}:\d{2}[,.]\d{3}\s*-->\s*(?:\d{1,3}:)?\d{2}:\d{2}[,.]\d{3}/g;
+const ASS_DIALOGUE_RE = /^\s*Dialogue\s*:\s*[^,\r\n]*,\d{1,3}:\d{2}:\d{2}\.\d{1,3},\d{1,3}:\d{2}:\d{2}\.\d{1,3},/gmi;
 const ARABIC_RE = /[\u0600-\u06ff]/g;
 
 function startsWith(bytes, signature) {
@@ -51,7 +52,7 @@ function isSubtitleEntry(name) {
 function scoreCandidate(candidate, sourceName = '') {
   const decoded = decodeSubtitleBuffer(candidate.buffer);
   const text = decoded.text || '';
-  const timestamps = (text.match(TIMESTAMP_RE) || []).length;
+  const timestamps = (text.match(TIMESTAMP_RE) || []).length + (text.match(ASS_DIALOGUE_RE) || []).length;
   if (!timestamps) return Number.NEGATIVE_INFINITY;
 
   const arabicCount = (text.match(ARABIC_RE) || []).length;
@@ -59,7 +60,7 @@ function scoreCandidate(candidate, sourceName = '') {
   const arabicRatio = arabicCount / Math.max(1, letters);
   const fileName = safeEntryName(candidate.name).toLowerCase();
   const source = safeEntryName(sourceName).toLowerCase();
-  const extensionScore = { srt: 55, vtt: 45, txt: 15 }[extensionOf(fileName)] || 0;
+  const extensionScore = { srt: 55, vtt: 45, ass: 42, ssa: 40, txt: 15 }[extensionOf(fileName)] || 0;
   const arabicName = /(?:^|[._\-\s])(ar|ara|arabic|arab)(?:[._\-\s]|$)|عرب|العرب/u.test(fileName);
   const englishName = /(?:^|[._\-\s])(en|eng|english)(?:[._\-\s]|$)/.test(fileName);
   const noiseName = /sample|readme|license|commentary|forced/.test(fileName);

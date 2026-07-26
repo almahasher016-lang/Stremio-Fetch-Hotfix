@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { timeToMs } from './subtitleTiming.js';
 
-const TIME_RE = /(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})/;
+const TIME_RE = /(\d{2,3}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2,3}:\d{2}:\d{2}[,.]\d{3})/;
 const ARABIC_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/g;
 const LETTER_RE = /[\p{L}\p{N}]/gu;
 

@@ -81,8 +81,8 @@ function expandSubtitles(rows, expectedLanguage) {
   return output.filter(Boolean);
 }
 
-async function requestSubdl(params) {
-  const json = await fetchJson(`${config.subdl.baseUrl}?${params.toString()}`);
+async function requestSubdl(params, signal) {
+  const json = await fetchJson(`${config.subdl.baseUrl}?${params.toString()}`, { signal });
   if (json && json.status === false) {
     const err = new Error(`SubDL: ${json.error || 'API returned status=false'}`);
     err.statusCode = 400;
@@ -134,7 +134,7 @@ export async function searchSubdl(variant) {
   const seen = new Set();
   for (const mode of modes) {
     try {
-      const json = await requestSubdl(buildParams(variant, expectedLanguage, mode));
+      const json = await requestSubdl(buildParams(variant, expectedLanguage, mode), variant.signal);
       const rows = Array.isArray(json?.subtitles) ? json.subtitles : Array.isArray(json?.results) ? json.results : [];
       for (const item of expandSubtitles(rows, expectedLanguage)) {
         const key = item.download || item.releaseName || item.id;
@@ -145,6 +145,7 @@ export async function searchSubdl(variant) {
       }
       if (all.length) break;
     } catch (err) {
+      if (variant.signal?.aborted || err?.name === 'AbortError') throw err;
       // Try the next search shape. The outer service will log only if all shapes fail.
       if (mode === modes[modes.length - 1]) throw err;
     }

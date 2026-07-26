@@ -53,7 +53,7 @@ async function findMovieIds(variant) {
   const seen = new Set();
 
   async function addFrom(url) {
-    const json = await fetchJson(url, { headers: subsourceHeaders() });
+    const json = await fetchJson(url, { headers: subsourceHeaders(), signal: variant.signal });
     for (const item of rowsFrom(json)) {
       const id = movieIdOf(item);
       if (id && !seen.has(String(id))) {
@@ -89,7 +89,10 @@ export async function searchSubsource(variant) {
     params.set('limit', '30');
     if (variant.season) params.set('season', String(variant.season));
     if (variant.episode) params.set('episode', String(variant.episode));
-    const json = await fetchJson(`${config.subsource.baseUrl}/subtitles?${params.toString()}`, { headers: subsourceHeaders() });
+    const json = await fetchJson(`${config.subsource.baseUrl}/subtitles?${params.toString()}`, {
+      headers: subsourceHeaders(),
+      signal: variant.signal,
+    });
     for (const item of rowsFrom(json).map(row => normalizeItem(row, expectedLanguage)).filter(Boolean)) {
       const key = item.download || item.releaseName || item.id;
       if (key && !seen.has(key)) {

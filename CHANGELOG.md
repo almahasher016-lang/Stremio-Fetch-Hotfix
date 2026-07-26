@@ -2,10 +2,14 @@
 
 ## 3.1.0 - Deterministic Hardening
 - Added signature-based ZIP, GZIP, and XZ extraction with strict expanded-size and archive-entry limits.
-- Added deterministic Arabic subtitle selection for multi-file ZIP archives.
+- Added deterministic Arabic subtitle selection for multi-file ZIP archives, including ASS and SSA entries.
+- Added WebVTT and ASS/SSA to normalized SRT conversion, BOM-less UTF-16 detection, and preservation of numeric dialogue lines.
+- Added DNS-pinned SSRF protection across provider requests and subtitle redirects, private/reserved address blocking, bounded provider responses, and redacted sensitive request logging.
+- Added real AbortSignal propagation so expired provider stages stop HTTP work and retry backoff.
+- Made Personal Vault and version-registry persistence atomic and serialized, with graceful-shutdown draining.
 - Added bounded deterministic DTW alignment, robust anchor outlier removal, and conservative strategy selection.
 - Added weekly live provider search-contract checks without subtitle download calls.
-- Upgraded the supported production runtime and CI to Node.js 24 LTS.
+- Upgraded the supported production runtime and CI to Node.js 24 LTS and the current Express 5, Undici 8, Helmet 8, and express-rate-limit 8 majors.
 - Added and committed a reproducible npm lockfile and switched Docker/CI installs to `npm ci`.
 
 ## 3.0.1 - Direct Stremio Update

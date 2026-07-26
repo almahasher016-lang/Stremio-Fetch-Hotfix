@@ -69,10 +69,11 @@ export async function searchYify(variant) {
 
   for (const url of urls) {
     try {
-      const html = await fetchText(url, { timeoutMs: config.providers.timeoutMs });
+      const html = await fetchText(url, { timeoutMs: config.providers.timeoutMs, signal: variant.signal });
       const rows = parseRows(html, imdbId).slice(0, config.yify.maxItems);
       if (rows.length) return rows;
-    } catch {
+    } catch (error) {
+      if (variant.signal?.aborted || error?.name === 'AbortError') throw error;
       // Try next shape. YIFY is a lightweight fallback and must never break the main provider flow.
     }
   }
