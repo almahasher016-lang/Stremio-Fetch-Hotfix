@@ -5,6 +5,9 @@ import {
   __resetCacheForTests,
   __setRedisClientForTests,
   acquireRefreshLock,
+  cacheGet,
+  cacheSet,
+  clearCache,
   releaseRefreshLock,
   getCacheStatus,
 } from '../cache/redis.js';
@@ -122,4 +125,15 @@ test('refresh lock key is sha256 based and stable without long raw identifiers',
   const lockKey = __lockKeyForTests(veryLongKey);
   assert.match(lockKey, /lock:refresh:[a-f0-9]{64}$/);
   assert.equal(lockKey.includes('x'.repeat(160)), false);
+});
+
+test('clearCache can clear search entries without removing processed subtitles', async () => {
+  __resetCacheForTests();
+  await cacheSet('search:test', { kind: 'search' }, 60);
+  await cacheSet('encoding:v5:test', { kind: 'encoding' }, 60);
+  const result = await clearCache('search');
+  assert.equal(result.memoryDeleted, 1);
+  assert.equal(await cacheGet('search:test'), null);
+  assert.deepEqual(await cacheGet('encoding:v5:test'), { kind: 'encoding' });
+  __resetCacheForTests();
 });

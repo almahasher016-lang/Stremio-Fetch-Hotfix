@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import {
   addVaultSubtitle,
   deleteVaultSubtitle,
+  exportVaultSnapshot,
   getVaultSubtitle,
+  importVaultSnapshot,
   listVaultSubtitles,
   searchVault,
 } from '../services/vaultService.js';
@@ -59,4 +61,21 @@ test('personal vault rejects malformed subtitles and unsafe identifiers', async 
     }),
     error => error?.status === 400,
   );
+});
+
+test('personal vault exports and restores a validated backup', async () => {
+  await removeFixtures('tt6666666');
+  const item = await addVaultSubtitle({
+    imdbId: 'tt6666666',
+    releaseName: 'Backup.Movie.2026.1080p.WEB-DL',
+    subtitleBase64: Buffer.from('1\n00:00:01,000 --> 00:00:03,000\nنسخة احتياطية\n').toString('base64'),
+  });
+  const snapshot = await exportVaultSnapshot();
+  const selected = snapshot.items.filter(entry => entry.id === item.id);
+  assert.equal(selected.length, 1);
+  await deleteVaultSubtitle(item.id);
+  const result = await importVaultSnapshot({ version: 2, items: selected }, { mode: 'merge' });
+  assert.equal(result.imported, 1);
+  assert.ok(await getVaultSubtitle(item.id));
+  await deleteVaultSubtitle(item.id);
 });

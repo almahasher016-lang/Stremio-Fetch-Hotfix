@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.3.0 - Release-First Ranking and Operations
+- Added deterministic release-match tiers that take precedence over provider popularity and Vault preference whenever Stremio supplies release metadata.
+- Added streaming-service, audio codec, channel layout, bit depth, frame-rate, codec-family, and stricter WEB-DL/WEBRip parsing.
+- Added exact-release badges and release-match diagnostics to preview results.
+- Added a real closed/open/half-open circuit breaker with one probe, bounded exponential recovery, cancellation handling, and manual reset.
+- Added per-provider concurrency and request-spacing limits.
+- Added Retry-After support and bounded exponential jitter to provider retries.
+- Added provider P50/P95 latency, Prometheus histograms, L1/L2 cache counts, and aggregate cache hit ratio.
+- Added an administrator dashboard, scoped cache clearing, and breaker reset endpoints.
+- Added Vault file drag-and-drop, binary-safe base64 uploads, validated JSON export/import, and deletion controls.
+- Expanded deterministic coverage to 124 tests with 123 passing and one opt-in live contract test skipped locally.
+
 ## 3.2.0 - Private Production Hardening
 - Removed all embedded credentials and made runtime settings environment-first.
 - Added production startup validation for distinct strong proxy and administrator secrets.

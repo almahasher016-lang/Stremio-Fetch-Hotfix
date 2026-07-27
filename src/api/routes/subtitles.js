@@ -1,6 +1,13 @@
 import express from 'express';
 import { searchSubtitles } from '../../services/subtitleService.js';
-import { addVaultSubtitle, deleteVaultSubtitle, getVaultSubtitle, listVaultSubtitles } from '../../services/vaultService.js';
+import {
+  addVaultSubtitle,
+  deleteVaultSubtitle,
+  exportVaultSnapshot,
+  getVaultSubtitle,
+  importVaultSnapshot,
+  listVaultSubtitles,
+} from '../../services/vaultService.js';
 import { getOpenSubtitlesDownloadLink } from '../../providers/openSubtitles.js';
 import { getSubsourceDownloadLink } from '../../providers/subsource.js';
 import { fetchRemoteSubtitleBuffer, resolveProxiedSubtitle, previewProxiedSubtitle } from '../../utils/encodingProxy.js';
@@ -10,6 +17,7 @@ import { config } from '../../config.js';
 import { buildVideoIdentity } from '../../utils/videoIdentity.js';
 import { versionRegistry } from '../../services/versionRegistryService.js';
 import { resolverHtml } from '../../ui/resolverHtml.js';
+import { vaultPageHtml } from '../../ui/vaultHtml.js';
 import { assertAdminAuth } from '../middleware/adminAuth.js';
 
 const router = express.Router();
@@ -66,6 +74,8 @@ export function toPublicPreview(results, baseUrl, search = {}) {
     name: subtitle?.name || subtitleDisplayName(item, 'original'),
     provider: item.provider,
     score: item.score,
+    releaseMatchTier: item.releaseMatchTier || 0,
+    releaseMatch: item.releaseMatch || null,
     releaseQuality: item.parsedRelease?.quality || null,
     source: item.parsedRelease?.source || null,
     trusted: Boolean(item.trusted),
@@ -95,7 +105,7 @@ export function toPublicPreview(results, baseUrl, search = {}) {
 
 router.get('/vault.html', (_req, res) => {
   if (!config.vault.enabled) return res.status(404).end('disabled');
-  const body = Buffer.from(vaultHtml());
+  const body = Buffer.from(vaultPageHtml());
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Content-Length', body.byteLength);
@@ -148,6 +158,27 @@ router.get('/api/vault', async (req, res, next) => {
     const items = await listVaultSubtitles();
     res.setHeader('Cache-Control', 'private, no-store');
     res.json({ success: true, count: items.length, items });
+  } catch (err) { next(err); }
+});
+
+router.get('/api/vault/export', async (req, res, next) => {
+  try {
+    assertAdminAuth(req);
+    const snapshot = await exportVaultSnapshot();
+    const body = Buffer.from(JSON.stringify(snapshot, null, 2));
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="m7md-vault-backup.json"');
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('Content-Length', body.byteLength);
+    res.end(body);
+  } catch (err) { next(err); }
+});
+
+router.post('/api/vault/import', express.json({ limit: '15mb' }), async (req, res, next) => {
+  try {
+    assertAdminAuth(req);
+    const result = await importVaultSnapshot(req.body, { mode: req.query.mode || 'merge' });
+    res.json({ success: true, result });
   } catch (err) { next(err); }
 });
 

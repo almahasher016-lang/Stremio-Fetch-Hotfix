@@ -6,8 +6,14 @@ import subtitlesRoute from './api/routes/subtitles.js';
 import { errorHandler } from './api/middleware/errorHandler.js';
 import { apiLimiter } from './api/middleware/rateLimit.js';
 import { requestId } from './api/middleware/requestId.js';
-import { getBreakersStatus, getProvidersStatus, getProviderMetricsStatus } from './services/subtitleService.js';
-import { closeRedis, getCacheStatus } from './cache/redis.js';
+import {
+  getBreakersStatus,
+  getProviderLimitersStatus,
+  getProvidersStatus,
+  getProviderMetricsStatus,
+  resetProviderBreaker,
+} from './services/subtitleService.js';
+import { clearCache, closeRedis, getCacheStatus } from './cache/redis.js';
 import { createManifest, getBaseUrl } from './utils/stremio.js';
 import { config, validateRuntimeConfig } from './config.js';
 import { prometheusMetrics } from './utils/metrics.js';
@@ -15,6 +21,7 @@ import { redactRequestUrl } from './utils/logging.js';
 import { flushVaultWrites } from './services/vaultService.js';
 import { versionRegistry } from './services/versionRegistryService.js';
 import { assertAdminAuth } from './api/middleware/adminAuth.js';
+import { adminPageHtml } from './ui/adminHtml.js';
 
 validateRuntimeConfig(config);
 const app = express();
@@ -87,7 +94,7 @@ app.use(apiLimiter);
 
 const homeHtml = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:32px;line-height:1.8;max-width:900px}a{display:inline-block;margin:.25rem .5rem .25rem 0}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>${config.app.name}</h1><p>إضافة ترجمات عربية مباشرة لـ Stremio بدون ذكاء اصطناعي مع Reference Sync وSmart Cache.</p><p><a href="/manifest.json">Manifest</a><a href="/health">Health</a><a href="/metrics">Metrics</a><a href="/test.html">Test UI</a><a href="/configure">Configure</a><a href="/vault.html">Vault</a></p><footer><small>الإصدار ${config.app.version} · معالجة حتمية بدون ذكاء اصطناعي</small></footer></body></html>`;
 const homeHtmlBuf = Buffer.from(homeHtml);
-const publicHomeHtmlBuf = Buffer.from(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:32px;line-height:1.8;max-width:900px}a{display:inline-block;margin:.25rem .5rem .25rem 0}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>${config.app.name}</h1><p>إضافة ترجمات عربية مباشرة لـ Stremio، بفحص جودة حتمي وبدون ذكاء اصطناعي.</p><p><a href="/manifest.json">Manifest</a><a href="/health">Health</a><a href="/resolver.html">Resolver</a><a href="/vault.html">Vault</a></p><footer><small>الإصدار ${config.app.version}</small></footer></body></html>`);
+const publicHomeHtmlBuf = Buffer.from(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:32px;line-height:1.8;max-width:900px}a{display:inline-block;margin:.25rem .5rem .25rem 0}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>${config.app.name}</h1><p>إضافة ترجمات عربية مباشرة لـ Stremio، بفحص جودة حتمي وبدون ذكاء اصطناعي.</p><p><a href="/manifest.json">Manifest</a><a href="/health">Health</a><a href="/resolver.html">Resolver</a><a href="/vault.html">Vault</a><a href="/admin.html">Admin</a></p><footer><small>الإصدار ${config.app.version}</small></footer></body></html>`);
 
 function htmlEscape(value) {
   return String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -149,6 +156,14 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', version: config.app.version, ai: false });
 });
 
+app.get('/admin.html', (_req, res) => {
+  const body = Buffer.from(adminPageHtml());
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Content-Length', body.byteLength);
+  res.end(body);
+});
+
 app.get('/api/admin/health', async (req, res, next) => {
   try {
     assertAdminAuth(req);
@@ -162,10 +177,38 @@ app.get('/api/admin/health', async (req, res, next) => {
       providers: await getProvidersStatus(),
       cache: getCacheStatus(),
       breakers: getBreakersStatus(),
+      limiters: getProviderLimitersStatus(),
       metrics: getProviderMetricsStatus(),
     });
   } catch (error) {
     next(error);
+  }
+});
+
+app.post('/api/admin/cache/clear', async (req, res, next) => {
+  try {
+    assertAdminAuth(req);
+    const scope = String(req.query.scope || 'all').toLowerCase();
+    if (!['all', 'search', 'encoding'].includes(scope)) {
+      return res.status(400).json({ error: 'Unsupported cache scope' });
+    }
+    const result = await clearCache(scope);
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.json({ success: true, result });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+app.post('/api/admin/breakers/:provider/reset', (req, res, next) => {
+  try {
+    assertAdminAuth(req);
+    const provider = String(req.params.provider || '').toLowerCase();
+    if (!resetProviderBreaker(provider)) return res.status(404).json({ error: 'Unknown provider' });
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.json({ success: true, provider, breaker: getBreakersStatus()[provider] });
+  } catch (error) {
+    return next(error);
   }
 });
 
@@ -182,7 +225,12 @@ app.get('/metrics', (req, res, next) => {
       return res.end(body);
     }
     res.setHeader('Cache-Control', 'private, no-store');
-    return res.json({ providers: getProviderMetricsStatus(), cache: getCacheStatus(), breakers: getBreakersStatus() });
+    return res.json({
+      providers: getProviderMetricsStatus(),
+      cache: getCacheStatus(),
+      breakers: getBreakersStatus(),
+      limiters: getProviderLimitersStatus(),
+    });
   } catch (error) {
     return next(error);
   }

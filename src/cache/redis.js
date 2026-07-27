@@ -71,7 +71,7 @@ export async function cacheGetEntry(key, options = {}) {
   const fullKey = normalizeKey(key);
   const cached = unwrap(memory.get(fullKey), options);
   if (cached) {
-    recordCache(cached.stale ? 'stale' : 'hit');
+    recordCache(cached.stale ? 'memory-stale' : 'memory-hit');
     return { ...cached, source: 'memory' };
   }
   if (memory.has(fullKey)) memory.delete(fullKey);
@@ -92,7 +92,7 @@ export async function cacheGetEntry(key, options = {}) {
     }
     memory.set(fullKey, fromRedis.entry);
     pruneMemory();
-    recordCache(fromRedis.stale ? 'stale' : 'hit');
+    recordCache(fromRedis.stale ? 'redis-stale' : 'redis-hit');
     return { ...fromRedis, source: 'redis' };
   } catch (err) {
     recordCache('error');
@@ -122,6 +122,42 @@ export async function cacheSet(key, value, ttlSeconds = config.cache.ttlSeconds,
   } catch (err) {
     recordCache('error');
     console.warn('[cache:set]', err.message);
+  }
+}
+
+export async function clearCache(scope = 'all') {
+  const normalizedScope = String(scope || 'all').toLowerCase();
+  if (!['all', 'search', 'encoding'].includes(normalizedScope)) {
+    throw new Error('Unsupported cache scope');
+  }
+  const prefix = `${config.cache.keyPrefix}:`;
+  const scopedPrefix = normalizedScope === 'all' ? prefix : `${prefix}${normalizedScope}:`;
+  let memoryDeleted = 0;
+  for (const key of memory.keys()) {
+    if (!key.startsWith(scopedPrefix)) continue;
+    memory.delete(key);
+    memoryDeleted += 1;
+  }
+
+  const client = getRedis();
+  if (!client) return { scope: normalizedScope, memoryDeleted, redisDeleted: 0 };
+  let redisDeleted = 0;
+  try {
+    if (client.status === 'wait') await client.connect();
+    let cursor = '0';
+    const pattern = `${scopedPrefix}*`;
+    do {
+      const [nextCursor, keys] = await client.scan(cursor, 'MATCH', pattern, 'COUNT', 200);
+      cursor = String(nextCursor);
+      if (keys.length) {
+        redisDeleted += Number(await client.del(...keys)) || 0;
+      }
+    } while (cursor !== '0');
+    return { scope: normalizedScope, memoryDeleted, redisDeleted };
+  } catch (err) {
+    recordCache('error');
+    console.warn('[cache:clear]', err.message);
+    throw err;
   }
 }
 

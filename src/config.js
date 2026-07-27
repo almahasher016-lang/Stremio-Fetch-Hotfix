@@ -1,5 +1,5 @@
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
-const RELEASE_VERSION = '3.2.0';
+const RELEASE_VERSION = '3.3.0';
 const RELEASE_ID = 'community.m7md-arabic-direct-v233-private';
 const RELEASE_NAME = `m7md Arabic Resolver v${RELEASE_VERSION}`;
 const RELEASE_USER_AGENT = `m7mdArabicDirect/${RELEASE_VERSION}`;
@@ -111,6 +111,9 @@ export function buildConfig(env = process.env) {
       retryBaseMs: toInt(get('PROVIDER_RETRY_BASE_MS'), 250, 0, 3000),
       breakerLimit: toInt(get('CIRCUIT_BREAKER_LIMIT'), 4, 1, 20),
       breakerResetMs: toInt(get('CIRCUIT_BREAKER_RESET_MS'), 30000, 1000, 300000),
+      breakerMaxResetMs: toInt(get('CIRCUIT_BREAKER_MAX_RESET_MS'), 240000, 1000, 1800000),
+      maxConcurrentPerProvider: toInt(get('PROVIDER_MAX_CONCURRENT'), 2, 1, 10),
+      minIntervalMsPerProvider: toInt(get('PROVIDER_MIN_INTERVAL_MS'), 100, 0, 5000),
       topN: toInt(get('TOP_N'), 5, 1, 20),
       maxProviderItems: toInt(get('MAX_PROVIDER_ITEMS'), 60, 5, 250),
       searchFullSeason: toBool(get('SEARCH_FULL_SEASON'), true),

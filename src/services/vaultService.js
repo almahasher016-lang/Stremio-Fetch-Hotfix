@@ -23,11 +23,25 @@ function cleanImdb(value) {
   return match ? match[0].toLowerCase() : null;
 }
 
-function normalizeText(value) {
-  const raw = String(value || '').replace(/\r\n/g, '\n').trim();
-  if (!raw || raw.length < 12) throw httpError(400, 'Subtitle text is required');
-  if (Buffer.byteLength(raw, 'utf8') > config.vault.maxSubtitleBytes) throw httpError(413, 'Subtitle is too large');
-  const processed = processSubtitleBuffer(Buffer.from(raw, 'utf8'), {
+function decodeBase64(value) {
+  const normalized = String(value || '').replace(/\s+/g, '');
+  if (!normalized || !/^[A-Za-z0-9+/]*={0,2}$/.test(normalized) || normalized.length % 4 !== 0) {
+    throw httpError(400, 'Invalid subtitle base64');
+  }
+  const buffer = Buffer.from(normalized, 'base64');
+  if (buffer.toString('base64').replace(/=+$/, '') !== normalized.replace(/=+$/, '')) {
+    throw httpError(400, 'Invalid subtitle base64');
+  }
+  return buffer;
+}
+
+function normalizeText(input) {
+  const encoded = input?.subtitleBase64 || input?.base64;
+  const raw = input?.text || input?.subtitle || input?.srt;
+  const buffer = encoded ? decodeBase64(encoded) : Buffer.from(String(raw || ''), 'utf8');
+  if (buffer.byteLength < 12) throw httpError(400, 'Subtitle text is required');
+  if (buffer.byteLength > config.vault.maxSubtitleBytes) throw httpError(413, 'Subtitle is too large');
+  const processed = processSubtitleBuffer(buffer, {
     stripSdh: false,
     stripMusicNotes: false,
   });
@@ -161,7 +175,7 @@ export async function searchVault(search = {}) {
 export async function addVaultSubtitle(input = {}) {
   if (!config.vault.enabled) throw new Error('Personal Vault is disabled');
   await ensureLoaded();
-  const text = normalizeText(input.text || input.subtitle || input.srt);
+  const text = normalizeText(input);
   const byteLength = Buffer.byteLength(text, 'utf8');
   const requestedId = String(input.id || '').trim();
   if (requestedId && !/^[A-Za-z0-9_-]{1,64}$/.test(requestedId)) throw httpError(400, 'Invalid vault subtitle ID');
@@ -206,6 +220,65 @@ export async function listVaultSubtitles() {
   return [...vaultItems.values()].map(item => ({ ...item, text: undefined })).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
 
+export async function exportVaultSnapshot() {
+  if (!config.vault.enabled) throw httpError(403, 'Personal Vault is disabled');
+  await ensureLoaded();
+  const items = [...vaultItems.values()];
+  return {
+    version: 2,
+    appVersion: config.app.version,
+    exportedAt: new Date().toISOString(),
+    count: items.length,
+    items,
+  };
+}
+
+export async function importVaultSnapshot(snapshot, { mode = 'merge' } = {}) {
+  if (!config.vault.enabled) throw httpError(403, 'Personal Vault is disabled');
+  await ensureLoaded();
+  const normalizedMode = String(mode || 'merge').toLowerCase();
+  if (!['merge', 'replace'].includes(normalizedMode)) throw httpError(400, 'Vault import mode must be merge or replace');
+  if (!snapshot || !Array.isArray(snapshot.items)) throw httpError(400, 'Invalid Vault backup');
+  if (snapshot.items.length > config.vault.maxItems) throw httpError(413, 'Vault backup contains too many items');
+
+  const imported = [];
+  for (const raw of snapshot.items) {
+    if (!raw || typeof raw !== 'object') throw httpError(400, 'Invalid Vault backup item');
+    const text = normalizeText(raw);
+    const requestedId = String(raw.id || '').trim();
+    if (!/^[A-Za-z0-9_-]{1,64}$/.test(requestedId)) throw httpError(400, 'Invalid vault subtitle ID');
+    const videoHash = String(raw.videoHash || '').trim().toLowerCase();
+    if (videoHash.length > 128 || /[^a-z0-9_-]/i.test(videoHash)) throw httpError(400, 'Invalid video hash');
+    const item = {
+      id: requestedId,
+      name: String(raw.name || raw.releaseName || raw.filename || 'Personal Arabic Subtitle').slice(0, 180),
+      imdbId: cleanImdb(raw.imdbId || raw.query) || null,
+      tmdbId: raw.tmdbId || null,
+      season: normalizeEpisode(raw.season),
+      episode: normalizeEpisode(raw.episode),
+      videoHash: videoHash || null,
+      filename: String(raw.filename || '').slice(0, 260),
+      releaseName: String(raw.releaseName || raw.filename || '').slice(0, 260),
+      lang: normalizeStremioLanguage(raw.lang || 'ar'),
+      hearingImpaired: Boolean(raw.hearingImpaired),
+      text,
+      bytes: Buffer.byteLength(text, 'utf8'),
+      keys: [],
+      createdAt: Number.isFinite(Date.parse(raw.createdAt)) ? new Date(raw.createdAt).toISOString() : new Date().toISOString(),
+      updatedAt: Number.isFinite(Date.parse(raw.updatedAt)) ? new Date(raw.updatedAt).toISOString() : new Date().toISOString(),
+    };
+    item.keys = itemKeys(item);
+    if (!item.keys.length) throw httpError(400, `Vault item ${item.id} has no imdbId or videoHash`);
+    imported.push(item);
+  }
+
+  if (normalizedMode === 'replace') vaultItems.clear();
+  for (const item of imported) vaultItems.set(item.id, item);
+  while (vaultItems.size > config.vault.maxItems) vaultItems.delete(vaultItems.keys().next().value);
+  await persistVault();
+  return { mode: normalizedMode, imported: imported.length, total: vaultItems.size };
+}
+
 export async function deleteVaultSubtitle(id) {
   if (!config.vault.enabled) return false;
   await ensureLoaded();
@@ -224,6 +297,7 @@ export async function getVaultStatus() {
     enabled: config.vault.enabled,
     uploadEnabled: config.vault.uploadEnabled,
     items: vaultItems.size,
+    backupVersion: 2,
     storagePath: config.vault.storagePath,
   };
 }

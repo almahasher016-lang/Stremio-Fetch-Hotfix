@@ -1,0 +1,75 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { fileURLToPath } from 'node:url';
+import { config } from '../config.js';
+
+const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
+
+async function waitForServer(child) {
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Server startup timed out')), 5_000);
+    child.once('exit', code => {
+      clearTimeout(timeout);
+      reject(new Error(`Server exited during startup with code ${code}`));
+    });
+    child.stdout.on('data', chunk => {
+      if (!String(chunk).includes('running on port')) return;
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
+}
+
+test('server exposes the release, administration dashboard, and maintenance actions', async t => {
+  const port = 31_817;
+  const adminToken = 'test-admin-token-which-is-at-least-32-bytes';
+  const child = spawn(process.execPath, ['src/server.js'], {
+    cwd: repositoryRoot,
+    env: {
+      ...process.env,
+      NODE_ENV: 'test',
+      PORT: String(port),
+      ADMIN_TOKEN: adminToken,
+      ENCODING_PROXY_SECRET: 'test-proxy-secret-which-is-at-least-32-bytes',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  t.after(async () => {
+    if (child.exitCode !== null) return;
+    child.kill('SIGTERM');
+    await once(child, 'exit');
+  });
+  await waitForServer(child);
+
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const headers = { 'x-admin-token': adminToken };
+  const healthResponse = await fetch(`${baseUrl}/health`);
+  assert.equal(healthResponse.status, 200);
+  assert.deepEqual(await healthResponse.json(), { status: 'ok', version: config.app.version, ai: false });
+
+  const adminResponse = await fetch(`${baseUrl}/api/admin/health`, { headers });
+  assert.equal(adminResponse.status, 200);
+  const admin = await adminResponse.json();
+  assert.equal(admin.version, config.app.version);
+  assert.equal(admin.limiters.yify.maxConcurrent, config.providers.maxConcurrentPerProvider);
+  assert.equal(admin.breakers.yify.state, 'closed');
+
+  for (const page of ['/admin.html', '/vault.html']) {
+    const response = await fetch(`${baseUrl}${page}`);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, /^<!doctype html>/i);
+    assert.match(html, /<\/html>$/i);
+    assert.match(html, new RegExp(config.app.version.replaceAll('.', '\\.')));
+  }
+
+  const clearResponse = await fetch(`${baseUrl}/api/admin/cache/clear?scope=search`, { method: 'POST', headers });
+  assert.equal(clearResponse.status, 200);
+  assert.equal((await clearResponse.json()).result.scope, 'search');
+
+  const resetResponse = await fetch(`${baseUrl}/api/admin/breakers/yify/reset`, { method: 'POST', headers });
+  assert.equal(resetResponse.status, 200);
+  assert.equal((await resetResponse.json()).breaker.state, 'closed');
+});

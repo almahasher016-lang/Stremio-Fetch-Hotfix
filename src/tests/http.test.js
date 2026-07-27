@@ -49,6 +49,18 @@ test('fetchJson forwards AbortSignal to the HTTP client', async () => {
   });
 });
 
+test('fetchJson preserves Retry-After metadata for bounded provider retries', async () => {
+  await withServer((_req, res) => {
+    res.writeHead(429, { 'content-type': 'application/json', 'retry-after': '2' });
+    res.end('{"error":"slow down"}');
+  }, async baseUrl => {
+    await assert.rejects(
+      fetchJson(`${baseUrl}/limited`, { allowPrivateNetwork: true }),
+      error => error?.statusCode === 429 && error?.retryAfter === '2',
+    );
+  });
+});
+
 test('fetchJson uses a fixed trusted provider origin without weakening redirect checks', async () => {
   await withServer((req, res) => {
     if (req.url === '/redirect-same-origin') {

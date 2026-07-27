@@ -107,6 +107,8 @@ function qualityBadges(item, mode) {
   if (item.provider === 'registry') badges.push('📌 Verified Version');
   if (item.sourceType === 'version-registry-exact-hash') badges.push('🔒 Exact Version');
   if (item.sourceType === 'personal-vault-exact-hash') badges.push('🔑 Exact Hash');
+  if (item.releaseMatchTier >= 5) badges.push('🎯 Exact Release');
+  else if (item.releaseMatchTier >= 3) badges.push('✅ Release Match');
   if (item.trusted) badges.push('🏆 Verified');
   if (mode === 'reference') badges.push('⚡ RefSync');
   if (mode === 'sync') badges.push('⏱ AutoSync');

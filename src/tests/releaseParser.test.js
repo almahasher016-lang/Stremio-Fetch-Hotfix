@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRelease, tokenOverlapScore, buildSearchVariants } from '../utils/releaseParser.js';
+import {
+  buildSearchVariants,
+  normalizedStringSimilarity,
+  parseRelease,
+  tokenOverlapScore,
+} from '../utils/releaseParser.js';
 
 test('parseRelease extracts core video details', () => {
   const parsed = parseRelease('Movie.Name.2024.1080p.WEB-DL.x265-GROUP.mkv');
@@ -16,6 +21,50 @@ test('parseRelease extracts season and episode', () => {
   assert.equal(parsed.season, 2);
   assert.equal(parsed.episode, 7);
   assert.equal(parsed.quality, '2160p');
+  assert.equal(parsed.service, 'netflix');
+  assert.equal(parsed.codecFamily, 'hevc');
+});
+
+test('parseRelease normalizes modern streaming, video, audio, and frame-rate tags', () => {
+  const parsed = parseRelease('Show.S01E02.2160p.AMZN.WEB-DL.DV.HDR10+.HEVC.10bit.DDP.5.1.23.976fps-FLUX.mkv');
+  assert.equal(parsed.service, 'amazon');
+  assert.equal(parsed.source, 'web-dl');
+  assert.equal(parsed.codecFamily, 'hevc');
+  assert.equal(parsed.bitDepth, '10');
+  assert.equal(parsed.audioCodec, 'eac3');
+  assert.equal(parsed.audioChannels, '5.1');
+  assert.equal(parsed.fps, 23.976);
+  assert.equal(parsed.releaseGroup, 'FLUX');
+});
+
+test('parseRelease keeps WEBRip distinct from WEB-DL for exact matching', () => {
+  assert.equal(parseRelease('Movie.1080p.WEBRip.x264.mkv').source, 'webrip');
+  assert.equal(parseRelease('Movie.1080p.WEB-DL.x264.mkv').source, 'web-dl');
+});
+
+test('parseRelease ignores subtitle language suffixes after the release group', () => {
+  assert.equal(parseRelease('Movie.2026.1080p.WEB-DL-GROUP.ar.forced.srt').releaseGroup, 'GROUP');
+});
+
+test('parseRelease gives REMUX precedence and separates Atmos from the audio codec', () => {
+  const parsed = parseRelease('Movie.2160p.BluRay.REMUX.Atmos.TrueHD7.1-GROUP.mkv');
+  assert.equal(parsed.source, 'remux');
+  assert.equal(parsed.audioCodec, 'truehd');
+  assert.equal(parsed.audioProfile, 'atmos');
+  assert.equal(parsed.audioChannels, '7.1');
+});
+
+test('normalizedStringSimilarity is deterministic and rewards near-identical releases', () => {
+  const close = normalizedStringSimilarity(
+    'Movie.Name.2024.1080p.AMZN.WEB-DL.x265-GROUP.mkv',
+    'Movie Name 2024 1080p AMZN WEB-DL x265-GROUP.srt',
+  );
+  const distant = normalizedStringSimilarity(
+    'Movie.Name.2024.1080p.AMZN.WEB-DL.x265-GROUP.mkv',
+    'Different.Movie.2010.720p.BluRay.x264-OTHER.srt',
+  );
+  assert.ok(close > 0.9);
+  assert.ok(close > distant);
 });
 
 test('tokenOverlapScore rewards shared release tokens', () => {

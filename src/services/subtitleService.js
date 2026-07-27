@@ -1,6 +1,7 @@
 import { config } from '../config.js';
 import { acquireRefreshLock, cacheGetEntry, cacheSet, releaseRefreshLock } from '../cache/redis.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
+import { ProviderLimiter } from '../utils/providerLimiter.js';
 import { withRetry } from '../utils/retry.js';
 import { parseRelease, tokenOverlapScore } from '../utils/releaseParser.js';
 import { rankAndFilter, scoreSubtitle } from '../utils/scoring.js';
@@ -19,6 +20,14 @@ const breakers = new Map(Object.keys(providerHandlers).map(name => [
   new CircuitBreaker(name, {
     limit: config.providers.breakerLimit,
     resetMs: config.providers.breakerResetMs,
+    maxResetMs: config.providers.breakerMaxResetMs,
+  }),
+]));
+const providerLimiters = new Map(Object.keys(providerHandlers).map(name => [
+  name,
+  new ProviderLimiter(name, {
+    maxConcurrent: config.providers.maxConcurrentPerProvider,
+    minIntervalMs: config.providers.minIntervalMsPerProvider,
   }),
 ]));
 const refreshingKeys = new Set();
@@ -58,35 +67,52 @@ async function runProvider(providerName, variant) {
   const handler = providerHandlers[providerName];
   if (!handler) return [];
   const breaker = breakers.get(providerName);
-  if (breaker?.open) {
-    recordProviderCall(providerName, { ok: false, count: 0, ms: 0, error: 'circuit-breaker-open' });
-    return [];
-  }
-  const started = Date.now();
+  const limiter = providerLimiters.get(providerName);
   try {
-    const results = await withRetry(() => handler(variant), {
-      retries: config.providers.retries,
-      baseMs: config.providers.retryBaseMs,
+    return await limiter.run(async () => {
+      if (breaker && !breaker.tryAcquire()) {
+        recordProviderCall(providerName, { ok: false, count: 0, ms: 0, error: 'circuit-breaker-open' });
+        return [];
+      }
+      const started = Date.now();
+      try {
+        const results = await withRetry(() => handler(variant), {
+          retries: config.providers.retries,
+          baseMs: config.providers.retryBaseMs,
+          signal: variant.signal,
+          shouldRetry: error => !variant.signal?.aborted
+            && error?.name !== 'AbortError'
+            && (!error.statusCode || error.statusCode >= 500 || error.statusCode === 429),
+        });
+        variant.signal?.throwIfAborted();
+        breaker?.recordSuccess();
+        recordProviderCall(providerName, { ok: true, count: results.length, ms: Date.now() - started });
+        return results.map(item => ({
+          ...item,
+          searchReason: variant.reason,
+          matchedByHash: Boolean(item.matchedByHash || exactHashMatch(item, variant)),
+        }));
+      } catch (error) {
+        if (variant.signal?.aborted || error?.name === 'AbortError') {
+          breaker?.recordCancellation();
+          recordProviderCall(providerName, { ok: false, count: 0, ms: Date.now() - started, error: 'stage-deadline' });
+          return [];
+        }
+        breaker?.recordFailure();
+        recordProviderCall(providerName, { ok: false, count: 0, ms: Date.now() - started, error: error.message });
+        console.warn(`[provider:${providerName}]`, error.message);
+        return [];
+      }
+    }, {
       signal: variant.signal,
-      shouldRetry: error => !variant.signal?.aborted
-        && error?.name !== 'AbortError'
-        && (!error.statusCode || error.statusCode >= 500 || error.statusCode === 429),
     });
-    variant.signal?.throwIfAborted();
-    breaker?.recordSuccess();
-    recordProviderCall(providerName, { ok: true, count: results.length, ms: Date.now() - started });
-    return results.map(item => ({
-      ...item,
-      searchReason: variant.reason,
-      matchedByHash: Boolean(item.matchedByHash || exactHashMatch(item, variant)),
-    }));
   } catch (error) {
     if (variant.signal?.aborted || error?.name === 'AbortError') {
-      recordProviderCall(providerName, { ok: false, count: 0, ms: Date.now() - started, error: 'stage-deadline' });
+      breaker?.recordCancellation();
+      recordProviderCall(providerName, { ok: false, count: 0, ms: 0, error: 'stage-deadline-queued' });
       return [];
     }
-    breaker?.recordFailure();
-    recordProviderCall(providerName, { ok: false, count: 0, ms: Date.now() - started, error: error.message });
+    recordProviderCall(providerName, { ok: false, count: 0, ms: 0, error: error.message });
     console.warn(`[provider:${providerName}]`, error.message);
     return [];
   }
@@ -144,6 +170,10 @@ async function rankArabic(items, search) {
     maxReturnedPerRelease: config.ranking.maxReturnedPerRelease,
     minRankScore: config.ranking.minRankScore,
   }).slice(0, config.providers.topN);
+}
+
+async function finalizeArabic(search, ...groups) {
+  return rankArabic(mergeResults(...groups), search);
 }
 
 function referenceCompatibility(arabic, reference, search) {
@@ -232,7 +262,7 @@ async function buildFreshSubtitles(input) {
     searchVault(initial),
   ]);
   const verifiedHash = registryResults.filter(item => item.sourceType === 'version-registry-exact-hash' && item.trusted);
-  if (verifiedHash.length) return mergeResults(verifiedHash, vaultResults).slice(0, config.providers.topN);
+  if (verifiedHash.length) return finalizeArabic(initial, verifiedHash, vaultResults);
 
   const hashPlan = createSearchPlan(initial, providerDefinitions, config.providers.enabled, {
     language: 'ar',
@@ -243,7 +273,7 @@ async function buildFreshSubtitles(input) {
   const hashRanked = await rankArabic(hashRaw, initial);
   const verifiedProviderHash = hashRanked.filter(item => exactHashMatch(item, initial));
   if (verifiedProviderHash.length) {
-    return mergeResults(verifiedHash, vaultResults, verifiedProviderHash, registryResults).slice(0, config.providers.topN);
+    return finalizeArabic(initial, verifiedHash, vaultResults, verifiedProviderHash, registryResults);
   }
 
   const search = await resolveMetadata(initial);
@@ -262,7 +292,7 @@ async function buildFreshSubtitles(input) {
   const withReferences = await attachReferenceCandidates(ranked, search);
   const suggestedCurrent = registryResults.some(item => item.searchReason === 'suggested-version');
   if (suggestedCurrent) await versionRegistry.suggestUpgrade(search, withReferences);
-  return mergeResults(registryResults, vaultResults, withReferences).slice(0, config.providers.topN + registryResults.length);
+  return finalizeArabic(search, registryResults, vaultResults, withReferences);
 }
 
 function refreshInBackground(key, search) {
@@ -325,4 +355,16 @@ export function getProviderMetricsStatus() {
 
 export function getBreakersStatus() {
   return Object.fromEntries([...breakers].map(([name, breaker]) => [name, breaker.status()]));
+}
+
+export function resetProviderBreaker(providerName) {
+  const normalized = lower(providerName);
+  const breaker = breakers.get(normalized);
+  if (!breaker) return false;
+  breaker.reset();
+  return true;
+}
+
+export function getProviderLimitersStatus() {
+  return Object.fromEntries([...providerLimiters].map(([name, limiter]) => [name, limiter.status()]));
 }

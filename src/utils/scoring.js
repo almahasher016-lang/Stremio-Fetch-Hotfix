@@ -1,6 +1,11 @@
 import { config as appConfig } from '../config.js';
 import { isArabicLanguage } from './language.js';
-import { parseRelease, tokenOverlapScore } from './releaseParser.js';
+import {
+  normalizedStringSimilarity,
+  parseRelease,
+  stableFingerprint,
+  tokenOverlapScore,
+} from './releaseParser.js';
 
 function sameNumber(a, b) {
   if (a === null || a === undefined || b === null || b === undefined) return false;
@@ -31,10 +36,137 @@ function providerPriority(provider) {
   return 0;
 }
 
+const RELEASE_FIELDS = [
+  { key: 'quality', weight: 7, critical: true },
+  { key: 'source', weight: 8, critical: true },
+  { key: 'releaseGroup', weight: 9, critical: true },
+  { key: 'service', weight: 6, critical: true },
+  { key: 'codecFamily', weight: 4, critical: false },
+  { key: 'bitDepth', weight: 2, critical: false },
+  { key: 'hdr', weight: 3, critical: false },
+  { key: 'audioCodec', weight: 3, critical: false },
+  { key: 'audioProfile', weight: 2, critical: false },
+  { key: 'audioChannels', weight: 2, critical: false },
+  { key: 'year', weight: 3, critical: true },
+  { key: 'season', weight: 10, critical: true },
+  { key: 'episode', weight: 12, critical: true },
+];
+
+function releaseValueMatches(key, target, candidate) {
+  if (key === 'fps') return Math.abs(Number(target) - Number(candidate)) <= 0.02;
+  return lower(target) === lower(candidate);
+}
+
+export function buildReleaseMatch(target, release) {
+  const matched = [];
+  const mismatched = [];
+  const missing = [];
+  let matchedWeight = 0;
+  let mismatchWeight = 0;
+  let criticalMismatches = 0;
+  let targetFields = 0;
+
+  for (const field of RELEASE_FIELDS) {
+    if (!exists(target[field.key])) continue;
+    targetFields += 1;
+    if (!exists(release[field.key])) {
+      missing.push(field.key);
+      continue;
+    }
+    if (releaseValueMatches(field.key, target[field.key], release[field.key])) {
+      matched.push(field.key);
+      matchedWeight += field.weight;
+    } else {
+      mismatched.push(field.key);
+      mismatchWeight += field.weight;
+      if (field.critical) criticalMismatches += 1;
+    }
+  }
+
+  if (exists(target.fps)) {
+    targetFields += 1;
+    if (!exists(release.fps)) {
+      missing.push('fps');
+    } else if (releaseValueMatches('fps', target.fps, release.fps)) {
+      matched.push('fps');
+      matchedWeight += 6;
+    } else {
+      mismatched.push('fps');
+      mismatchWeight += 6;
+      criticalMismatches += 1;
+    }
+  }
+
+  const similarity = normalizedStringSimilarity(target.raw, release.raw);
+  const exactFingerprint = Boolean(
+    target.raw
+    && release.raw
+    && stableFingerprint(target.raw) === stableFingerprint(release.raw),
+  );
+  const has = key => matched.includes(key);
+  let tier = 0;
+
+  if (targetFields > 0) {
+    if (exactFingerprint && criticalMismatches === 0) tier = 6;
+    else if (
+      has('releaseGroup')
+      && has('source')
+      && has('quality')
+      && criticalMismatches === 0
+    ) tier = 5;
+    else if (
+      criticalMismatches === 0
+      && (
+        (has('releaseGroup') && (has('source') || has('quality')))
+        || (has('source') && has('quality') && matched.length >= 3)
+      )
+    ) tier = 4;
+    else if (criticalMismatches === 0 && has('source') && has('quality')) tier = 3;
+    else if (criticalMismatches === 0 && (matchedWeight >= 9 || (similarity >= 0.88 && matched.length))) tier = 2;
+    else if (matched.length) tier = 1;
+  }
+
+  if (criticalMismatches > 0) tier = Math.min(tier, 1);
+  return {
+    tier,
+    exactFingerprint,
+    targetFields,
+    matched,
+    mismatched,
+    missing,
+    matchedWeight,
+    mismatchWeight,
+    criticalMismatches,
+    similarity: Number(similarity.toFixed(4)),
+    priority: (tier * 10_000) + (matchedWeight * 100) - (mismatchWeight * 120) + Math.round(similarity * 100),
+  };
+}
+
 export function scoreSubtitle(candidate, search = {}) {
-  const filename = search.extra?.filename || search.extra?.videoId || search.extra?.videoID || search.filename || '';
-  const target = parseRelease(filename || search.query || '');
+  const filename = search.extra?.filename || search.filename || search.extra?.videoId || search.extra?.videoID || '';
+  const extraFps = search.extra?.fps ?? search.extra?.frameRate ?? search.extra?.frame_rate;
+  const extraGroup = search.extra?.releaseGroup ?? search.extra?.release_group;
+  const fpsHint = exists(extraFps)
+    ? (/\bfps\b/i.test(String(extraFps)) ? extraFps : `${extraFps}fps`)
+    : null;
+  const groupHint = exists(extraGroup)
+    ? (/^-|\[/.test(String(extraGroup)) ? extraGroup : `-${extraGroup}`)
+    : null;
+  const releaseHints = [
+    search.extra?.quality ?? search.extra?.video_quality,
+    search.extra?.resolution ?? search.extra?.video_resolution,
+    search.extra?.videoQuality,
+    search.extra?.source ?? search.extra?.videoSource,
+    search.extra?.service ?? search.extra?.streamingService,
+    search.extra?.codec ?? search.extra?.video_codec,
+    search.extra?.videoCodec,
+    search.extra?.audio ?? search.extra?.audioCodec,
+    fpsHint,
+    groupHint,
+  ].filter(value => exists(value) && String(value).length <= 80);
+  const target = parseRelease([filename || search.query || '', ...releaseHints].join(' '));
   const release = parseRelease(candidate.releaseName || candidate.fileName || candidate.name || candidate.title || '');
+  const releaseMatch = buildReleaseMatch(target, release);
 
   const scoreRef = { value: 0 };
   const reasons = [];
@@ -83,7 +215,7 @@ export function scoreSubtitle(candidate, search = {}) {
   }
 
   if (target.codec && release.codec) {
-    if (target.codec === release.codec) add(90, 'codec-match');
+    if (target.codecFamily === release.codecFamily) add(90, 'codec-match');
     else add(-110, 'codec-mismatch');
   }
 
@@ -96,6 +228,45 @@ export function scoreSubtitle(candidate, search = {}) {
     if (target.hdr === release.hdr) add(55, 'hdr-match');
     else add(-70, 'hdr-mismatch');
   }
+
+  if (target.service && release.service) {
+    if (target.service === release.service) add(170, 'streaming-service-match');
+    else add(-260, 'streaming-service-mismatch');
+  }
+
+  if (target.bitDepth && release.bitDepth) {
+    if (target.bitDepth === release.bitDepth) add(45, 'bit-depth-match');
+    else add(-45, 'bit-depth-mismatch');
+  }
+
+  if (target.audioCodec && release.audioCodec) {
+    if (target.audioCodec === release.audioCodec) add(65, 'audio-codec-match');
+    else add(-55, 'audio-codec-mismatch');
+  }
+
+  if (target.audioChannels && release.audioChannels) {
+    if (target.audioChannels === release.audioChannels) add(45, 'audio-channels-match');
+    else add(-40, 'audio-channels-mismatch');
+  }
+
+  if (target.audioProfile && release.audioProfile) {
+    if (target.audioProfile === release.audioProfile) add(35, 'audio-profile-match');
+    else add(-30, 'audio-profile-mismatch');
+  }
+
+  if (target.fps && release.fps) {
+    if (Math.abs(target.fps - release.fps) <= 0.02) add(130, 'fps-match');
+    else add(-180, 'fps-mismatch');
+  }
+
+  if (target.year && release.year) {
+    if (target.year === release.year) add(40, 'year-match');
+    else add(-100, 'year-mismatch');
+  }
+
+  if (releaseMatch.exactFingerprint) add(520, 'exact-release-fingerprint');
+  else if (releaseMatch.similarity >= 0.9) add(90, 'deterministic-filename-similarity');
+  else if (releaseMatch.similarity >= 0.78) add(45, 'deterministic-filename-similarity');
 
   const downloads = Number(candidate.downloads || candidate.downloadCount || 0);
   if (downloads > 0) add(Math.min(65, Math.log10(downloads + 1) * 22), 'download-popularity-capped');
@@ -110,7 +281,7 @@ export function scoreSubtitle(candidate, search = {}) {
   if (candidate.machineTranslated || candidate.automatedTranslated || candidate.autoTranslated) add(-1200, 'machine-or-ai-translated');
   if (!candidate.download && !candidate.url) add(-2000, 'missing-download-url');
 
-  return { score: Math.round(scoreRef.value), reasons, release, target };
+  return { score: Math.round(scoreRef.value), reasons, release, target, releaseMatch };
 }
 
 export function makeDedupeKey(item) {
@@ -141,15 +312,33 @@ export function rankAndFilter(results, search = {}, config = {}) {
     if (config.strictQualityFilters && item.quality && item.quality.valid === false) continue;
     const scoring = scoreSubtitle(item, search);
     if (scoring.score < minRankScore) continue;
-    ranked.push({ ...item, score: scoring.score, scoreReasons: scoring.reasons, parsedRelease: scoring.release });
+    ranked.push({
+      ...item,
+      score: scoring.score,
+      scoreReasons: scoring.reasons,
+      parsedRelease: scoring.release,
+      releaseMatch: scoring.releaseMatch,
+      releaseMatchTier: scoring.releaseMatch.tier,
+    });
   }
 
   ranked.sort((a, b) => {
-    if ((b.provider === 'vault') !== (a.provider === 'vault')) return b.provider === 'vault' ? 1 : -1;
     const aHash = a.scoreReasons?.some(r => r.reason.includes('hash')) ? 1 : 0;
     const bHash = b.scoreReasons?.some(r => r.reason.includes('hash')) ? 1 : 0;
     if (aHash !== bHash) return bHash - aHash;
-    return b.score - a.score;
+    const useReleasePriority = (a.releaseMatch?.targetFields || b.releaseMatch?.targetFields || 0) > 0;
+    if (useReleasePriority) {
+      if (a.releaseMatchTier !== b.releaseMatchTier) return b.releaseMatchTier - a.releaseMatchTier;
+      if (a.releaseMatch?.priority !== b.releaseMatch?.priority) {
+        return (b.releaseMatch?.priority || 0) - (a.releaseMatch?.priority || 0);
+      }
+    }
+    if ((b.provider === 'vault') !== (a.provider === 'vault')) return b.provider === 'vault' ? 1 : -1;
+    if (b.score !== a.score) return b.score - a.score;
+    if (Boolean(b.trusted) !== Boolean(a.trusted)) return b.trusted ? 1 : -1;
+    const downloadDelta = Number(b.downloads || b.downloadCount || 0) - Number(a.downloads || a.downloadCount || 0);
+    if (downloadDelta) return downloadDelta;
+    return `${a.provider || ''}:${a.id || a.providerId || ''}`.localeCompare(`${b.provider || ''}:${b.id || b.providerId || ''}`);
   });
 
   const deduped = [];
