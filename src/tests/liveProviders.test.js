@@ -7,6 +7,7 @@ import { searchSubsource } from '../providers/subsource.js';
 import { searchYify } from '../providers/yify.js';
 
 const LIVE_ENABLED = process.env.RUN_LIVE_PROVIDER_TESTS === '1';
+const SKIP_YIFY = process.env.SKIP_YIFY_LIVE === '1';
 const SEARCH = Object.freeze({
   type: 'movie',
   query: 'Inception',
@@ -51,7 +52,7 @@ test('live provider search contracts', {
     },
     {
       name: 'yify',
-      configured: Boolean(config.yify.enabled),
+      configured: Boolean(config.yify.enabled) && !SKIP_YIFY,
       search: searchYify,
     },
   ];
