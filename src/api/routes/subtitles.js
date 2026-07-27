@@ -11,6 +11,7 @@ import {
 import { getOpenSubtitlesDownloadLink } from '../../providers/openSubtitles.js';
 import { getSubsourceDownloadLink } from '../../providers/subsource.js';
 import { fetchRemoteSubtitleBuffer, resolveProxiedSubtitle, previewProxiedSubtitle } from '../../utils/encodingProxy.js';
+import { resolveStyledSubtitle } from '../../utils/styledSubtitle.js';
 import { buildStremioSubtitleSearch, getBaseUrl, parseExtra, toStremioSubtitles, subtitleDisplayName } from '../../utils/stremio.js';
 import { httpError } from '../../utils/httpError.js';
 import { config } from '../../config.js';
@@ -43,7 +44,6 @@ document.getElementById('refresh').onclick=refresh;
 </script></body></html>`;
 }
 
-
 function mergeExtras(routeExtra = {}, queryExtra = {}) {
   const output = { ...routeExtra };
   for (const key of Object.keys(queryExtra || {})) {
@@ -70,38 +70,37 @@ export function toPublicPreview(results, baseUrl, search = {}) {
       ? url.replace('/proxy/encoding/', '/preview/encoding/').replace(/\.srt$/, '.json')
       : null;
     return {
-    id: item.id || item.providerId || index,
-    name: subtitle?.name || subtitleDisplayName(item, 'original'),
-    provider: item.provider,
-    score: item.score,
-    releaseMatchTier: item.releaseMatchTier || 0,
-    releaseMatch: item.releaseMatch || null,
-    releaseQuality: item.parsedRelease?.quality || null,
-    source: item.parsedRelease?.source || null,
-    trusted: Boolean(item.trusted),
-    hearingImpaired: Boolean(item.hearingImpaired || item.sdh),
-    searchReason: item.searchReason,
-    url,
-    previewUrl,
-    quality: item.quality || null,
-    asset: {
-      provider: item.originalProvider || item.provider,
-      originalProvider: item.originalProvider || '',
-      providerId: item.providerId || item.fileId || item.id,
-      id: item.id,
-      name: item.name,
-      releaseName: item.releaseName,
-      fileName: item.fileName,
-      lang: item.lang,
-      download: item.download,
-      movieHash: item.movieHash,
+      id: item.id || item.providerId || index,
+      name: subtitle?.name || subtitleDisplayName(item, 'original'),
+      provider: item.provider,
       score: item.score,
+      releaseMatchTier: item.releaseMatchTier || 0,
+      releaseMatch: item.releaseMatch || null,
+      releaseQuality: item.parsedRelease?.quality || null,
+      source: item.parsedRelease?.source || null,
+      trusted: Boolean(item.trusted),
+      hearingImpaired: Boolean(item.hearingImpaired || item.sdh),
+      searchReason: item.searchReason,
+      url,
+      previewUrl,
       quality: item.quality || null,
-    },
+      asset: {
+        provider: item.originalProvider || item.provider,
+        originalProvider: item.originalProvider || '',
+        providerId: item.providerId || item.fileId || item.id,
+        id: item.id,
+        name: item.name,
+        releaseName: item.releaseName,
+        fileName: item.fileName,
+        lang: item.lang,
+        download: item.download,
+        movieHash: item.movieHash,
+        score: item.score,
+        quality: item.quality || null,
+      },
     };
   });
 }
-
 
 router.get('/vault.html', (_req, res) => {
   if (!config.vault.enabled) return res.status(404).end('disabled');
@@ -239,7 +238,6 @@ router.get('/api/subtitles', async (req, res, next) => {
   }
 });
 
-
 router.get('/api/preview', async (req, res, next) => {
   try {
     assertAdminAuth(req);
@@ -307,6 +305,24 @@ router.get('/proxy/encoding/:token.srt', async (req, res, next) => {
   }
 });
 
+async function styledSubtitleHandler(req, res, next) {
+  try {
+    const result = await resolveStyledSubtitle(req.params.token);
+    res.setHeader('Content-Type', 'text/x-ssa; charset=utf-8');
+    res.setHeader('Content-Disposition', `inline; filename="subtitle.${result.format || 'ass'}"`);
+    res.setHeader('Cache-Control', result.cache === 'hit' ? 'public, max-age=604800, immutable' : 'public, max-age=86400');
+    res.setHeader('X-Source-Encoding', result.encoding || 'utf-8');
+    res.setHeader('X-Source-Format', result.format || 'ass');
+    if (result.archive) res.setHeader('X-Source-Archive', result.archive);
+    if (result.archiveEntry) res.setHeader('X-Source-Archive-Entry', result.archiveEntry);
+    res.end(result.text);
+  } catch (err) {
+    next(err);
+  }
+}
+
+router.get('/proxy/styled/:token.ass', styledSubtitleHandler);
+router.get('/proxy/styled/:token.ssa', styledSubtitleHandler);
 
 router.get('/preview/encoding/:token.json', async (req, res, next) => {
   try {
