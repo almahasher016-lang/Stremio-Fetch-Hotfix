@@ -143,11 +143,11 @@ export function toStremioSubtitles(results, baseUrl, search = {}) {
 
   for (const [index, item] of results.entries()) {
     if (output.length >= config.ranking.maxStremioSubtitles) break;
-    const fallbackItems = [
+    const rankedFallbacks = [
       ...results.slice(index + 1),
       ...results.slice(0, index),
-    ].filter(candidate => candidate?.download || candidate?.url).slice(0, config.encodingProxy.maxFallbacks);
-    const originalUrl = proxiedSubtitleUrl(baseUrl, item, null, null, search, fallbackItems);
+    ].filter(candidate => candidate?.download || candidate?.url);
+    const originalUrl = proxiedSubtitleUrl(baseUrl, item, null, null, search, rankedFallbacks);
     if (!originalUrl) continue;
 
     const reference = referenceForProxy(baseUrl, item);
@@ -156,6 +156,22 @@ export function toStremioSubtitles(results, baseUrl, search = {}) {
       videoRelease,
       extra: search.extra || {},
     });
+    const referenceFallbacks = rankedFallbacks
+      .map(candidate => ({ ...candidate, reference: referenceForProxy(baseUrl, candidate) }))
+      .filter(candidate => candidate.reference);
+    const autoSyncFallbacks = rankedFallbacks
+      .map(candidate => ({
+        ...candidate,
+        syncPlan: detectSyncPlan({
+          subtitleRelease: candidate.parsedRelease || parseRelease(candidate.releaseName || candidate.fileName || candidate.name),
+          videoRelease,
+          extra: search.extra || {},
+        }),
+      }))
+      .filter(candidate => (
+        candidate.syncPlan.enabled
+        && candidate.syncPlan.confidence >= config.ranking.autoSyncMinConfidence
+      ));
 
     const canAddReference = config.ranking.enableReferenceAutoSync
       && reference
@@ -165,7 +181,7 @@ export function toStremioSubtitles(results, baseUrl, search = {}) {
     if (canAddReference) {
       output.push({
         id: `${item.id || item.providerId || output.length}-refsync`,
-        url: proxiedSubtitleUrl(baseUrl, item, null, reference, search, fallbackItems),
+        url: proxiedSubtitleUrl(baseUrl, item, null, reference, search, referenceFallbacks),
         lang: 'ara',
         name: subtitleName(item, 'reference'),
       });
@@ -181,7 +197,7 @@ export function toStremioSubtitles(results, baseUrl, search = {}) {
     if (canAddAutoSync) {
       output.push({
         id: `${item.id || item.providerId || output.length}-sync`,
-        url: proxiedSubtitleUrl(baseUrl, item, syncPlan, null, search, fallbackItems),
+        url: proxiedSubtitleUrl(baseUrl, item, syncPlan, null, search, autoSyncFallbacks),
         lang: 'ara',
         name: subtitleName(item, 'sync'),
       });

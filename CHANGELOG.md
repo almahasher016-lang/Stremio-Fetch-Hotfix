@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.2.0 - Private Production Hardening
+- Removed all embedded credentials and made runtime settings environment-first.
+- Added production startup validation for distinct strong proxy and administrator secrets.
+- Protected administrative search, Vault, registry, detailed health, and metrics endpoints while retaining public Stremio resources.
+- Resolved Vault subtitles internally through signed proxy tokens instead of exposing direct storage paths.
+- Added compressed, bounded signed tokens and source-specific fallback synchronization/reference plans.
+- Fixed Arabic-ratio calculation, cue-count and duration-coverage enforcement, and fallback on every hard quality failure.
+- Fixed preview-to-asset mapping and disabled fallbacks while an administrator previews a candidate.
+- Enforced machine-translation exclusion at the final result boundary.
+- Prevented credential-bearing HTTP headers from crossing origins on redirects and corrected redirect method semantics.
+- Made complete YIFY outages observable while preserving valid empty-result behavior.
+
 ## 3.1.3 - Arabic Content Fallback
 - Enforced the existing Arabic quality gate against provider files that are mislabeled as Arabic.
 - Added a bounded, signed fallback chain so a bad or unavailable top result transparently falls through to the next ranked Arabic candidate.

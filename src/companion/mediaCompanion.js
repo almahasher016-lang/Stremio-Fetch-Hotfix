@@ -154,7 +154,7 @@ async function postJson(server, route, body, token) {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      ...(token ? { 'x-vault-token': token } : {}),
+      ...(token ? { 'x-admin-token': token } : {}),
     },
     body: JSON.stringify(body),
   });

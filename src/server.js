@@ -9,12 +9,14 @@ import { requestId } from './api/middleware/requestId.js';
 import { getBreakersStatus, getProvidersStatus, getProviderMetricsStatus } from './services/subtitleService.js';
 import { closeRedis, getCacheStatus } from './cache/redis.js';
 import { createManifest, getBaseUrl } from './utils/stremio.js';
-import { config } from './config.js';
+import { config, validateRuntimeConfig } from './config.js';
 import { prometheusMetrics } from './utils/metrics.js';
 import { redactRequestUrl } from './utils/logging.js';
 import { flushVaultWrites } from './services/vaultService.js';
 import { versionRegistry } from './services/versionRegistryService.js';
+import { assertAdminAuth } from './api/middleware/adminAuth.js';
 
+validateRuntimeConfig(config);
 const app = express();
 const manifestJson = createManifest();
 const manifestBuf = Buffer.from(JSON.stringify(manifestJson));
@@ -23,20 +25,45 @@ if (config.server.trustProxy) app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.disable('etag');
 
-// Stremio Desktop/Web fetches manifest and subtitle resources cross-origin.
-// Keep this explicit and unconditional; do not rely on a wildcard array in the cors package.
-app.use((req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, Origin, User-Agent, Range, Stremio-User-Agent, X-Vault-Token, X-Registry-Token, X-Request-Id');
-  res.setHeader('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Range, Accept-Ranges, X-Request-Id, X-Source-Encoding, X-Source-Format, X-Source-Archive, X-Sync-Confidence, X-Subtitle-Fallback');
-  res.setHeader('Access-Control-Max-Age', '86400');
-  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+function publicStremioPath(pathname) {
+  return /^\/(?:manifest(?:\.json)?|Manifest(?:\.json)?)$/.test(pathname)
+    || /^\/(?:subtitles?|proxy\/encoding)\//.test(pathname);
+}
 
-  if (req.method === 'OPTIONS') {
-    return res.status(204).end();
+function ownRequestOrigin(req) {
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  try {
+    return host ? new URL(`${proto}://${host}`).origin : '';
+  } catch {
+    return '';
   }
+}
 
+// Stremio resources stay cross-origin public. Administrative APIs never use wildcard CORS.
+app.use((req, res, next) => {
+  if (publicStremioPath(req.path)) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Accept, Origin, Range, Stremio-User-Agent, X-Request-Id');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Range, Accept-Ranges, X-Request-Id, X-Source-Encoding, X-Source-Format, X-Source-Archive, X-Sync-Confidence, X-Subtitle-Fallback');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  } else {
+    const origin = String(req.headers.origin || '');
+    const allowed = new Set(config.admin.allowedOrigins);
+    if (config.app.publicBaseUrl) allowed.add(new URL(config.app.publicBaseUrl).origin);
+    const ownOrigin = ownRequestOrigin(req);
+    if (ownOrigin) allowed.add(ownOrigin);
+    if (origin && !allowed.has(origin)) return res.status(403).json({ error: 'Origin is not allowed' });
+    if (origin) {
+      res.setHeader('Access-Control-Allow-Origin', origin);
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Token, X-Request-Id');
+    }
+  }
+  res.setHeader('Access-Control-Max-Age', '86400');
+  if (req.method === 'OPTIONS') return res.status(204).end();
   return next();
 });
 
@@ -60,6 +87,7 @@ app.use(apiLimiter);
 
 const homeHtml = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:32px;line-height:1.8;max-width:900px}a{display:inline-block;margin:.25rem .5rem .25rem 0}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>${config.app.name}</h1><p>إضافة ترجمات عربية مباشرة لـ Stremio بدون ذكاء اصطناعي مع Reference Sync وSmart Cache.</p><p><a href="/manifest.json">Manifest</a><a href="/health">Health</a><a href="/metrics">Metrics</a><a href="/test.html">Test UI</a><a href="/configure">Configure</a><a href="/vault.html">Vault</a></p><footer><small>الإصدار ${config.app.version} · معالجة حتمية بدون ذكاء اصطناعي</small></footer></body></html>`;
 const homeHtmlBuf = Buffer.from(homeHtml);
+const publicHomeHtmlBuf = Buffer.from(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:32px;line-height:1.8;max-width:900px}a{display:inline-block;margin:.25rem .5rem .25rem 0}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>${config.app.name}</h1><p>إضافة ترجمات عربية مباشرة لـ Stremio، بفحص جودة حتمي وبدون ذكاء اصطناعي.</p><p><a href="/manifest.json">Manifest</a><a href="/health">Health</a><a href="/resolver.html">Resolver</a><a href="/vault.html">Vault</a></p><footer><small>الإصدار ${config.app.version}</small></footer></body></html>`);
 
 function htmlEscape(value) {
   return String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -74,26 +102,27 @@ function configureHtml(req) {
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>Configure ${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:24px;line-height:1.8;max-width:900px}code,input{direction:ltr;unicode-bidi:embed}input{width:100%;padding:.6rem}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>إعداد ${config.app.name}</h1><p>لا تحتاج إلى إدخال أي إعدادات أو Variables. Railway يحدد المنفذ والرابط العام تلقائياً؛ انسخ رابط Manifest الظاهر هنا فقط إلى Stremio بعد النشر.</p><label>رابط Stremio</label><input readonly value="${htmlEscape(baseUrl)}/manifest.json" onclick="this.select()"><p><a href="/manifest.json">Manifest</a> · <a href="/health">Health</a> · <a href="/test.html">Test UI</a></p><h2>الحالة المختصرة</h2><pre>${htmlEscape(JSON.stringify({version: config.app.version, providers: config.providers.enabled, referenceSync: config.referenceSync.enabled, cache: {redis: Boolean(config.cache.redisUrl), staleWhileRevalidate: config.cache.staleWhileRevalidate}}, null, 2))}</pre><footer><small>الإصدار ${config.app.version} · معالجة حتمية بدون ذكاء اصطناعي</small></footer></body></html>`;
 }
 
+function secureConfigureHtml(req) {
+  const manifestUrl = `${getBaseUrl(req)}/manifest.json`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>Configure ${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:24px;line-height:1.8;max-width:900px}input{direction:ltr;width:100%;padding:.6rem;box-sizing:border-box}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>إعداد ${config.app.name}</h1><p>تم حفظ أسرار التشغيل في Railway. لا تضع رمز الإدارة أو مفاتيح المزودات داخل رابط Stremio.</p><label>رابط Stremio</label><input readonly value="${htmlEscape(manifestUrl)}" onclick="this.select()"><p><a href="/manifest.json">Manifest</a> · <a href="/health">Health</a> · <a href="/resolver.html">Resolver</a></p><footer><small>الإصدار ${config.app.version} · معالجة حتمية بدون ذكاء اصطناعي</small></footer></body></html>`;
+}
+
 app.get('/', (_req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'public, max-age=3600');
-  res.setHeader('Content-Length', homeHtmlBuf.byteLength);
-  res.end(homeHtmlBuf);
+  res.setHeader('Content-Length', publicHomeHtmlBuf.byteLength);
+  res.end(publicHomeHtmlBuf);
 });
 
 
 app.get('/test.html', (req, res) => {
   if (!config.ui.testUiEnabled) return res.status(404).end('disabled');
-  const body = Buffer.from(testHtml());
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Content-Length', body.byteLength);
-  res.end(body);
+  return res.redirect(302, '/resolver.html');
 });
 
 app.get('/configure', (req, res) => {
   if (!config.ui.configureEnabled) return res.redirect(302, '/manifest.json');
-  const body = Buffer.from(configureHtml(req));
+  const body = Buffer.from(secureConfigureHtml(req));
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Content-Length', body.byteLength);
@@ -115,46 +144,48 @@ app.get(['/manifest', '/Manifest', '/Manifest.json'], (_req, res) => {
   res.redirect(301, '/manifest.json');
 });
 
-let cachedHealthBuf = null;
-let healthCacheTime = 0;
-app.get('/health', async (_req, res, next) => {
+app.get('/health', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, max-age=5');
+  res.json({ status: 'ok', version: config.app.version, ai: false });
+});
+
+app.get('/api/admin/health', async (req, res, next) => {
   try {
-    const now = Date.now();
-    if (!cachedHealthBuf || now - healthCacheTime > 5000) {
-      cachedHealthBuf = Buffer.from(JSON.stringify({
-        status: 'ok',
-        version: config.app.version,
-        uptime: process.uptime(),
-        ai: false,
-        referenceSync: config.referenceSync,
-        providers: await getProvidersStatus(),
-        cache: getCacheStatus(),
-        breakers: getBreakersStatus(),
-        metrics: getProviderMetricsStatus(),
-      }));
-      healthCacheTime = now;
-    }
-    res.setHeader('Content-Type', 'application/json; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache, max-age=5');
-    res.setHeader('Content-Length', cachedHealthBuf.byteLength);
-    res.end(cachedHealthBuf);
-  } catch (err) {
-    next(err);
+    assertAdminAuth(req);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.json({
+      status: 'ok',
+      version: config.app.version,
+      uptime: process.uptime(),
+      ai: false,
+      referenceSync: config.referenceSync,
+      providers: await getProvidersStatus(),
+      cache: getCacheStatus(),
+      breakers: getBreakersStatus(),
+      metrics: getProviderMetricsStatus(),
+    });
+  } catch (error) {
+    next(error);
   }
 });
 
 
-app.get('/metrics', (req, res) => {
-  const wantsText = String(req.headers.accept || '').includes('text/plain') || req.query.format === 'prometheus';
-  if (wantsText) {
-    const body = Buffer.from(prometheusMetrics());
-    res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Content-Length', body.byteLength);
-    return res.end(body);
+app.get('/metrics', (req, res, next) => {
+  try {
+    assertAdminAuth(req);
+    const wantsText = String(req.headers.accept || '').includes('text/plain') || req.query.format === 'prometheus';
+    if (wantsText) {
+      const body = Buffer.from(prometheusMetrics());
+      res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+      res.setHeader('Cache-Control', 'private, no-store');
+      res.setHeader('Content-Length', body.byteLength);
+      return res.end(body);
+    }
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.json({ providers: getProviderMetricsStatus(), cache: getCacheStatus(), breakers: getBreakersStatus() });
+  } catch (error) {
+    return next(error);
   }
-  res.setHeader('Cache-Control', 'no-cache');
-  res.json({ providers: getProviderMetricsStatus(), cache: getCacheStatus(), breakers: getBreakersStatus() });
 });
 
 app.use(subtitlesRoute);

@@ -58,7 +58,7 @@ export function resolverHtml() {
 
     function requestHeaders() {
       const value = token();
-      return { 'content-type': 'application/json', ...(value ? { 'x-vault-token': value } : {}) };
+      return { 'content-type': 'application/json', ...(value ? { 'x-admin-token': value } : {}) };
     }
 
     async function readJson(response) {
@@ -94,7 +94,7 @@ export function resolverHtml() {
 
     async function loadRegistry() {
       try {
-        const data = await readJson(await fetch('/api/versions', { headers: token() ? { 'x-vault-token': token() } : {} }));
+        const data = await readJson(await fetch('/api/versions', { headers: token() ? { 'x-admin-token': token() } : {} }));
         registry.innerHTML = data.items?.length ? '<table><thead><tr><th>الحالة</th><th>النسخة</th><th>الترجمة</th><th>المزود</th></tr></thead><tbody>' + data.items.map(item => '<tr><td>' + esc(item.status) + '</td><td><code>' + esc(item.versionKey) + '</code></td><td>' + esc(item.asset?.name || '') + '</td><td>' + esc(item.asset?.provider || '') + '</td></tr>').join('') + '</tbody></table>' : '<p>السجل فارغ.</p>';
       } catch (error) {
         registry.innerHTML = '<pre>' + esc(error.message) + '</pre>';
@@ -107,7 +107,9 @@ export function resolverHtml() {
       lastSearch = { q: data.q, type: data.type, filename: data.filename, videoHash: data.videoHash, videoSize: data.videoSize, id: data.q, query: data.q };
       status.textContent = 'يجري البحث...';
       try {
-        const response = await readJson(await fetch('/api/preview?' + new URLSearchParams(lastSearch).toString()));
+        const response = await readJson(await fetch('/api/preview?' + new URLSearchParams(lastSearch).toString(), {
+          headers: token() ? { 'x-admin-token': token() } : {},
+        }));
         lastItems = response.results || [];
         status.textContent = JSON.stringify({ count: response.count, ms: response.ms }, null, 2);
         render(lastItems);

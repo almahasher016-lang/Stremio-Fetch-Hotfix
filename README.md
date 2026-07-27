@@ -1,39 +1,66 @@
-# m7md Arabic Resolver v3.1.3
+# m7md Arabic Resolver v3.2.0
 
-إضافة Stremio شخصية لأبو عبدالرحمن، مخصصة لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي. ترفض الملفات الموسومة عربيًا بالخطأ، وتنتقل تلقائيًا إلى أفضل بديل عربي متاح.
+إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي. لا تولّد الإضافة نصًا ولا تترجمه؛ وتستبعد النتائج التي يوسمها المزود بأنها مترجمة آليًا.
 
-## التثبيت الصحيح في Stremio
+## التثبيت في Stremio
 
-احذف أي نسخة قديمة من الإضافة، ثم ثبّت الرابط التالي:
+احذف النسخة القديمة ثم ثبّت:
 
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 بعد التثبيت أغلق Stremio وافتحه مجددًا، ثم اختر ترجمة يبدأ اسمها بـ `m7md Arabic`.
 
+## ما الجديد في 3.2.0
+
+- بوابة جودة فعلية تفحص عدد المقاطع ونسبة الحروف العربية والتغطية الزمنية.
+- انتقال آمن إلى بديل عربي عند تعطل الرابط أو فشل الملف في فحص الجودة.
+- كل بديل يستخدم خطة التوقيت أو المرجع الخاص به، ولا يرث مرجع نتيجة أخرى.
+- إصلاح تطابق صفحة المعاينة مع المرشح الذي يتم اعتماده أو رفضه.
+- استبعاد الترجمة الآلية عند الحد النهائي للنتائج، بما في ذلك نتائج السجل الموثقة.
+- توكنات ترجمة مضغوطة وموقعة ومحدودة الحجم.
+- حماية Vault والسجل والمقاييس وصفحات البحث الإدارية برمز واحد.
+- لا توجد مفاتيح أو كلمات مرور مضمّنة في المستودع.
+
 ## روابط الاستخدام
 
 - [الصفحة الرئيسية](https://pleasing-gentleness-production.up.railway.app/)
-- [اختبار فيلم أو مسلسل](https://pleasing-gentleness-production.up.railway.app/test.html)
-- [البحث والمعاينة والاعتماد أو الرفض](https://pleasing-gentleness-production.up.railway.app/resolver.html)
-- [إدارة الترجمات الشخصية](https://pleasing-gentleness-production.up.railway.app/vault.html)
-- [حالة الخادم والمزوّدين](https://pleasing-gentleness-production.up.railway.app/health)
+- [Manifest](https://pleasing-gentleness-production.up.railway.app/manifest.json)
+- [الحالة العامة](https://pleasing-gentleness-production.up.railway.app/health)
+- [البحث والمعاينة](https://pleasing-gentleness-production.up.railway.app/resolver.html)
+- [Personal Vault](https://pleasing-gentleness-production.up.railway.app/vault.html)
 
-## خيارات الترجمة داخل Stremio
+صفحتا Resolver وVault تطلبان `ADMIN_TOKEN`. أما Manifest ومسارات الترجمات الموقعة فتبقى عامة لأن Stremio يحتاج إلى جلبها مباشرة.
 
-- `Reference Sync`: يضبط التوقيت بالاعتماد على ترجمة مرجعية متوافقة.
-- `Original`: يعرض الترجمة بتوقيتها الأصلي.
-- عند اكتشاف ملف غير عربي أو رابط متعطل، تنتقل الإضافة تلقائيًا إلى المرشح العربي التالي.
+## إعداد Railway
 
-## إذا لم تظهر الترجمة العربية
+متغيرات الإنتاج الإلزامية:
 
-1. افتح [حالة الخادم](https://pleasing-gentleness-production.up.railway.app/health) وتأكد أن `status` يساوي `ok` وأن الإصدار هو `3.1.3`.
-2. احذف الإضافة القديمة من Stremio وثبّت رابط Manifest الموجود أعلاه.
-3. أغلق Stremio بالكامل ثم افتحه من جديد.
-4. استخدم [صفحة الاختبار](https://pleasing-gentleness-production.up.railway.app/test.html) للتأكد من وجود نتائج للعمل نفسه.
+- `NODE_ENV=production`
+- `ENCODING_PROXY_SECRET`: قيمة عشوائية بطول 32 بايت على الأقل.
+- `ADMIN_TOKEN`: قيمة عشوائية مختلفة بطول 32 بايت على الأقل.
 
-## ملاحظات تخص المشروع
+مفاتيح المزودات اختيارية بحسب المزود المفعّل:
 
-- لا تحتاج إلى تشغيل خادم أو كتابة أوامر؛ Railway يشغّل المشروع ويحدّثه تلقائيًا من GitHub.
-- لا تحتاج إلى إضافة Variables أو إدخال مفاتيح عند الاستخدام.
-- يعمل المشروع بدون ذكاء اصطناعي.
-- بيانات الاعتماد والترجمات التي تحفظها عبر Vault تبقى بعد إعادة النشر فقط عند ربط Railway Volume بالمسار `/app/data`.
+- `OPENSUBTITLES_API_KEY`
+- `OPENSUBTITLES_TOKEN`
+- `SUBDL_API_KEY`
+- `SUBSOURCE_API_KEY`
+
+عند إضافة مفتاح SubSource أضف `subsource` كذلك إلى `SUBTITLE_PROVIDERS`.
+
+للاحتفاظ بمحتوى Vault وسجل النسخ بعد إعادة النشر، اربط Railway Volume بالمسار `/app/data` ثم اضبط:
+
+- `PERSONAL_VAULT_PATH=/app/data/personal-vault.json`
+- `VERSION_REGISTRY_PATH=/app/data/version-registry.json`
+
+بدون Volume تظل الخدمة والترجمات الخارجية تعمل، لكن بيانات Vault والسجل المحلي قد تضيع عند إعادة بناء الحاوية.
+
+## التحقق
+
+يجب أن يعيد `/health` استجابة مختصرة مثل:
+
+```json
+{"status":"ok","version":"3.2.0","ai":false}
+```
+
+تفاصيل المزودات والمقاييس موجودة في `/api/admin/health` و`/metrics` وتتطلب رمز الإدارة.

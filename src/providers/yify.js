@@ -71,7 +71,7 @@ export function parseYifyRows(html, imdbId) {
       rating: 0,
       trusted: false,
       hearingImpaired: /\b(sdh|hi|hearing impaired)\b/i.test(name),
-      machineTranslated: false,
+      machineTranslated: null,
       download,
       sourceType: 'fallback',
     });
@@ -79,7 +79,7 @@ export function parseYifyRows(html, imdbId) {
   return rows;
 }
 
-export async function searchYify(variant) {
+export async function searchYify(variant, { fetchTextImpl = fetchText } = {}) {
   if (!config.yify.enabled || variant.type === 'series') return [];
   const expectedArabic = !variant.language || isArabicLanguage(variant.language);
   if (!expectedArabic) return [];
@@ -88,22 +88,31 @@ export async function searchYify(variant) {
 
   const urls = [
     `${config.yify.baseUrl}/movie-imdb/${encodeURIComponent(imdbId)}`,
-    `${config.yify.baseUrl}/movie/${encodeURIComponent(imdbId)}`,
   ];
 
+  let anySuccessfulFetch = false;
+  let lastError = null;
   for (const url of urls) {
     try {
-      const html = await fetchText(url, {
+      const html = await fetchTextImpl(url, {
         timeoutMs: config.providers.timeoutMs,
         signal: variant.signal,
         trustedOrigin: config.yify.baseUrl,
       });
+      if (/<title[^>]*>\s*Just a moment|id=["']challenge-form["']|class=["'][^"']*cf-chl-/i.test(html)) {
+        throw new Error('YIFY returned an anti-bot challenge');
+      }
       const rows = parseYifyRows(html, imdbId).slice(0, config.yify.maxItems);
+      if (!rows.length && /sub-lang[^>]*>\s*Arabic|>\s*Arabic\s*</i.test(html)) {
+        throw new Error('YIFY Arabic page layout is no longer supported');
+      }
+      anySuccessfulFetch = true;
       if (rows.length) return rows;
     } catch (error) {
       if (variant.signal?.aborted || error?.name === 'AbortError') throw error;
-      // Try next shape. YIFY is a lightweight fallback and must never break the main provider flow.
+      lastError = error;
     }
   }
+  if (!anySuccessfulFetch && lastError) throw lastError;
   return [];
 }

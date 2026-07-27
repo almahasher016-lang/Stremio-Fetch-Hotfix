@@ -1,4 +1,3 @@
-import { timingSafeEqual } from 'node:crypto';
 import express from 'express';
 import { searchSubtitles } from '../../services/subtitleService.js';
 import { addVaultSubtitle, deleteVaultSubtitle, getVaultSubtitle, listVaultSubtitles } from '../../services/vaultService.js';
@@ -11,6 +10,7 @@ import { config } from '../../config.js';
 import { buildVideoIdentity } from '../../utils/videoIdentity.js';
 import { versionRegistry } from '../../services/versionRegistryService.js';
 import { resolverHtml } from '../../ui/resolverHtml.js';
+import { assertAdminAuth } from '../middleware/adminAuth.js';
 
 const router = express.Router();
 const EMPTY_SUBTITLES_BUF = Buffer.from('{"subtitles":[]}');
@@ -23,29 +23,16 @@ function validateQuery(query) {
   if (query.length > 240) throw httpError(400, 'Query is too long');
 }
 
-function tokensMatch(supplied, expected) {
-  const actualBytes = Buffer.from(String(supplied || ''));
-  const expectedBytes = Buffer.from(String(expected || ''));
-  if (actualBytes.length !== expectedBytes.length) return false;
-  return timingSafeEqual(actualBytes, expectedBytes);
-}
-
-function requireVaultAuth(req) {
-  if (!config.vault.authToken) return;
-  const supplied = req.headers['x-vault-token'] || req.query.token || req.body?.token;
-  if (!tokensMatch(supplied, config.vault.authToken)) throw httpError(401, 'Vault token is required');
-}
-
-function requireRegistryAuth(req) {
-  const expected = config.versionRegistry.authToken || config.vault.authToken;
-  if (!expected) return;
-  const supplied = req.headers['x-vault-token'] || req.headers['x-registry-token'] || req.query.token || req.body?.token;
-  if (!tokensMatch(supplied, expected)) throw httpError(401, 'Registry token is required');
-}
-
 function vaultHtml() {
-  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>Personal Vault · ${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:24px;line-height:1.7;max-width:980px}input,textarea,button{font:inherit;padding:.55rem;margin:.25rem 0;width:100%;box-sizing:border-box}textarea{height:260px;direction:ltr;unicode-bidi:embed}code{direction:ltr;unicode-bidi:embed}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.45rem;text-align:right}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>مخزن الترجمات الشخصي · ${config.app.name}</h1><p>ارفع ترجمة عربية مضبوطة واربطها بـ IMDb أو hash. ستظهر قبل كل المزودات في Stremio.</p><form id="f"><input name="name" placeholder="اسم الترجمة"><input name="imdbId" placeholder="tt11198330 أو tt1375666"><input name="season" placeholder="الموسم للمسلسلات"><input name="episode" placeholder="الحلقة للمسلسلات"><input name="videoHash" placeholder="videoHash اختياري للمطابقة الدقيقة"><input name="releaseName" placeholder="Release name اختياري"><textarea name="text" placeholder="الصق محتوى SRT هنا"></textarea><input name="token" placeholder="Vault token إذا فعلته"><button>حفظ</button></form><pre id="status"></pre><div id="list"></div><footer><small>الإصدار ${config.app.version} · معالجة حتمية بدون ذكاء اصطناعي</small></footer><script>const f=document.getElementById('f'),status=document.getElementById('status'),list=document.getElementById('list');async function refresh(){const r=await fetch('/api/vault');const j=await r.json();list.innerHTML='<h2>الموجود</h2><table><thead><tr><th>الاسم</th><th>IMDb</th><th>الحلقة</th><th>Hash</th><th>الحجم</th></tr></thead><tbody>'+j.items.map(x=>'<tr><td>'+esc(x.name)+'</td><td>'+esc(x.imdbId||'')+'</td><td>'+esc((x.season||'')+':'+(x.episode||''))+'</td><td>'+esc(x.videoHash||'')+'</td><td>'+esc(x.bytes||'')+'</td></tr>').join('')+'</tbody></table>';}
-f.onsubmit=async e=>{e.preventDefault();status.textContent='جار الحفظ...';const body=Object.fromEntries(new FormData(f).entries());const r=await fetch('/api/vault',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const j=await r.json();status.textContent=JSON.stringify(j,null,2);if(j.success){f.text.value='';refresh();}};function esc(s){return String(s??'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));}refresh();</script></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>Personal Vault · ${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:24px;line-height:1.7;max-width:980px}input,textarea,button{font:inherit;padding:.55rem;margin:.25rem 0;width:100%;box-sizing:border-box}textarea{height:260px;direction:ltr;unicode-bidi:embed}code{direction:ltr;unicode-bidi:embed}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.45rem;text-align:right}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>مخزن الترجمات الشخصي · ${config.app.name}</h1><p>ارفع ترجمة عربية مضبوطة واربطها بـ IMDb أو hash. ستظهر قبل كل المزودات في Stremio.</p><form id="f"><input name="name" placeholder="اسم الترجمة"><input name="imdbId" placeholder="tt11198330 أو tt1375666"><input name="season" placeholder="الموسم للمسلسلات"><input name="episode" placeholder="الحلقة للمسلسلات"><input name="videoHash" placeholder="videoHash اختياري للمطابقة الدقيقة"><input name="releaseName" placeholder="Release name اختياري"><textarea name="text" placeholder="الصق محتوى SRT هنا"></textarea><input name="token" type="password" placeholder="رمز الإدارة" autocomplete="current-password"><button>حفظ</button></form><pre id="status">أدخل رمز الإدارة ثم اضغط حفظ أو تحديث.</pre><button id="refresh" type="button">تحديث القائمة</button><div id="list"></div><footer><small>الإصدار ${config.app.version} · معالجة حتمية بدون ذكاء اصطناعي</small></footer><script>
+const f=document.getElementById('f'),status=document.getElementById('status'),list=document.getElementById('list');
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const headers=()=>{const token=new FormData(f).get('token')||'';return token?{'x-admin-token':token}:{}};
+async function read(r){const j=await r.json();if(!r.ok)throw new Error(j.error||j.message||'فشل الطلب');return j}
+async function refresh(){try{const j=await read(await fetch('/api/vault',{headers:headers()}));list.innerHTML='<h2>الموجود</h2><table><thead><tr><th>الاسم</th><th>IMDb</th><th>الحلقة</th><th>Hash</th><th>الحجم</th></tr></thead><tbody>'+j.items.map(x=>'<tr><td>'+esc(x.name)+'</td><td>'+esc(x.imdbId||'')+'</td><td>'+esc((x.season||'')+':'+(x.episode||''))+'</td><td>'+esc(x.videoHash||'')+'</td><td>'+esc(x.bytes||'')+'</td></tr>').join('')+'</tbody></table>'}catch(e){status.textContent=e.message}}
+f.onsubmit=async e=>{e.preventDefault();status.textContent='جار الحفظ...';const body=Object.fromEntries(new FormData(f).entries());delete body.token;try{const j=await read(await fetch('/api/vault',{method:'POST',headers:{'content-type':'application/json',...headers()},body:JSON.stringify(body)}));status.textContent=JSON.stringify(j,null,2);if(j.success){f.text.value='';await refresh()}}catch(error){status.textContent=error.message}};
+document.getElementById('refresh').onclick=refresh;
+</script></body></html>`;
 }
 
 
@@ -67,11 +54,16 @@ function toPublicResults(results, baseUrl) {
   }));
 }
 
-function toPublicPreview(results, baseUrl, search = {}) {
-  const subtitles = toStremioSubtitles(results, baseUrl, search);
-  return results.slice(0, config.ui.previewMaxItems).map((item, index) => ({
+export function toPublicPreview(results, baseUrl, search = {}) {
+  return results.slice(0, config.ui.previewMaxItems).map((item, index) => {
+    const subtitle = toStremioSubtitles([item], baseUrl, search)[0];
+    const url = subtitle?.url || null;
+    const previewUrl = url?.includes('/proxy/encoding/') && url.endsWith('.srt')
+      ? url.replace('/proxy/encoding/', '/preview/encoding/').replace(/\.srt$/, '.json')
+      : null;
+    return {
     id: item.id || item.providerId || index,
-    name: subtitleDisplayName(item, item.referenceSubtitle ? 'reference' : 'original'),
+    name: subtitle?.name || subtitleDisplayName(item, 'original'),
     provider: item.provider,
     score: item.score,
     releaseQuality: item.parsedRelease?.quality || null,
@@ -79,8 +71,8 @@ function toPublicPreview(results, baseUrl, search = {}) {
     trusted: Boolean(item.trusted),
     hearingImpaired: Boolean(item.hearingImpaired || item.sdh),
     searchReason: item.searchReason,
-    url: subtitles[index]?.url || null,
-    previewUrl: subtitles[index]?.url ? subtitles[index].url.replace('/proxy/encoding/', '/preview/encoding/').replace(/\.srt$/, '.json') : null,
+    url,
+    previewUrl,
     quality: item.quality || null,
     asset: {
       provider: item.originalProvider || item.provider,
@@ -96,7 +88,8 @@ function toPublicPreview(results, baseUrl, search = {}) {
       score: item.score,
       quality: item.quality || null,
     },
-  }));
+    };
+  });
 }
 
 
@@ -119,16 +112,16 @@ router.get('/resolver.html', (_req, res) => {
 
 router.get('/api/versions', async (req, res, next) => {
   try {
-    requireRegistryAuth(req);
+    assertAdminAuth(req);
     const [items, status] = await Promise.all([versionRegistry.list({ limit: req.query.limit }), versionRegistry.status()]);
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'private, no-store');
     res.json({ success: true, status, items });
   } catch (err) { next(err); }
 });
 
 router.post('/api/versions/:action', vaultBodyParser, async (req, res, next) => {
   try {
-    requireRegistryAuth(req);
+    assertAdminAuth(req);
     const action = String(req.params.action || '').toLowerCase();
     if (!['verify', 'reject', 'suggest'].includes(action)) throw httpError(400, 'Unsupported version action');
     const result = await versionRegistry.recordDecision({
@@ -143,16 +136,17 @@ router.post('/api/versions/:action', vaultBodyParser, async (req, res, next) => 
 
 router.post('/api/companion/media', vaultBodyParser, async (req, res, next) => {
   try {
-    requireRegistryAuth(req);
+    assertAdminAuth(req);
     const identity = await versionRegistry.recordMedia(buildVideoIdentity(req.body || {}));
     res.json({ success: true, identity });
   } catch (err) { next(err); }
 });
 
-router.get('/api/vault', async (_req, res, next) => {
+router.get('/api/vault', async (req, res, next) => {
   try {
+    assertAdminAuth(req);
     const items = await listVaultSubtitles();
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'private, no-store');
     res.json({ success: true, count: items.length, items });
   } catch (err) { next(err); }
 });
@@ -160,7 +154,7 @@ router.get('/api/vault', async (_req, res, next) => {
 router.post('/api/vault', vaultBodyParser, async (req, res, next) => {
   try {
     if (!config.vault.uploadEnabled) throw httpError(403, 'Vault upload is disabled');
-    requireVaultAuth(req);
+    assertAdminAuth(req);
     const item = await addVaultSubtitle(req.body || {});
     res.json({ success: true, item });
   } catch (err) { next(err); }
@@ -168,7 +162,7 @@ router.post('/api/vault', vaultBodyParser, async (req, res, next) => {
 
 router.delete('/api/vault/:id', vaultBodyParser, async (req, res, next) => {
   try {
-    requireVaultAuth(req);
+    assertAdminAuth(req);
     const deleted = await deleteVaultSubtitle(req.params.id);
     res.json({ success: true, deleted });
   } catch (err) { next(err); }
@@ -176,17 +170,19 @@ router.delete('/api/vault/:id', vaultBodyParser, async (req, res, next) => {
 
 router.get('/vault/subtitles/:id.srt', async (req, res, next) => {
   try {
+    assertAdminAuth(req);
     const item = await getVaultSubtitle(req.params.id);
     if (!item) throw httpError(404, 'Vault subtitle not found');
     const text = item.text.replace(/\r\n/g, '\n');
     res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    res.setHeader('Cache-Control', 'private, no-store');
     res.end(text);
   } catch (err) { next(err); }
 });
 
 router.get('/api/subtitles', async (req, res, next) => {
   try {
+    assertAdminAuth(req);
     const query = String(req.query.q || '').trim();
     validateQuery(query);
     const extra = mergeExtras({}, req.query);
@@ -205,7 +201,7 @@ router.get('/api/subtitles', async (req, res, next) => {
       extra,
     };
     const results = await searchSubtitles(search);
-    res.setHeader('Cache-Control', 'public, max-age=1800, stale-while-revalidate=300');
+    res.setHeader('Cache-Control', 'private, no-store');
     res.json({ success: true, count: results.length, results: toPublicResults(results, getBaseUrl(req)) });
   } catch (err) {
     next(err);
@@ -215,6 +211,7 @@ router.get('/api/subtitles', async (req, res, next) => {
 
 router.get('/api/preview', async (req, res, next) => {
   try {
+    assertAdminAuth(req);
     const started = Date.now();
     const query = String(req.query.q || '').trim();
     validateQuery(query);
@@ -233,7 +230,7 @@ router.get('/api/preview', async (req, res, next) => {
       extra,
     };
     const results = await searchSubtitles(search);
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'private, no-store');
     res.json({ success: true, ms: Date.now() - started, count: results.length, results: toPublicPreview(results, getBaseUrl(req), search) });
   } catch (err) {
     next(err);
@@ -285,7 +282,7 @@ router.get('/preview/encoding/:token.json', async (req, res, next) => {
     const requestedCues = Number.parseInt(req.query.maxCues, 10);
     const maxCues = Number.isFinite(requestedCues) ? Math.min(20, Math.max(1, requestedCues)) : 6;
     const result = await previewProxiedSubtitle(req.params.token, { maxCues });
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Cache-Control', 'private, no-store');
     res.json(result);
   } catch (err) {
     next(err);
@@ -295,13 +292,14 @@ router.get('/preview/encoding/:token.json', async (req, res, next) => {
 async function streamRemoteSubtitle(downloadUrl, res) {
   const body = await fetchRemoteSubtitleBuffer(downloadUrl);
   res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.setHeader('Cache-Control', 'private, no-store');
   res.setHeader('Content-Length', body.byteLength);
   res.end(body);
 }
 
 router.get('/downloads/opensubtitles/:fileId.srt', async (req, res, next) => {
   try {
+    assertAdminAuth(req);
     if (!/^[1-9]\d{0,19}$/.test(req.params.fileId)) throw httpError(400, 'Invalid OpenSubtitles file ID');
     const link = await getOpenSubtitlesDownloadLink(req.params.fileId);
     await streamRemoteSubtitle(link, res);
@@ -312,6 +310,7 @@ router.get('/downloads/opensubtitles/:fileId.srt', async (req, res, next) => {
 
 router.get('/downloads/subsource/:subtitleId', async (req, res, next) => {
   try {
+    assertAdminAuth(req);
     if (!/^[A-Za-z0-9_-]{1,128}$/.test(req.params.subtitleId)) throw httpError(400, 'Invalid SubSource subtitle ID');
     const link = await getSubsourceDownloadLink(req.params.subtitleId);
     await streamRemoteSubtitle(link, res);

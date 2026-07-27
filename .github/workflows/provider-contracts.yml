@@ -26,3 +26,5 @@ jobs:
       - run: npm run test:contracts
         env:
           RUN_LIVE_PROVIDER_TESTS: "1"
+          OPENSUBTITLES_API_KEY: ${{ secrets.OPENSUBTITLES_API_KEY }}
+          SUBDL_API_KEY: ${{ secrets.SUBDL_API_KEY }}

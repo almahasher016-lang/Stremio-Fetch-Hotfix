@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { config } from '../config.js';
-import { parseYifyRows } from '../providers/yify.js';
+import { parseYifyRows, searchYify } from '../providers/yify.js';
 import { buildRemoteSubtitleHeaders } from '../utils/encodingProxy.js';
 
 test('YIFY rows point to downloadable ZIP archives instead of detail pages', () => {
@@ -29,4 +29,32 @@ test('YIFY archive requests include the detail-page referrer required by its CDN
   const external = buildRemoteSubtitleHeaders('https://example.com/subtitle.srt', 'yify');
   assert.equal(external['user-agent'], config.app.userAgent);
   assert.equal(external.referer, undefined);
+});
+
+test('YIFY propagates a real outage when every endpoint fails', async () => {
+  await assert.rejects(
+    searchYify(
+      { type: 'movie', imdbId: 'tt1375666', language: 'ar' },
+      { fetchTextImpl: async () => { throw new Error('network unavailable'); } },
+    ),
+    /network unavailable/,
+  );
+});
+
+test('YIFY distinguishes a valid empty page from a broken Arabic layout', async () => {
+  const empty = await searchYify(
+    { type: 'movie', imdbId: 'tt1375666', language: 'ar' },
+    {
+      fetchTextImpl: async () => '<html><body>No subtitles for this movie</body></html>',
+    },
+  );
+  assert.deepEqual(empty, []);
+
+  await assert.rejects(
+    searchYify(
+      { type: 'movie', imdbId: 'tt1375666', language: 'ar' },
+      { fetchTextImpl: async () => '<tr><td><span class="sub-lang">Arabic</span></td><td>new layout</td></tr>' },
+    ),
+    /layout is no longer supported/,
+  );
 });

@@ -3,13 +3,39 @@ import { config } from '../config.js';
 import { createSafeRemoteDispatcher } from './safeRemoteUrl.js';
 
 const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
+const CREDENTIAL_HEADER_NAMES = new Set([
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+  'api-key',
+  'x-api-key',
+  'x-auth-token',
+  'x-admin-token',
+  'x-vault-token',
+  'x-registry-token',
+]);
+const BODY_HEADER_NAMES = new Set([
+  'content-encoding',
+  'content-language',
+  'content-length',
+  'content-location',
+  'content-type',
+  'transfer-encoding',
+]);
 
 function joinUrl(location, currentUrl) {
   return new URL(location, currentUrl).toString();
 }
 
-function redirectLimitError(url) {
-  const error = new Error(`Too many redirects for ${url}`);
+function redirectLimitError() {
+  const error = new Error('Too many redirects for upstream request');
+  error.status = 502;
+  error.statusCode = 502;
+  return error;
+}
+
+function credentialedRedirectError() {
+  const error = new Error('Cross-origin credentialed redirect is not allowed');
   error.status = 502;
   error.statusCode = 502;
   return error;
@@ -27,6 +53,33 @@ function mergeHeaders(defaults, overrides) {
     merged[String(name).toLowerCase()] = value;
   }
   return merged;
+}
+
+function redirectRequestState({ statusCode, location, currentUrl, method, body, headers }) {
+  const nextUrl = joinUrl(location, currentUrl);
+  const currentOrigin = new URL(currentUrl).origin;
+  const nextOrigin = new URL(nextUrl).origin;
+  const crossOrigin = currentOrigin !== nextOrigin;
+  const nextHeaders = mergeHeaders({}, headers);
+
+  if (crossOrigin && Object.keys(nextHeaders).some(name => CREDENTIAL_HEADER_NAMES.has(name))) {
+    throw credentialedRedirectError();
+  }
+  if (crossOrigin) {
+    for (const name of CREDENTIAL_HEADER_NAMES) delete nextHeaders[name];
+    delete nextHeaders.host;
+  }
+
+  const normalizedMethod = String(method || 'GET').toUpperCase();
+  const switchToGet = statusCode === 303
+    ? normalizedMethod !== 'HEAD'
+    : (statusCode === 301 || statusCode === 302) && normalizedMethod === 'POST';
+  if (switchToGet) {
+    for (const name of BODY_HEADER_NAMES) delete nextHeaders[name];
+    return { url: nextUrl, method: 'GET', body: undefined, headers: nextHeaders };
+  }
+
+  return { url: nextUrl, method, body, headers: nextHeaders };
 }
 
 function trustedTargetUrl(value, trustedOrigin) {
@@ -118,13 +171,14 @@ export async function fetchJson(url, {
   trustedOrigin,
 } = {}) {
   let currentUrl = url;
+  let currentHeaders = mergeHeaders({}, headers);
   for (let attempt = 0; attempt <= redirects; attempt++) {
     const { response, text, targetUrl } = await requestText(currentUrl, {
       method,
       headers: mergeHeaders({
         'user-agent': config.app.userAgent,
         accept: 'application/json',
-      }, headers),
+      }, currentHeaders),
       body,
       bodyTimeout: timeoutMs,
       headersTimeout: timeoutMs,
@@ -133,12 +187,18 @@ export async function fetchJson(url, {
     const location = response.headers.location;
     if (REDIRECT_STATUS_CODES.has(response.statusCode) && location) {
       if (attempt >= redirects) throw redirectLimitError(url);
-      currentUrl = joinUrl(location, targetUrl);
-      // RFC behavior: 303 should continue as GET.
-      if (response.statusCode === 303) {
-        method = 'GET';
-        body = undefined;
-      }
+      const next = redirectRequestState({
+        statusCode: response.statusCode,
+        location,
+        currentUrl: targetUrl,
+        method,
+        body,
+        headers: currentHeaders,
+      });
+      currentUrl = next.url;
+      method = next.method;
+      body = next.body;
+      currentHeaders = next.headers;
       continue;
     }
 
@@ -180,13 +240,14 @@ export async function fetchText(url, {
   trustedOrigin,
 } = {}) {
   let currentUrl = url;
+  let currentHeaders = mergeHeaders({}, headers);
   for (let attempt = 0; attempt <= redirects; attempt++) {
     const { response, text, targetUrl } = await requestText(currentUrl, {
       method,
       headers: mergeHeaders({
         'user-agent': config.app.userAgent,
         accept: 'text/html,application/xhtml+xml,application/xml,text/plain,*/*',
-      }, headers),
+      }, currentHeaders),
       body,
       bodyTimeout: timeoutMs,
       headersTimeout: timeoutMs,
@@ -195,11 +256,18 @@ export async function fetchText(url, {
     const location = response.headers.location;
     if (REDIRECT_STATUS_CODES.has(response.statusCode) && location) {
       if (attempt >= redirects) throw redirectLimitError(url);
-      currentUrl = joinUrl(location, targetUrl);
-      if (response.statusCode === 303) {
-        method = 'GET';
-        body = undefined;
-      }
+      const next = redirectRequestState({
+        statusCode: response.statusCode,
+        location,
+        currentUrl: targetUrl,
+        method,
+        body,
+        headers: currentHeaders,
+      });
+      currentUrl = next.url;
+      method = next.method;
+      body = next.body;
+      currentHeaders = next.headers;
       continue;
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {

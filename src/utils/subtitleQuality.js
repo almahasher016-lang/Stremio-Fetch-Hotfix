@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { timeToMs } from './subtitleTiming.js';
 
 const TIME_RE = /(\d{2,3}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2,3}:\d{2}:\d{2}[,.]\d{3})/;
-const ARABIC_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF]/g;
 const LETTER_RE = /[\p{L}\p{N}]/gu;
+const ARABIC_LETTER_OR_NUMBER_RE = /\p{Script_Extensions=Arabic}/u;
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -73,8 +73,8 @@ export function analyzeSubtitleQuality(text = '', {
   const cues = parseSubtitleCues(text);
   const allText = cues.map(cue => cue.text).join(' ');
   const letters = allText.match(LETTER_RE) || [];
-  const arabicChars = allText.match(ARABIC_RE) || [];
-  const arabicRatio = letters.length ? arabicChars.length / letters.length : 0;
+  const arabicChars = letters.filter(character => ARABIC_LETTER_OR_NUMBER_RE.test(character));
+  const arabicRatio = letters.length ? clamp(arabicChars.length / letters.length, 0, 1) : 0;
   const uniqueLines = new Set(cues.map(cue => cue.text.toLowerCase()).filter(Boolean));
   const duplicateRatio = cues.length ? 1 - (uniqueLines.size / cues.length) : 1;
   const cueDurationMs = cues.reduce((sum, cue) => sum + cue.durationMs, 0);
@@ -100,7 +100,9 @@ export function analyzeSubtitleQuality(text = '', {
   else if (coverageRatio >= minCoverageRatio && coverageRatio <= 1.15) score += 15;
   else reasons.push('coverage-outlier');
 
-  const valid = cues.length >= minCues && arabicRatio >= minArabicRatio && (coverageRatio === null || coverageRatio >= minCoverageRatio);
+  const coverageValid = coverageRatio === null
+    || (coverageRatio >= minCoverageRatio && coverageRatio <= 1.15);
+  const valid = cues.length >= minCues && arabicRatio >= minArabicRatio && coverageValid;
   return {
     valid,
     score: Math.round(clamp(score, 0, 100)),

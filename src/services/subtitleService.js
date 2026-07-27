@@ -205,11 +205,17 @@ async function attachReferenceCandidates(arabicResults, search) {
   });
 }
 
-function mergeResults(...groups) {
+export function mergeResults(...groups) {
   const output = [];
   const seen = new Set();
   for (const group of groups) {
     for (const item of group || []) {
+      if (
+        config.providers.excludeMachineTranslated
+        && (item.machineTranslated || item.automatedTranslated || item.autoTranslated)
+      ) {
+        continue;
+      }
       const key = item.download || `${item.provider}:${item.providerId || item.id}`;
       if (!key || seen.has(key)) continue;
       seen.add(key);
