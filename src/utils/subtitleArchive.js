@@ -41,12 +41,20 @@ function extensionOf(value) {
   return safeEntryName(value).toLowerCase().match(/\.([a-z0-9]+)$/)?.[1] || '';
 }
 
-function isSubtitleEntry(name) {
+function normalizedAllowedExtensions(value) {
+  if (value === undefined || value === null) return SUBTITLE_EXTENSIONS;
+  const requested = Array.isArray(value) ? value : [value];
+  return new Set(requested
+    .map(extension => String(extension || '').trim().toLowerCase().replace(/^\./, ''))
+    .filter(extension => SUBTITLE_EXTENSIONS.has(extension)));
+}
+
+function isSubtitleEntry(name, allowedExtensions = SUBTITLE_EXTENSIONS) {
   const normalized = String(name || '').replaceAll('\\', '/');
   if (!normalized || normalized.endsWith('/')) return false;
   const segments = normalized.split('/').filter(Boolean);
   if (segments.some(segment => segment === '__MACOSX' || segment.startsWith('.'))) return false;
-  return SUBTITLE_EXTENSIONS.has(extensionOf(normalized));
+  return allowedExtensions.has(extensionOf(normalized));
 }
 
 function scoreCandidate(candidate, sourceName = '') {
@@ -77,7 +85,12 @@ function scoreCandidate(candidate, sourceName = '') {
     + Math.min(30, sharedTokens * 6);
 }
 
-function extractZip(input, { maxDecompressedBytes, maxArchiveEntries, sourceName }) {
+function extractZip(input, {
+  maxDecompressedBytes,
+  maxArchiveEntries,
+  sourceName,
+  allowedExtensions,
+}) {
   const candidates = [];
   let entryCount = 0;
   let expandedBytes = 0;
@@ -88,7 +101,7 @@ function extractZip(input, { maxDecompressedBytes, maxArchiveEntries, sourceName
       throw httpError(413, `Subtitle archive has more than ${maxArchiveEntries} entries`);
     }
 
-    if (!isSubtitleEntry(file.name)) {
+    if (!isSubtitleEntry(file.name, allowedExtensions)) {
       file.ondata = () => {};
       return;
     }
@@ -187,9 +200,12 @@ export async function extractSubtitlePayload(input, options = {}) {
   const maxDecompressedBytes = Math.max(50_000, Number(options.maxDecompressedBytes) || 5_000_000);
   const maxArchiveEntries = Math.max(1, Number(options.maxArchiveEntries) || 32);
   const sourceName = options.sourceName || '';
+  const allowedExtensions = normalizedAllowedExtensions(options.allowedExtensions);
   const archive = detectArchiveFormat(buffer);
 
-  if (archive === 'zip') return extractZip(buffer, { maxDecompressedBytes, maxArchiveEntries, sourceName });
+  if (archive === 'zip') {
+    return extractZip(buffer, { maxDecompressedBytes, maxArchiveEntries, sourceName, allowedExtensions });
+  }
   if (archive === 'gzip') return extractGzip(buffer, { maxDecompressedBytes, sourceName });
   if (archive === 'xz') return extractXz(buffer, { maxDecompressedBytes, sourceName });
   return { buffer, archive: null, entryName: null };

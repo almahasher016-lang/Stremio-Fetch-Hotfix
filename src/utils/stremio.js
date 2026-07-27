@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { parseRelease } from './releaseParser.js';
 import { detectSyncPlan } from './subtitleTiming.js';
 import { proxiedSubtitleUrl } from './encodingProxy.js';
+import { styledSubtitleFormatHint, styledSubtitleUrl } from './styledSubtitle.js';
 import { buildVideoIdentity } from './videoIdentity.js';
 import { httpError } from './httpError.js';
 
@@ -88,7 +89,6 @@ export function buildStremioSubtitleSearch({ type, id, extra = {} }) {
   return buildVideoIdentity({ type, id, extra });
 }
 
-
 function referenceForProxy(baseUrl, item) {
   const ref = item.referenceSubtitle;
   const download = ref?.download || ref?.url;
@@ -98,6 +98,11 @@ function referenceForProxy(baseUrl, item) {
     provider: ref.provider,
     name: ref.name || ref.releaseName || ref.fileName || 'English reference',
   };
+}
+
+function styledModeFormat(mode) {
+  const match = String(mode || '').match(/^styled-(ass|ssa)$/);
+  return match ? match[1] : null;
 }
 
 function qualityBadges(item, mode) {
@@ -112,6 +117,7 @@ function qualityBadges(item, mode) {
   if (item.trusted) badges.push('🏆 Verified');
   if (mode === 'reference') badges.push('⚡ RefSync');
   if (mode === 'sync') badges.push('⏱ AutoSync');
+  if (styledModeFormat(mode)) badges.push('🎨 Original Styles');
   if (item.searchReason === 'hash-first' || item.movieHash) badges.push('🔑 Hash');
   if (item.hearingImpaired || item.sdh) badges.push('👂 SDH');
   if (item.machineTranslated || item.automatedTranslated) badges.push('🤖 MT');
@@ -121,8 +127,10 @@ function qualityBadges(item, mode) {
 
 function subtitleName(item, mode = 'original') {
   const parts = [config.app.subtitleDisplayName];
+  const styledFormat = styledModeFormat(mode);
   if (mode === 'sync') parts.push('Auto Sync');
   else if (mode === 'reference') parts.push('Reference Sync');
+  else if (styledFormat) parts.push(`Styled ${styledFormat.toUpperCase()}`);
   else parts.push('Original');
   parts.push(...qualityBadges(item, mode));
   if (item.parsedRelease?.quality) parts.push(item.parsedRelease.quality.toUpperCase());
@@ -142,6 +150,7 @@ export function toStremioSubtitles(results, baseUrl, search = {}) {
   let referenceCount = 0;
   let autoSyncCount = 0;
   let originalCount = 0;
+  let styledCount = 0;
 
   for (const [index, item] of results.entries()) {
     if (output.length >= config.ranking.maxStremioSubtitles) break;
@@ -217,6 +226,24 @@ export function toStremioSubtitles(results, baseUrl, search = {}) {
         name: subtitleName(item, 'original'),
       });
       originalCount++;
+    }
+
+    const styledFormat = styledSubtitleFormatHint(item);
+    const canAddStyled = styledFormat
+      && styledCount < 2
+      && output.length < config.ranking.maxStremioSubtitles;
+
+    if (canAddStyled) {
+      const url = styledSubtitleUrl(baseUrl, item, search);
+      if (url) {
+        output.push({
+          id: `${item.id || item.providerId || output.length}-styled-${styledFormat}`,
+          url,
+          lang: 'ara',
+          name: subtitleName(item, `styled-${styledFormat}`),
+        });
+        styledCount++;
+      }
     }
   }
 

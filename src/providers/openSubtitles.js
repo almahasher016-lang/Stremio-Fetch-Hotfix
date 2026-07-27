@@ -88,14 +88,24 @@ export async function searchOpenSubtitles(variant) {
   return data.map(item => normalizeItem(item, expectedLanguage, variant)).filter(Boolean).slice(0, config.providers.maxProviderItems);
 }
 
-export async function getOpenSubtitlesDownloadLink(fileId) {
+export function buildOpenSubtitlesDownloadBody(fileId, { subFormat = 'srt' } = {}) {
+  const body = { file_id: Number(fileId) };
+  const normalizedFormat = subFormat === null || subFormat === ''
+    ? null
+    : String(subFormat).trim().toLowerCase();
+  if (normalizedFormat) body.sub_format = normalizedFormat;
+  return body;
+}
+
+export async function getOpenSubtitlesDownloadLink(fileId, options = {}) {
   if (!config.openSubtitles.apiKey) throw new Error('OPENSUBTITLES_API_KEY is missing');
+  const body = buildOpenSubtitlesDownloadBody(fileId, options);
   const json = await fetchJson(`${config.openSubtitles.baseUrl}/download`, {
     method: 'POST',
     headers: {
       ...osHeaders({ 'content-type': 'application/json' }),
     },
-    body: JSON.stringify({ file_id: Number(fileId), sub_format: 'srt' }),
+    body: JSON.stringify(body),
     timeoutMs: config.providers.timeoutMs,
     trustedOrigin: config.openSubtitles.baseUrl,
   });
