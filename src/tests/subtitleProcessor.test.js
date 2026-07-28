@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assToSrt, processSubtitleBuffer, vttToSrt } from '../utils/subtitleProcessor.js';
+import {
+  applyArabicSubtitleDirection,
+  assToSrt,
+  processSubtitleBuffer,
+  vttToSrt,
+} from '../utils/subtitleProcessor.js';
 
 test('vttToSrt converts WEBVTT timings', () => {
   const srt = vttToSrt('WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nمرحبا');
@@ -25,7 +30,7 @@ Dialogue: 0,0:00:01.25,0:00:03.50,Default,,0,0,0,,{\\an8}<i>مرحبا</i>\\Nب�
   const result = processSubtitleBuffer(Buffer.from(input));
   assert.equal(result.format, 'ass');
   assert.match(result.text, /00:00:01,250 --> 00:00:03,500/);
-  assert.match(result.text, /مرحبا\nبك/);
+  assert.match(result.text, /\u2067مرحبا\u2069\n\u2067بك\u2069/);
   assert.doesNotMatch(result.text, /\\an8|<i>/);
   assert.match(assToSrt(input), /00:00:01,250 --> 00:00:03,500/);
 });
@@ -65,4 +70,56 @@ test('processSubtitleBuffer detects UTF-16 LE and BE without a BOM', () => {
   assert.equal(beResult.encoding, 'utf-16be');
   assert.match(leResult.text, /مرحبا/);
   assert.match(beResult.text, /مرحبا/);
+});
+
+test('processSubtitleBuffer isolates Arabic cue lines and keeps terminal punctuation on the RTL run', () => {
+  const input = Buffer.from(`1
+00:00:01,000 --> 00:00:02,000
+مرحبا بالعالم.
+
+2
+00:00:03,000 --> 00:00:04,000
+هل أنت بخير؟
+
+3
+00:00:05,000 --> 00:00:06,000
+انتبه!
+
+4
+00:00:07,000 --> 00:00:08,000
+الإصدار WEB-DL 3.4.0.
+`);
+  const result = processSubtitleBuffer(input);
+  assert.match(result.text, /\u2067مرحبا بالعالم\.\u200F\u2069/);
+  assert.match(result.text, /\u2067هل أنت بخير؟\u200F\u2069/);
+  assert.match(result.text, /\u2067انتبه!\u200F\u2069/);
+  assert.match(result.text, /\u2067الإصدار WEB-DL 3\.4\.0\.\u200F\u2069/);
+});
+
+test('Arabic direction normalization is deterministic and does not alter indexes, timings, or numeric dialogue', () => {
+  const source = `1
+00:00:01,000 --> 00:00:02,000
+\u202Eمرحبا!\u202C
+
+2
+00:00:03,000 --> 00:00:04,000
+1984
+`;
+  const once = applyArabicSubtitleDirection(source);
+  const twice = applyArabicSubtitleDirection(once);
+  assert.equal(twice, once);
+  assert.match(once, /^1\n00:00:01,000 --> 00:00:02,000\n/u);
+  assert.match(once, /\u2067مرحبا!\u200F\u2069/);
+  assert.doesNotMatch(once, /[\u202A-\u202E]/u);
+  assert.match(once, /2\n00:00:03,000 --> 00:00:04,000\n1984/u);
+});
+
+test('Arabic direction normalization leaves a Latin-dominant cue unchanged', () => {
+  const source = `1
+00:00:01,000 --> 00:00:02,000
+WEB-DL release with مرحبا!
+`;
+  const result = applyArabicSubtitleDirection(source);
+  assert.match(result, /WEB-DL release with مرحبا!/);
+  assert.doesNotMatch(result, /[\u200F\u2067\u2069]/u);
 });
