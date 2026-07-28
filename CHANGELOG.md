@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.4.1 - Arabic Bidirectional Punctuation
+- Added deterministic RLI/PDI isolation to Arabic-dominant normalized SRT cue lines.
+- Added an RLM compatibility mark after terminal punctuation while preserving Latin-dominant and numeric-only lines.
+- Continued stripping untrusted upstream bidi controls before inserting balanced resolver-owned controls.
+- Bumped the processed-subtitle cache namespace so previously cached uncorrected cues are not reused.
+- Expanded deterministic coverage to 141 tests with 140 passing and one opt-in live contract test skipped locally.
+
 ## 3.4.0 - Styled Subtitles and Media Identity
 - Added optional native ASS/SSA delivery while preserving the normalized SRT path.
 - Fixed public Stremio CORS handling and exposed archive-entry diagnostics for styled subtitle routes.
