@@ -34,7 +34,7 @@ app.disable('etag');
 
 function publicStremioPath(pathname) {
   return /^\/(?:manifest(?:\.json)?|Manifest(?:\.json)?)$/.test(pathname)
-    || /^\/(?:subtitles?|proxy\/encoding)\//.test(pathname);
+    || /^\/(?:subtitles?|proxy\/(?:encoding|styled))\//.test(pathname);
 }
 
 function ownRequestOrigin(req) {
@@ -53,7 +53,7 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Accept, Origin, Range, Stremio-User-Agent, X-Request-Id');
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Range, Accept-Ranges, X-Request-Id, X-Source-Encoding, X-Source-Format, X-Source-Archive, X-Sync-Confidence, X-Subtitle-Fallback');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Range, Accept-Ranges, X-Request-Id, X-Source-Encoding, X-Source-Format, X-Source-Archive, X-Source-Archive-Entry, X-Sync-Confidence, X-Subtitle-Fallback');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   } else {
     const origin = String(req.headers.origin || '');

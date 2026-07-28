@@ -1,5 +1,5 @@
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
-const RELEASE_VERSION = '3.3.0';
+const RELEASE_VERSION = '3.4.0';
 const RELEASE_ID = 'community.m7md-arabic-direct-v233-private';
 const RELEASE_NAME = `m7md Arabic Resolver v${RELEASE_VERSION}`;
 const RELEASE_USER_AGENT = `m7mdArabicDirect/${RELEASE_VERSION}`;

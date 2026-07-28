@@ -82,3 +82,66 @@ test('rankAndFilter uses explicit Stremio quality hints when a filename is unava
   assert.equal(ranked[0].provider, 'yify');
   assert.ok(ranked[0].releaseMatchTier >= 4);
 });
+
+test('rankAndFilter keeps the exact extended cut ahead of a higher-priority normal release', () => {
+  const ranked = rankAndFilter([
+    {
+      provider: 'vault',
+      lang: 'ara',
+      releaseName: 'Movie.2026.2160p.BluRay.REMUX-GROUP',
+      download: 'https://example.com/normal.srt',
+    },
+    {
+      provider: 'yify',
+      lang: 'ara',
+      releaseName: 'Movie.2026.Extended.IMAX.2160p.BluRay.REMUX-GROUP',
+      download: 'https://example.com/extended.srt',
+    },
+  ], {
+    filename: 'Movie.2026.Extended.IMAX.2160p.BluRay.REMUX-GROUP.mkv',
+  }, {
+    outputArabicOnly: true,
+    minRankScore: -1000,
+  });
+
+  assert.equal(ranked[0].provider, 'yify');
+  assert.ok(ranked[0].releaseMatch.matched.includes('edition'));
+  assert.ok(ranked[0].releaseMatchTier >= 5);
+  assert.equal(ranked[1].releaseMatchTier, 1);
+});
+
+test('rankAndFilter consumes Companion FPS, HDR, and audio hints without a release filename', () => {
+  const ranked = rankAndFilter([
+    {
+      provider: 'subdl',
+      lang: 'ara',
+      releaseName: 'Movie.2160p.WEB-DL.HEVC.HDR10.DDP.5.1.23.976fps-GROUP',
+      download: 'https://example.com/match.srt',
+    },
+    {
+      provider: 'opensubtitles',
+      lang: 'ara',
+      releaseName: 'Movie.2160p.WEB-DL.HEVC.SDR.AAC.2.0.25fps-GROUP',
+      download: 'https://example.com/mismatch.srt',
+    },
+  ], {
+    query: 'Movie',
+    extra: {
+      resolution: '2160p',
+      source: 'WEB-DL',
+      videoCodec: 'HEVC',
+      hdr: 'HDR10',
+      audioCodec: 'EAC3',
+      audioChannels: '5.1',
+      fps: 23.976,
+    },
+  }, {
+    outputArabicOnly: true,
+    minRankScore: -1000,
+  });
+
+  assert.equal(ranked[0].provider, 'subdl');
+  assert.ok(ranked[0].releaseMatch.matched.includes('fps'));
+  assert.ok(ranked[0].releaseMatch.matched.includes('hdr'));
+  assert.ok(ranked[0].releaseMatch.matched.includes('audioChannels'));
+});

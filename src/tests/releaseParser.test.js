@@ -54,6 +54,15 @@ test('parseRelease gives REMUX precedence and separates Atmos from the audio cod
   assert.equal(parsed.audioChannels, '7.1');
 });
 
+test('parseRelease distinguishes extended, directors cut, IMAX, and remastered editions', () => {
+  const extended = parseRelease('Movie.Extended.IMAX.2160p.BluRay.REMUX-GROUP.mkv');
+  assert.equal(extended.edition, 'extended+imax');
+  assert.deepEqual(extended.editions, ['extended', 'imax']);
+  assert.equal(parseRelease("Movie.Director's.Cut.1080p.BluRay-GROUP.mkv").edition, 'directors-cut');
+  assert.equal(parseRelease('Movie.Theatrical.Cut.1080p.WEB-DL-GROUP.mkv').edition, 'theatrical');
+  assert.equal(parseRelease('Movie.Unrated.Remastered.1080p.BluRay-GROUP.mkv').edition, 'unrated+remastered');
+});
+
 test('normalizedStringSimilarity is deterministic and rewards near-identical releases', () => {
   const close = normalizedStringSimilarity(
     'Movie.Name.2024.1080p.AMZN.WEB-DL.x265-GROUP.mkv',

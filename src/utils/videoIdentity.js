@@ -26,6 +26,17 @@ function toPositiveNumber(value) {
   return Number.isFinite(number) && number > 0 ? Math.floor(number) : null;
 }
 
+function toFiniteNumber(value, min, max, precision = 3) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < min || number > max) return null;
+  return Number(number.toFixed(precision));
+}
+
+function technicalText(value, maxLength = 64) {
+  const text = cleanText(value).toLowerCase();
+  return text && text.length <= maxLength ? text : null;
+}
+
 function normalizeEpisode(value) {
   const number = toPositiveNumber(value);
   return number && number <= 9999 ? number : null;
@@ -92,6 +103,25 @@ export function buildVideoIdentity({ type = 'movie', id, extra = {}, ...input } 
   const releaseFingerprint = stableFingerprint(filename || title || catalogId);
   const videoSize = toPositiveNumber(input.videoSize || normalizedExtra.videoSize);
   const durationMs = toPositiveNumber(input.durationMs || normalizedExtra.durationMs || normalizedExtra.duration);
+  const fps = toFiniteNumber(input.fps ?? normalizedExtra.fps ?? normalizedExtra.frameRate ?? normalizedExtra.frame_rate, 1, 240);
+  const width = toPositiveNumber(input.width ?? normalizedExtra.width);
+  const height = toPositiveNumber(input.height ?? normalizedExtra.height);
+  const resolution = technicalText(input.resolution ?? normalizedExtra.resolution ?? normalizedExtra.video_resolution);
+  const videoCodec = technicalText(input.videoCodec ?? input.video_codec ?? normalizedExtra.videoCodec ?? normalizedExtra.video_codec);
+  const pixelFormat = technicalText(input.pixelFormat ?? input.pixel_format ?? normalizedExtra.pixelFormat ?? normalizedExtra.pixel_format);
+  const hdr = technicalText(input.hdr ?? normalizedExtra.hdr);
+  const audioCodec = technicalText(input.audioCodec ?? input.audio_codec ?? normalizedExtra.audioCodec ?? normalizedExtra.audio_codec);
+  const audioChannels = technicalText(input.audioChannels ?? input.audio_channels ?? normalizedExtra.audioChannels ?? normalizedExtra.audio_channels);
+  const container = technicalText(input.container ?? normalizedExtra.container);
+  const enrichedExtra = {
+    ...normalizedExtra,
+    ...(fps && !normalizedExtra.fps ? { fps } : {}),
+    ...(resolution && !normalizedExtra.resolution ? { resolution } : {}),
+    ...(videoCodec && !normalizedExtra.videoCodec ? { videoCodec } : {}),
+    ...(hdr && !normalizedExtra.hdr ? { hdr } : {}),
+    ...(audioCodec && !normalizedExtra.audioCodec ? { audioCodec } : {}),
+    ...(audioChannels && !normalizedExtra.audioChannels ? { audioChannels } : {}),
+  };
   return {
     ...input,
     type,
@@ -113,9 +143,19 @@ export function buildVideoIdentity({ type = 'movie', id, extra = {}, ...input } 
     episode,
     year: toPositiveNumber(input.year || normalizedExtra.year || parsed.year),
     durationMs,
+    fps,
+    width,
+    height,
+    resolution,
+    videoCodec,
+    pixelFormat,
+    hdr,
+    audioCodec,
+    audioChannels,
+    container,
     releaseFingerprint,
     parsedRelease: parsed,
-    extra: normalizedExtra,
+    extra: enrichedExtra,
   };
 }
 

@@ -11,6 +11,14 @@ const SE_RE = /\bS(\d{1,2})E(\d{1,3})\b/i;
 const ALT_SE_RE = /\b(\d{1,2})x(\d{1,3})\b/;
 const YEAR_RE = /\b(19\d{2}|20\d{2})\b/;
 const FPS_RE = /\b(23[.,]976|23[.,]98|24|25|29[.,]97|30|50|60)\s?fps\b/i;
+const EDITION_PATTERNS = [
+  ['directors-cut', /\bdirector(?:'s|s)?[- ._]+(?:cut|edition)\b/i],
+  ['extended', /\bextended(?:[- ._]+(?:cut|edition|version))?\b/i],
+  ['theatrical', /\btheatrical(?:[- ._]+(?:cut|edition|version))?\b/i],
+  ['unrated', /\bunrated(?:[- ._]+(?:cut|edition|version))?\b/i],
+  ['imax', /\bimax(?:[- ._]+(?:cut|edition|version))?\b/i],
+  ['remastered', /\b(?:re[- ._]?master(?:ed)?|remastered)(?:[- ._]+edition)?\b/i],
+];
 
 function cleanToken(value) {
   return String(value || '')
@@ -123,6 +131,11 @@ function parseReleaseGroup(value) {
   return bracketMatch ? bracketMatch[1].toUpperCase() : null;
 }
 
+function parseEditions(value) {
+  const text = String(value || '');
+  return EDITION_PATTERNS.filter(([, pattern]) => pattern.test(text)).map(([edition]) => edition);
+}
+
 export function parseRelease(value = '') {
   const text = String(value || '');
   const se = parseSeasonEpisode(text);
@@ -130,6 +143,7 @@ export function parseRelease(value = '') {
   const fps = firstMatch(FPS_RE, text);
   const codec = firstMatch(CODEC_RE, text);
   const audio = firstMatch(AUDIO_RE, text);
+  const editions = parseEditions(text);
   return {
     raw: text,
     normalized: cleanToken(text),
@@ -149,6 +163,8 @@ export function parseRelease(value = '') {
     season: se.season,
     episode: se.episode,
     fps: fps ? Number.parseFloat(String(fps).replace(',', '.')) : null,
+    edition: editions.length ? editions.join('+') : null,
+    editions,
     releaseGroup: parseReleaseGroup(text),
   };
 }

@@ -24,3 +24,25 @@ test('keeps external catalog identifiers when IMDb is unavailable', () => {
   assert.equal(identity.catalogId, 'kitsu:5678');
   assert.ok(versionKeys(identity).some(key => key.startsWith('movie:kitsu:5678')));
 });
+
+test('normalizes Companion stream facts into ranking hints', () => {
+  const identity = buildVideoIdentity({
+    type: 'movie',
+    id: 'tt1375666',
+    filename: 'Example.2160p.WEB-DL.mkv',
+    fps: 23.976023,
+    width: 3840,
+    height: 2160,
+    resolution: '2160P',
+    videoCodec: 'HEVC',
+    audioCodec: 'EAC3',
+    audioChannels: '5.1',
+    hdr: 'HDR10',
+  });
+  assert.equal(identity.fps, 23.976);
+  assert.equal(identity.resolution, '2160p');
+  assert.equal(identity.videoCodec, 'hevc');
+  assert.equal(identity.extra.fps, 23.976);
+  assert.equal(identity.extra.audioCodec, 'eac3');
+  assert.equal(identity.extra.audioChannels, '5.1');
+});

@@ -49,6 +49,17 @@ test('server exposes the release, administration dashboard, and maintenance acti
   assert.equal(healthResponse.status, 200);
   assert.deepEqual(await healthResponse.json(), { status: 'ok', version: config.app.version, ai: false });
 
+  const styledPreflight = await fetch(`${baseUrl}/proxy/styled/invalid.ass`, {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'https://web.stremio.com',
+      'access-control-request-method': 'GET',
+    },
+  });
+  assert.equal(styledPreflight.status, 204);
+  assert.equal(styledPreflight.headers.get('access-control-allow-origin'), '*');
+  assert.match(styledPreflight.headers.get('access-control-expose-headers') || '', /X-Source-Archive-Entry/i);
+
   const adminResponse = await fetch(`${baseUrl}/api/admin/health`, { headers });
   assert.equal(adminResponse.status, 200);
   const admin = await adminResponse.json();

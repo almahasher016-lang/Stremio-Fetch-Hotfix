@@ -33,3 +33,42 @@ test('persists verified versions and hydrates local media facts', async () => {
     await fs.rm(directory, { recursive: true, force: true });
   }
 });
+
+test('hydrates episode and stream facts from Companion by catalog identity', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'm7md-registry-series-'));
+  const storagePath = path.join(directory, 'versions.json');
+  try {
+    const registry = new VersionRegistry({ storagePath, maxItems: 20 });
+    await registry.recordMedia({
+      type: 'series',
+      id: 'tt11198330:1:2',
+      imdbId: 'tt11198330',
+      season: 1,
+      episode: 2,
+      videoHash: '1234567890abcdef',
+      videoSize: 800_000_000,
+      filename: 'Show.S01E02.2160p.AMZN.WEB-DL.HEVC.mkv',
+      durationMs: 3_600_000,
+      fps: 23.976,
+      resolution: '2160p',
+      videoCodec: 'hevc',
+      audioCodec: 'eac3',
+      audioChannels: '5.1',
+      hdr: 'hdr10',
+    });
+
+    const hydrated = await registry.hydrateIdentity({
+      type: 'series',
+      id: 'tt11198330:1:2',
+    });
+    assert.equal(hydrated.filename, 'Show.S01E02.2160p.AMZN.WEB-DL.HEVC.mkv');
+    assert.equal(hydrated.season, 1);
+    assert.equal(hydrated.episode, 2);
+    assert.equal(hydrated.fps, 23.976);
+    assert.equal(hydrated.extra.resolution, '2160p');
+    assert.equal(hydrated.extra.videoCodec, 'hevc');
+    assert.equal(hydrated.extra.audioCodec, 'eac3');
+  } finally {
+    await fs.rm(directory, { recursive: true, force: true });
+  }
+});

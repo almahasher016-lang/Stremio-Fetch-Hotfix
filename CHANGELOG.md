@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.4.0 - Styled Subtitles and Media Identity
+- Added optional native ASS/SSA delivery while preserving the normalized SRT path.
+- Fixed public Stremio CORS handling and exposed archive-entry diagnostics for styled subtitle routes.
+- Added deterministic edition matching for Extended, Director's Cut, Theatrical, Unrated, IMAX, and Remastered releases.
+- Added ffprobe-derived FPS, resolution, video codec, pixel format, HDR, audio codec, channel layout, and container identity.
+- Persisted Companion season, episode, and stream facts in the version registry and restored them during catalog-only requests.
+- Added recursive media-library scans, polling watch mode, atomic local indexing, unchanged-file skipping, and explicit rescans.
+
 ## 3.3.0 - Release-First Ranking and Operations
 - Added deterministic release-match tiers that take precedence over provider popularity and Vault preference whenever Stremio supplies release metadata.
 - Added streaming-service, audio codec, channel layout, bit depth, frame-rate, codec-family, and stricter WEB-DL/WEBRip parsing.

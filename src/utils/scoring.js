@@ -47,6 +47,7 @@ const RELEASE_FIELDS = [
   { key: 'audioCodec', weight: 3, critical: false },
   { key: 'audioProfile', weight: 2, critical: false },
   { key: 'audioChannels', weight: 2, critical: false },
+  { key: 'edition', weight: 11, critical: true },
   { key: 'year', weight: 3, critical: true },
   { key: 'season', weight: 10, critical: true },
   { key: 'episode', weight: 12, critical: true },
@@ -81,6 +82,15 @@ export function buildReleaseMatch(target, release) {
       mismatchWeight += field.weight;
       if (field.critical) criticalMismatches += 1;
     }
+  }
+
+  if (missing.includes('edition')) {
+    mismatchWeight += 11;
+    criticalMismatches += 1;
+  } else if (!exists(target.edition) && exists(release.edition) && release.edition !== 'theatrical') {
+    mismatched.push('edition');
+    mismatchWeight += 8;
+    criticalMismatches += 1;
   }
 
   if (exists(target.fps)) {
@@ -161,6 +171,10 @@ export function scoreSubtitle(candidate, search = {}) {
     search.extra?.codec ?? search.extra?.video_codec,
     search.extra?.videoCodec,
     search.extra?.audio ?? search.extra?.audioCodec,
+    search.extra?.audioChannels ?? search.extra?.audio_channels,
+    search.extra?.hdr,
+    search.extra?.bitDepth ?? search.extra?.bit_depth,
+    search.extra?.edition ?? search.extra?.cut ?? search.extra?.videoEdition,
     fpsHint,
     groupHint,
   ].filter(value => exists(value) && String(value).length <= 80);
@@ -252,6 +266,15 @@ export function scoreSubtitle(candidate, search = {}) {
   if (target.audioProfile && release.audioProfile) {
     if (target.audioProfile === release.audioProfile) add(35, 'audio-profile-match');
     else add(-30, 'audio-profile-mismatch');
+  }
+
+  if (target.edition && release.edition) {
+    if (target.edition === release.edition) add(380, 'edition-match');
+    else add(-520, 'edition-mismatch');
+  } else if (target.edition && !release.edition) {
+    add(-420, 'edition-missing');
+  } else if (!target.edition && release.edition && release.edition !== 'theatrical') {
+    add(-260, 'unexpected-special-edition');
   }
 
   if (target.fps && release.fps) {
