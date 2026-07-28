@@ -17,6 +17,14 @@ const CP1256 = new Map(Object.entries({
   248: 'ْ', 249: 'ù', 250: 'ú', 251: 'û', 252: 'ü', 253: 'ے', 254: '‍', 255: 'ی'
 }).map(([k, v]) => [Number(k), v]));
 
+const BIDI_CONTROL_RE = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
+const LETTER_RE = /\p{L}/u;
+const ARABIC_SCRIPT_RE = /\p{Script_Extensions=Arabic}/u;
+const TERMINAL_NEUTRAL_RE = /[\p{P}\p{S}]$/u;
+const RIGHT_TO_LEFT_ISOLATE = '\u2067';
+const RIGHT_TO_LEFT_MARK = '\u200F';
+const POP_DIRECTIONAL_ISOLATE = '\u2069';
+
 function decodeCp1256(buffer) {
   let output = '';
   for (const byte of buffer) {
@@ -86,7 +94,35 @@ export function decodeSubtitleBuffer(buffer) {
 }
 
 function stripControlMarks(text) {
-  return text.replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, '');
+  return String(text || '').replace(BIDI_CONTROL_RE, '');
+}
+
+function arabicDominatesLine(line) {
+  let arabicLetters = 0;
+  let otherLetters = 0;
+  let firstLetterIsArabic = false;
+  let foundFirstLetter = false;
+
+  for (const character of line) {
+    if (!LETTER_RE.test(character)) continue;
+    const isArabic = ARABIC_SCRIPT_RE.test(character);
+    if (!foundFirstLetter) {
+      firstLetterIsArabic = isArabic;
+      foundFirstLetter = true;
+    }
+    if (isArabic) arabicLetters += 1;
+    else otherLetters += 1;
+  }
+
+  return arabicLetters > 0 && (arabicLetters >= otherLetters || firstLetterIsArabic);
+}
+
+function isolateArabicLine(line) {
+  const clean = stripControlMarks(line);
+  if (!arabicDominatesLine(clean)) return clean;
+  const trimmed = clean.trimEnd();
+  const compatibilityMark = TERMINAL_NEUTRAL_RE.test(trimmed) ? RIGHT_TO_LEFT_MARK : '';
+  return `${RIGHT_TO_LEFT_ISOLATE}${clean}${compatibilityMark}${POP_DIRECTIONAL_ISOLATE}`;
 }
 
 function stripTags(line) {
@@ -220,6 +256,21 @@ export function normalizeSrtIndexes(text) {
   return output.join('\n').trim() + '\n';
 }
 
+export function applyArabicSubtitleDirection(text) {
+  const blocks = String(text || '')
+    .replace(/\r/g, '')
+    .split(/\n{2,}/)
+    .map(block => block.trim())
+    .filter(Boolean);
+  const output = blocks.map(block => {
+    const lines = block.split('\n');
+    const timeIndex = lines.findIndex(line => /\d{2,3}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2,3}:\d{2}:\d{2}[,.]\d{3}/.test(line));
+    if (timeIndex === -1) return block;
+    return lines.map((line, index) => index > timeIndex ? isolateArabicLine(line) : line).join('\n');
+  }).join('\n\n');
+  return output ? `${output}\n` : '';
+}
+
 export function processSubtitleBuffer(buffer, options = {}) {
   const decoded = decodeSubtitleBuffer(buffer);
   let text = stripControlMarks(decoded.text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
@@ -230,5 +281,6 @@ export function processSubtitleBuffer(buffer, options = {}) {
   text = text.split('\n').map(stripTags).join('\n');
   text = stripSdhLines(text, options);
   text = normalizeSrtIndexes(text);
+  text = applyArabicSubtitleDirection(text);
   return { text, encoding: decoded.encoding, format: isAss ? 'ass' : isVtt ? 'vtt' : 'srt' };
 }
