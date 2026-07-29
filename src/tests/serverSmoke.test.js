@@ -33,6 +33,8 @@ test('server exposes the release, administration dashboard, and maintenance acti
       PORT: String(port),
       ADMIN_TOKEN: adminToken,
       ENCODING_PROXY_SECRET: 'test-proxy-secret-which-is-at-least-32-bytes',
+      ADMIN_RATE_LIMIT_MAX: '6',
+      ADMIN_RATE_LIMIT_WINDOW_MS: '60000',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -76,6 +78,21 @@ test('server exposes the release, administration dashboard, and maintenance acti
     assert.match(html, new RegExp(config.app.version.replaceAll('.', '\\.')));
   }
 
+  const unauthorizedMalformedImport = await fetch(`${baseUrl}/api/vault/import`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{"items":',
+  });
+  assert.equal(unauthorizedMalformedImport.status, 401);
+  assert.match((await unauthorizedMalformedImport.json()).error, /administrator token/i);
+
+  const authorizedMalformedImport = await fetch(`${baseUrl}/api/vault/import`, {
+    method: 'POST',
+    headers: { ...headers, 'content-type': 'application/json' },
+    body: '{"items":',
+  });
+  assert.equal(authorizedMalformedImport.status, 400);
+
   const clearResponse = await fetch(`${baseUrl}/api/admin/cache/clear?scope=search`, { method: 'POST', headers });
   assert.equal(clearResponse.status, 200);
   assert.equal((await clearResponse.json()).result.scope, 'search');
@@ -83,4 +100,12 @@ test('server exposes the release, administration dashboard, and maintenance acti
   const resetResponse = await fetch(`${baseUrl}/api/admin/breakers/yify/reset`, { method: 'POST', headers });
   assert.equal(resetResponse.status, 200);
   assert.equal((await resetResponse.json()).breaker.state, 'closed');
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetch(`${baseUrl}/api/admin/cache/clear?scope=search`, { method: 'POST', headers });
+    assert.equal(response.status, 200);
+  }
+  const limitedResponse = await fetch(`${baseUrl}/api/admin/cache/clear?scope=search`, { method: 'POST', headers });
+  assert.equal(limitedResponse.status, 429);
+  assert.match((await limitedResponse.json()).error, /administrative write requests/i);
 });
