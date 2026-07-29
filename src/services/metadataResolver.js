@@ -56,35 +56,41 @@ function normalizeMeta(payload, search) {
   };
 }
 
-export async function resolveMetadata(search = {}) {
+export async function resolveMetadata(search = {}, { fetchJsonImpl = fetchJson } = {}) {
   const identity = buildVideoIdentity(search);
   if (!config.resolver.metadata.enabled || !identity.catalogId) return identity;
   const key = cacheKey(identity);
   const existing = cache.get(key);
-  if (existing && existing.expiresAt > Date.now()) return { ...identity, ...existing.value };
-  if (pending.has(key)) return pending.get(key);
+  let payload = existing && existing.expiresAt > Date.now() ? existing.payload : null;
 
-  const task = (async () => {
-    try {
+  try {
+    if (!payload) {
       const type = identity.type === 'series' ? 'series' : 'movie';
       const url = `${config.resolver.metadata.baseUrl}/${type}/${encodeURIComponent(identity.catalogId)}.json`;
-      const payload = await fetchJson(url, {
-        timeoutMs: config.resolver.metadata.timeoutMs,
-        redirects: 1,
-        trustedOrigin: config.resolver.metadata.baseUrl,
-      });
-      const resolved = normalizeMeta(payload, identity);
-      const value = buildVideoIdentity({ ...identity, ...resolved, query: resolved.title || identity.query });
-      cache.set(key, { value, expiresAt: Date.now() + config.resolver.metadata.cacheTtlSeconds * 1000 });
-      return value;
-    } catch {
-      return identity;
-    } finally {
-      pending.delete(key);
+      let task = pending.get(key);
+      if (!task) {
+        task = fetchJsonImpl(url, {
+          timeoutMs: config.resolver.metadata.timeoutMs,
+          redirects: 1,
+          trustedOrigin: config.resolver.metadata.baseUrl,
+        }).then(responsePayload => {
+          cache.set(key, {
+            payload: responsePayload,
+            expiresAt: Date.now() + config.resolver.metadata.cacheTtlSeconds * 1000,
+          });
+          return responsePayload;
+        }).finally(() => {
+          if (pending.get(key) === task) pending.delete(key);
+        });
+        pending.set(key, task);
+      }
+      payload = await task;
     }
-  })();
-  pending.set(key, task);
-  return task;
+    const resolved = normalizeMeta(payload, identity);
+    return buildVideoIdentity({ ...identity, ...resolved, query: resolved.title || identity.query });
+  } catch {
+    return identity;
+  }
 }
 
 export function clearMetadataCache() {
