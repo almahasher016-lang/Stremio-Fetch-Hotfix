@@ -1,6 +1,6 @@
 {
   "name": "m7md-arabic-stremio-subtitles",
-  "version": "3.4.1",
+  "version": "3.4.2",
   "type": "module",
   "private": true,
   "description": "Private direct Stremio Arabic subtitles add-on with edition-aware deterministic ranking, styled ASS/SSA delivery, resilient providers, media fingerprinting, Personal Vault backups, smart cache, and reference synchronization without AI.",
@@ -18,7 +18,7 @@
     "@napi-rs/lzma": "1.5.1",
     "compression": "^1.8.1",
     "express": "^5.2.1",
-    "express-rate-limit": "^8.6.0",
+    "express-rate-limit": "^8.6.1",
     "fflate": "0.8.3",
     "helmet": "^8.3.0",
     "ioredis": "^5.4.1",
