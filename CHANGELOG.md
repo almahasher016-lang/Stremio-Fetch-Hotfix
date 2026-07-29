@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.4.2 - Request-Safe Metadata and Stable RTL
+- Cached raw Cinemeta payloads instead of request-specific video identities, preserving exact filenames and release hints on every lookup.
+- Shared concurrent metadata fetches without leaking movie or episode identity between callers.
+- Rebuilt each cached series episode independently, including its title, duration, season, episode, and release fingerprint.
+- Canonicalized trailing bidi controls and whitespace so Arabic direction processing is exactly idempotent.
+- Bumped search and processed-subtitle cache namespaces so stale ranking and punctuation results are not reused.
+- Updated express-rate-limit to the latest compatible 8.6.1 maintenance release.
+- Expanded deterministic coverage to 148 tests: 147 passing and one opt-in live provider contract skipped locally.
+
 ## 3.4.1 - Arabic Bidirectional Punctuation
 - Added deterministic RLI/PDI isolation to Arabic-dominant normalized SRT cue lines.
 - Added an RLM compatibility mark after terminal punctuation while preserving Latin-dominant and numeric-only lines.
