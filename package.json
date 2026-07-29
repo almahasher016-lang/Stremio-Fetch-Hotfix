@@ -1,6 +1,6 @@
 {
   "name": "m7md-arabic-stremio-subtitles",
-  "version": "3.4.2",
+  "version": "3.4.3",
   "type": "module",
   "private": true,
   "description": "Private direct Stremio Arabic subtitles add-on with edition-aware deterministic ranking, styled ASS/SSA delivery, resilient providers, media fingerprinting, Personal Vault backups, smart cache, and reference synchronization without AI.",
@@ -12,6 +12,7 @@
     "dev": "node --watch src/server.js",
     "companion:scan": "node src/companion/mediaCompanion.js scan",
     "test": "node --import ./src/tests/setup.js --test src/tests/*.test.js",
+    "test:coverage": "node --import ./src/tests/setup.js --experimental-test-coverage --test-coverage-lines=75 --test-coverage-branches=65 --test-coverage-functions=75 --test src/tests/*.test.js",
     "test:contracts": "node --import ./src/tests/setup.js --test src/tests/liveProviders.test.js"
   },
   "dependencies": {

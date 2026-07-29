@@ -19,7 +19,7 @@ import { buildVideoIdentity } from '../../utils/videoIdentity.js';
 import { versionRegistry } from '../../services/versionRegistryService.js';
 import { resolverHtml } from '../../ui/resolverHtml.js';
 import { vaultPageHtml } from '../../ui/vaultHtml.js';
-import { assertAdminAuth } from '../middleware/adminAuth.js';
+import { assertAdminAuth, requireAdminAuth } from '../middleware/adminAuth.js';
 
 const router = express.Router();
 const EMPTY_SUBTITLES_BUF = Buffer.from('{"subtitles":[]}');
@@ -30,18 +30,6 @@ const vaultBodyParser = [express.urlencoded({ extended: false, limit: '3mb' }), 
 function validateQuery(query) {
   if (!query || query.length < 2) throw httpError(400, 'Query must be at least 2 characters');
   if (query.length > 240) throw httpError(400, 'Query is too long');
-}
-
-function vaultHtml() {
-  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>Personal Vault · ${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:24px;line-height:1.7;max-width:980px}input,textarea,button{font:inherit;padding:.55rem;margin:.25rem 0;width:100%;box-sizing:border-box}textarea{height:260px;direction:ltr;unicode-bidi:embed}code{direction:ltr;unicode-bidi:embed}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.45rem;text-align:right}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>مخزن الترجمات الشخصي · ${config.app.name}</h1><p>ارفع ترجمة عربية مضبوطة واربطها بـ IMDb أو hash. ستظهر قبل كل المزودات في Stremio.</p><form id="f"><input name="name" placeholder="اسم الترجمة"><input name="imdbId" placeholder="tt11198330 أو tt1375666"><input name="season" placeholder="الموسم للمسلسلات"><input name="episode" placeholder="الحلقة للمسلسلات"><input name="videoHash" placeholder="videoHash اختياري للمطابقة الدقيقة"><input name="releaseName" placeholder="Release name اختياري"><textarea name="text" placeholder="الصق محتوى SRT هنا"></textarea><input name="token" type="password" placeholder="رمز الإدارة" autocomplete="current-password"><button>حفظ</button></form><pre id="status">أدخل رمز الإدارة ثم اضغط حفظ أو تحديث.</pre><button id="refresh" type="button">تحديث القائمة</button><div id="list"></div><footer><small>الإصدار ${config.app.version} · معالجة حتمية بدون ذكاء اصطناعي</small></footer><script>
-const f=document.getElementById('f'),status=document.getElementById('status'),list=document.getElementById('list');
-const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const headers=()=>{const token=new FormData(f).get('token')||'';return token?{'x-admin-token':token}:{}};
-async function read(r){const j=await r.json();if(!r.ok)throw new Error(j.error||j.message||'فشل الطلب');return j}
-async function refresh(){try{const j=await read(await fetch('/api/vault',{headers:headers()}));list.innerHTML='<h2>الموجود</h2><table><thead><tr><th>الاسم</th><th>IMDb</th><th>الحلقة</th><th>Hash</th><th>الحجم</th></tr></thead><tbody>'+j.items.map(x=>'<tr><td>'+esc(x.name)+'</td><td>'+esc(x.imdbId||'')+'</td><td>'+esc((x.season||'')+':'+(x.episode||''))+'</td><td>'+esc(x.videoHash||'')+'</td><td>'+esc(x.bytes||'')+'</td></tr>').join('')+'</tbody></table>'}catch(e){status.textContent=e.message}}
-f.onsubmit=async e=>{e.preventDefault();status.textContent='جار الحفظ...';const body=Object.fromEntries(new FormData(f).entries());delete body.token;try{const j=await read(await fetch('/api/vault',{method:'POST',headers:{'content-type':'application/json',...headers()},body:JSON.stringify(body)}));status.textContent=JSON.stringify(j,null,2);if(j.success){f.text.value='';await refresh()}}catch(error){status.textContent=error.message}};
-document.getElementById('refresh').onclick=refresh;
-</script></body></html>`;
 }
 
 function mergeExtras(routeExtra = {}, queryExtra = {}) {
@@ -128,9 +116,8 @@ router.get('/api/versions', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/api/versions/:action', vaultBodyParser, async (req, res, next) => {
+router.post('/api/versions/:action', requireAdminAuth, vaultBodyParser, async (req, res, next) => {
   try {
-    assertAdminAuth(req);
     const action = String(req.params.action || '').toLowerCase();
     if (!['verify', 'reject', 'suggest'].includes(action)) throw httpError(400, 'Unsupported version action');
     const result = await versionRegistry.recordDecision({
@@ -143,9 +130,8 @@ router.post('/api/versions/:action', vaultBodyParser, async (req, res, next) => 
   } catch (err) { next(err); }
 });
 
-router.post('/api/companion/media', vaultBodyParser, async (req, res, next) => {
+router.post('/api/companion/media', requireAdminAuth, vaultBodyParser, async (req, res, next) => {
   try {
-    assertAdminAuth(req);
     const identity = await versionRegistry.recordMedia(buildVideoIdentity(req.body || {}));
     res.json({ success: true, identity });
   } catch (err) { next(err); }
@@ -173,26 +159,23 @@ router.get('/api/vault/export', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-router.post('/api/vault/import', express.json({ limit: '15mb' }), async (req, res, next) => {
+router.post('/api/vault/import', requireAdminAuth, express.json({ limit: '15mb' }), async (req, res, next) => {
   try {
-    assertAdminAuth(req);
     const result = await importVaultSnapshot(req.body, { mode: req.query.mode || 'merge' });
     res.json({ success: true, result });
   } catch (err) { next(err); }
 });
 
-router.post('/api/vault', vaultBodyParser, async (req, res, next) => {
+router.post('/api/vault', requireAdminAuth, vaultBodyParser, async (req, res, next) => {
   try {
     if (!config.vault.uploadEnabled) throw httpError(403, 'Vault upload is disabled');
-    assertAdminAuth(req);
     const item = await addVaultSubtitle(req.body || {});
     res.json({ success: true, item });
   } catch (err) { next(err); }
 });
 
-router.delete('/api/vault/:id', vaultBodyParser, async (req, res, next) => {
+router.delete('/api/vault/:id', requireAdminAuth, async (req, res, next) => {
   try {
-    assertAdminAuth(req);
     const deleted = await deleteVaultSubtitle(req.params.id);
     res.json({ success: true, deleted });
   } catch (err) { next(err); }
