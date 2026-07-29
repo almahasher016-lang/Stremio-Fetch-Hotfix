@@ -4,7 +4,7 @@ import morgan from 'morgan';
 import compression from 'compression';
 import subtitlesRoute from './api/routes/subtitles.js';
 import { errorHandler } from './api/middleware/errorHandler.js';
-import { apiLimiter } from './api/middleware/rateLimit.js';
+import { adminWriteLimiter, apiLimiter } from './api/middleware/rateLimit.js';
 import { requestId } from './api/middleware/requestId.js';
 import {
   getBreakersStatus,
@@ -91,22 +91,12 @@ app.use(morgan(config.server.isProd ? accessLogFormat : ':method :safe-url :stat
   skip: req => req.path === '/health' || req.path === '/manifest.json',
 }));
 app.use(apiLimiter);
+app.use(adminWriteLimiter);
 
-const homeHtml = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:32px;line-height:1.8;max-width:900px}a{display:inline-block;margin:.25rem .5rem .25rem 0}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>${config.app.name}</h1><p>إضافة ترجمات عربية مباشرة لـ Stremio بدون ذكاء اصطناعي مع Reference Sync وSmart Cache.</p><p><a href="/manifest.json">Manifest</a><a href="/health">Health</a><a href="/metrics">Metrics</a><a href="/test.html">Test UI</a><a href="/configure">Configure</a><a href="/vault.html">Vault</a></p><footer><small>الإصدار ${config.app.version} · معالجة حتمية بدون ذكاء اصطناعي</small></footer></body></html>`;
-const homeHtmlBuf = Buffer.from(homeHtml);
 const publicHomeHtmlBuf = Buffer.from(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:32px;line-height:1.8;max-width:900px}a{display:inline-block;margin:.25rem .5rem .25rem 0}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>${config.app.name}</h1><p>إضافة ترجمات عربية مباشرة لـ Stremio، بفحص جودة حتمي وبدون ذكاء اصطناعي.</p><p><a href="/manifest.json">Manifest</a><a href="/health">Health</a><a href="/resolver.html">Resolver</a><a href="/vault.html">Vault</a><a href="/admin.html">Admin</a></p><footer><small>الإصدار ${config.app.version}</small></footer></body></html>`);
 
 function htmlEscape(value) {
   return String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
-}
-
-function testHtml() {
-  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>اختبار ${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:24px;line-height:1.7}input,select,button{font:inherit;padding:.55rem;margin:.25rem}table{border-collapse:collapse;width:100%;margin-top:1rem}td,th{border:1px solid #ddd;padding:.5rem;text-align:right}code{direction:ltr;unicode-bidi:embed}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>اختبار ${config.app.name}</h1><p>اكتب IMDb أو حلقة مثل <code>tt11198330:1:1</code>، ويمكن إضافة اسم ملف لتحسين المطابقة.</p><form id="f"><input id="q" value="tt1375666" placeholder="tt1375666 أو tt11198330:1:1" size="28"><select id="type"><option value="movie">movie</option><option value="series">series</option></select><br><input id="filename" placeholder="filename اختياري" size="70"><button>اختبار</button></form><pre id="status"></pre><div id="out"></div><script>const f=document.getElementById('f'),out=document.getElementById('out'),status=document.getElementById('status');f.onsubmit=async e=>{e.preventDefault();out.innerHTML='';status.textContent='جار الاختبار...';const q=document.getElementById('q').value.trim();const type=document.getElementById('type').value;const filename=document.getElementById('filename').value.trim();const params=new URLSearchParams({q,type});if(filename)params.set('filename',filename);const r=await fetch('/api/preview?'+params.toString());const j=await r.json();status.textContent=JSON.stringify({success:j.success,count:j.count,ms:j.ms},null,2);out.innerHTML='<table><thead><tr><th>الاسم</th><th>المزود</th><th>Score</th><th>الجودة</th><th>الرابط</th></tr></thead><tbody>'+j.results.map(x=>'<tr><td>'+esc(x.name||'')+'</td><td>'+esc(x.provider||'')+'</td><td>'+esc(x.score??'')+'</td><td>'+esc(x.quality||'')+'</td><td><a href="'+esc(x.previewUrl||x.url||'#')+'" target="_blank">Preview/Subtitle</a></td></tr>').join('')+'</tbody></table>';};function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}</script><footer><small>الإصدار ${config.app.version} · معالجة حتمية بدون ذكاء اصطناعي</small></footer></body></html>`;
-}
-
-function configureHtml(req) {
-  const baseUrl = getBaseUrl(req);
-  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>Configure ${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:24px;line-height:1.8;max-width:900px}code,input{direction:ltr;unicode-bidi:embed}input{width:100%;padding:.6rem}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>إعداد ${config.app.name}</h1><p>لا تحتاج إلى إدخال أي إعدادات أو Variables. Railway يحدد المنفذ والرابط العام تلقائياً؛ انسخ رابط Manifest الظاهر هنا فقط إلى Stremio بعد النشر.</p><label>رابط Stremio</label><input readonly value="${htmlEscape(baseUrl)}/manifest.json" onclick="this.select()"><p><a href="/manifest.json">Manifest</a> · <a href="/health">Health</a> · <a href="/test.html">Test UI</a></p><h2>الحالة المختصرة</h2><pre>${htmlEscape(JSON.stringify({version: config.app.version, providers: config.providers.enabled, referenceSync: config.referenceSync.enabled, cache: {redis: Boolean(config.cache.redisUrl), staleWhileRevalidate: config.cache.staleWhileRevalidate}}, null, 2))}</pre><footer><small>الإصدار ${config.app.version} · معالجة حتمية بدون ذكاء اصطناعي</small></footer></body></html>`;
 }
 
 function secureConfigureHtml(req) {
