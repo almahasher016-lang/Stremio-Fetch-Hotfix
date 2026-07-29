@@ -1,5 +1,5 @@
 const TRUE_VALUES = new Set(['1', 'true', 'yes', 'on']);
-const RELEASE_VERSION = '3.4.2';
+const RELEASE_VERSION = '3.4.3';
 const RELEASE_ID = 'community.m7md-arabic-direct-v233-private';
 const RELEASE_NAME = `m7md Arabic Resolver v${RELEASE_VERSION}`;
 const RELEASE_USER_AGENT = `m7mdArabicDirect/${RELEASE_VERSION}`;
@@ -243,6 +243,8 @@ export function buildConfig(env = process.env) {
     rateLimit: {
       windowMs: toInt(get('RATE_LIMIT_WINDOW_MS'), 60000, 1000, 3600000),
       max: toInt(get('RATE_LIMIT_MAX'), 180, 1, 10000),
+      adminWindowMs: toInt(get('ADMIN_RATE_LIMIT_WINDOW_MS'), 60000, 1000, 3600000),
+      adminMax: toInt(get('ADMIN_RATE_LIMIT_MAX'), 60, 1, 1000),
     },
   };
 }
