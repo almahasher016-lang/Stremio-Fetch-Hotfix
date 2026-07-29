@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.4.3 - Admin Gate and CI Hardening
+- Required administrator authentication before parsing JSON or form bodies on Vault, version-registry, and Companion write routes.
+- Added a separate configurable per-IP rate limit for administrative write requests.
+- Removed unused duplicate Vault, home, test, and configuration HTML implementations.
+- Added enforced coverage floors, package-signature verification, package-content inspection, and Docker builds to continuous integration.
+- Corrected the Stremio update instructions so the stable add-on ID is updated in place without deleting the installed entry.
+
 ## 3.4.2 - Request-Safe Metadata and Stable RTL
 - Cached raw Cinemeta payloads instead of request-specific video identities, preserving exact filenames and release hints on every lookup.
 - Shared concurrent metadata fetches without leaking movie or episode identity between callers.
