@@ -123,3 +123,32 @@ WEB-DL release with مرحبا!
   assert.match(result, /WEB-DL release with مرحبا!/);
   assert.doesNotMatch(result, /[\u200F\u2067\u2069]/u);
 });
+
+test('Arabic direction normalization is exactly idempotent for a control-only cue', () => {
+  const source = `1
+00:00:01,000 --> 00:00:02,000
+\u202B
+`;
+  const once = applyArabicSubtitleDirection(source);
+
+  assert.equal(once, '1\n00:00:01,000 --> 00:00:02,000\n');
+  assert.equal(applyArabicSubtitleDirection(once), once);
+  assert.doesNotMatch(once, /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/u);
+});
+
+test('Arabic direction normalization removes trailing controls and whitespace deterministically', () => {
+  const source = `1
+00:00:01,000 --> 00:00:02,000
+WEB-DL release with مرحبا! \u202C
+
+2
+00:00:03,000 --> 00:00:04,000
+مرحبا! \u202C
+`;
+  const once = applyArabicSubtitleDirection(source);
+
+  assert.equal(applyArabicSubtitleDirection(once), once);
+  assert.match(once, /WEB-DL release with مرحبا!\n/u);
+  assert.match(once, /\u2067مرحبا!\u200F\u2069/u);
+  assert.doesNotMatch(once, /[\u202A-\u202E]| +$/mu);
+});
