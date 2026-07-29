@@ -118,10 +118,9 @@ function arabicDominatesLine(line) {
 }
 
 function isolateArabicLine(line) {
-  const clean = stripControlMarks(line);
+  const clean = stripControlMarks(line).trimEnd();
   if (!arabicDominatesLine(clean)) return clean;
-  const trimmed = clean.trimEnd();
-  const compatibilityMark = TERMINAL_NEUTRAL_RE.test(trimmed) ? RIGHT_TO_LEFT_MARK : '';
+  const compatibilityMark = TERMINAL_NEUTRAL_RE.test(clean) ? RIGHT_TO_LEFT_MARK : '';
   return `${RIGHT_TO_LEFT_ISOLATE}${clean}${compatibilityMark}${POP_DIRECTIONAL_ISOLATE}`;
 }
 
@@ -266,7 +265,10 @@ export function applyArabicSubtitleDirection(text) {
     const lines = block.split('\n');
     const timeIndex = lines.findIndex(line => /\d{2,3}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2,3}:\d{2}:\d{2}[,.]\d{3}/.test(line));
     if (timeIndex === -1) return block;
-    return lines.map((line, index) => index > timeIndex ? isolateArabicLine(line) : line).join('\n');
+    return lines
+      .map((line, index) => index > timeIndex ? isolateArabicLine(line) : line)
+      .join('\n')
+      .trimEnd();
   }).join('\n\n');
   return output ? `${output}\n` : '';
 }
