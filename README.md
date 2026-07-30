@@ -1,22 +1,25 @@
-# m7md Arabic Resolver v3.4.3
+# m7md Arabic Resolver v3.5.0
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي. لا تولّد الإضافة نصًا ولا تترجمه؛ وتستبعد النتائج التي يوسمها المزود بأنها مترجمة آليًا.
 
-## التثبيت في Stremio
+## التثبيت والتحديث في Stremio
 
-للتثبيت أول مرة أو لتحديث النسخة الموجودة، ألصق الرابط نفسه في خانة إضافات Stremio واضغط `Install`:
+استخدم رابط Manifest الثابت نفسه للتثبيت أو التحديث:
 
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
-قد يعرض Stremio زر `Install` بدل `Upgrade`. لا تحذف الإضافة القديمة؛ معرّف الإضافة ثابت، وإعادة تثبيت الرابط نفسه تحدّث تسجيلها. بعد ذلك أغلق Stremio وافتحه مجددًا، ثم اختر ترجمة يبدأ اسمها بـ `m7md Arabic`.
+معرّف الإضافة ثابت، ولذلك يحافظ الإصدار الجديد على تسجيل الإضافة الحالي. بعد اكتمال نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
 
-## ما الجديد في 3.4.3
+## ما الجديد في 3.5.0
 
-- التحقق من رمز الإدارة قبل قراءة JSON أو بيانات النماذج في عمليات Vault والسجل وCompanion.
-- إضافة حد مستقل وقابل للضبط لطلبات الكتابة الإدارية، مع إبقاء حد الاستخدام العام منفصلًا.
-- حذف واجهات HTML قديمة ومكررة لم تكن مستخدمة في التشغيل.
-- تقوية GitHub Actions بحد أدنى للتغطية، والتحقق من تواقيع الحزم، ومحتوى الحزمة، وبناء Docker.
-- تصحيح خطوات تحديث الإضافة في Stremio من دون حذفها وإضافتها من جديد.
+- حدود طلبات موزعة عبر Redis بدل عدادات مستقلة لكل نسخة خادم.
+- Singleflight محلي وقفل Redis موزع لمنع تكرار جلب المزودات عند الطلبات المتزامنة.
+- تشغيل Docker كمستخدم غير root، بصورة Node مثبتة على Digest، ودعم نظام ملفات Read-only.
+- تثبيت جميع GitHub Actions على SHA كامل غير قابل للتحريك.
+- إضافة ESLint وTypeScript كبوابات فحص إلزامية.
+- إضافة OpenTelemetry لتتبّع Express وHTTP وUndici عبر OTLP/HTTP.
+- إضافة CodeQL وCycloneDX SBOM وTrivy وDependabot لسلسلة التوريد.
+- تفعيل Content Security Policy باستخدام Nonce تلقائي لجميع واجهات HTML.
 
 تعتمد المطابقة الأدق على `videoHash` أولًا، ثم اسم ملف الفيديو الذي يرسله Stremio. عند توفر اسم الإصدار، لا تستطيع أولوية المزود وحدها دفع نتيجة أقل تطابقًا إلى المركز الأول.
 
@@ -33,8 +36,6 @@ npm run companion:scan -- "D:\Movies\Movie.mkv" --server https://pleasing-gentle
 ```powershell
 npm run companion:scan -- --watch "D:\Media" --server https://pleasing-gentleness-production.up.railway.app --extract-arabic
 ```
-
-يُحفظ فهرس المراقبة باسم `.m7md-companion-index.json` داخل المجلد. استخدم `--rescan` لإعادة فحص جميع الملفات عمدًا.
 
 ## روابط الاستخدام
 
@@ -55,28 +56,21 @@ npm run companion:scan -- --watch "D:\Media" --server https://pleasing-gentlenes
 - `ENCODING_PROXY_SECRET`: قيمة عشوائية بطول 32 بايت على الأقل.
 - `ADMIN_TOKEN`: قيمة عشوائية مختلفة بطول 32 بايت على الأقل.
 
-مفاتيح المزودات اختيارية بحسب المزود المفعّل:
+اربط Redis بالخدمة واضبط `REDIS_URL` حتى تصبح حدود الطلبات والكاش وأقفال Singleflight مشتركة بين جميع النسخ. عند غياب Redis يستمر التطبيق بالعمل بكاش وحدود محلية.
 
-- `OPENSUBTITLES_API_KEY`
-- `OPENSUBTITLES_TOKEN`
-- `SUBDL_API_KEY`
-- `SUBSOURCE_API_KEY`
-
-عند إضافة مفتاح SubSource أضف `subsource` كذلك إلى `SUBTITLE_PROVIDERS`.
+لتفعيل التتبّع اضبط `ENABLE_TRACING=true` و`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` على مسار OTLP/HTTP منتهيًا بـ `/v1/traces`.
 
 للاحتفاظ بمحتوى Vault وسجل النسخ بعد إعادة النشر، اربط Railway Volume بالمسار `/app/data` ثم اضبط:
 
 - `PERSONAL_VAULT_PATH=/app/data/personal-vault.json`
 - `VERSION_REGISTRY_PATH=/app/data/version-registry.json`
 
-بدون Volume تظل الخدمة والترجمات الخارجية تعمل، لكن بيانات Vault والسجل المحلي قد تضيع عند إعادة بناء الحاوية.
-
 ## التحقق
 
-يجب أن يعيد `/health` استجابة مختصرة مثل:
+يجب أن يعيد `/health`:
 
 ```json
-{"status":"ok","version":"3.4.3","ai":false}
+{"status":"ok","version":"3.5.0","ai":false}
 ```
 
-تفاصيل المزودات والمقاييس موجودة في `/admin.html` و`/api/admin/health` و`/metrics` وتتطلب رمز الإدارة.
+تفاصيل المزودات والكاش والتتبّع موجودة في `/admin.html` و`/api/admin/health` و`/metrics` وتتطلب رمز الإدارة.
