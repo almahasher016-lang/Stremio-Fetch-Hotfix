@@ -32,7 +32,7 @@ jobs:
           base64 --decode scripts/apply-modernization.mjs.gz.b64 | gzip --decompress > /tmp/apply-modernization.mjs
           node --check /tmp/apply-modernization.mjs
           node /tmp/apply-modernization.mjs
-          rm -f scripts/apply-modernization.mjs.gz.b64 scripts/trigger-note.txt
+          rm -rf scripts
       - name: Refresh dependency lock
         run: |
           npm install --package-lock-only --ignore-scripts
