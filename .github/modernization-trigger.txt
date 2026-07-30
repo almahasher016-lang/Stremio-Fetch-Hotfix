@@ -1,1 +1,2 @@
 Trigger guarded v3.5.0 modernization from trusted main.
+Synchronization event: 2
