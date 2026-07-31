@@ -1,6 +1,6 @@
 import { buildConfig as buildCoreConfig, validateRuntimeConfig as validateCoreRuntimeConfig } from './configCore.js';
 
-const RELEASE_VERSION = '3.5.3';
+const RELEASE_VERSION = '3.5.4';
 const VERSION_IN_NAME_RE = /\bv\d+\.\d+\.\d+\b/u;
 
 function explicitlyConfigured(env, key) {
@@ -15,9 +15,11 @@ export function buildConfig(env = process.env) {
   const configuredName = String(runtime.app.name || 'm7md Arabic Resolver').trim();
 
   runtime.app.version = RELEASE_VERSION;
-  runtime.app.name = VERSION_IN_NAME_RE.test(configuredName)
-    ? configuredName.replace(VERSION_IN_NAME_RE, `v${RELEASE_VERSION}`)
-    : `${configuredName} v${RELEASE_VERSION}`;
+  if (!explicitlyConfigured(env, 'ADDON_NAME')) {
+    runtime.app.name = VERSION_IN_NAME_RE.test(configuredName)
+      ? configuredName.replace(VERSION_IN_NAME_RE, `v${RELEASE_VERSION}`)
+      : `${configuredName} v${RELEASE_VERSION}`;
+  }
   runtime.app.userAgent = `m7mdArabicDirect/${RELEASE_VERSION}`;
   runtime.cache.keyPrefix = String(runtime.cache.keyPrefix || 'subtitles').replace(/:release:[^:]+$/u, `:release:${RELEASE_VERSION}`);
 
