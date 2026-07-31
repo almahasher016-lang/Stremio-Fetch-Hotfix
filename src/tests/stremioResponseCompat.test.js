@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   appendNoTransform,
   normalizeStremioSubtitleResponse,
+  responseBodyCanBeMutated,
   shouldPreserveBodyEncoding,
 } from '../utils/stremioResponseCompat.js';
 
@@ -35,6 +36,14 @@ test('no-transform policy is appended exactly once', () => {
   assert.equal(appendNoTransform('public, max-age=86400'), 'public, max-age=86400, no-transform');
   assert.equal(appendNoTransform('public, no-transform, max-age=86400'), 'public, no-transform, max-age=86400');
   assert.equal(appendNoTransform(''), 'no-transform');
+});
+
+test('late response mutation is refused for compressed or transformed bodies', () => {
+  assert.equal(responseBodyCanBeMutated(undefined), true);
+  assert.equal(responseBodyCanBeMutated('identity'), true);
+  assert.equal(responseBodyCanBeMutated('gzip'), false);
+  assert.equal(responseBodyCanBeMutated('br'), false);
+  assert.equal(responseBodyCanBeMutated('deflate'), false);
 });
 
 test('only response bodies modified late are protected from compression', () => {
