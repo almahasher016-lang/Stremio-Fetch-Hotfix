@@ -80,7 +80,10 @@ async function securityMiddleware(req, res, next) {
   res.end = (chunk, encoding, callback) => {
     const contentType = String(res.getHeader('Content-Type') || '');
     if (chunk != null && contentType.includes('text/html')) {
-      const text = injectNonce(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : chunk, nonce);
+      let text = injectNonce(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : chunk, nonce);
+      if (req.path === '/resolver.html') {
+        text = text.replace('</body>', `<p><a href="${LOCK_EXPORT_PATH}">Production lock</a></p></body>`);
+      }
       chunk = Buffer.from(text);
       res.setHeader('Content-Length', chunk.byteLength);
     }
