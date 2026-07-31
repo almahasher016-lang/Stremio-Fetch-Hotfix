@@ -1,96 +1,61 @@
-# m7md Arabic Resolver v3.5.3
+# m7md Arabic Resolver v3.5.4
 
-إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي. لا تولّد الإضافة نصًا ولا تترجمه؛ وتستبعد النتائج التي يوسمها المزود بأنها مترجمة آليًا.
+إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
-## التثبيت والتحديث في Stremio
+## التثبيت والتحديث
 
-استخدم رابط Manifest الثابت نفسه للتثبيت أو التحديث:
+استخدم رابط Manifest الثابت:
 
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
-معرّف الإضافة ثابت، ولذلك يحافظ الإصدار الجديد على تسجيل الإضافة الحالي. بعد اكتمال نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
 
-## ما الجديد في 3.5.3
+## ما الجديد في 3.5.4
 
-- إعادة معالجة اتجاه العربية في مسار نصي آمن قبل إرسال الملف، مع إبقاء الأقواس وعلامات الترقيم في مواضعها الصحيحة.
-- منع ضغط أو تحويل ملفات `SRT/ASS/SSA/VTT` وصفحات HTML التي تُعدّل عند الإرسال باستخدام `Cache-Control: no-transform`.
-- جعل خيار `Original` أول خيار يظهر في Stremio، ثم Auto Sync، ثم Reference Sync، ثم التنسيق الأصلي.
-- إضافة رقم الإصدار إلى معرّف كل خيار ترجمة لكسر كاش Stremio القديم بعد الإصلاحات.
-- تعطيل تقديم نتائج البحث المتقادمة افتراضيًا حتى لا تظهر روابط تنزيل مزودات منتهية؛ يمكن إعادة تفعيله صراحة عبر Railway.
-- إضافة اختبارات حتمية لترتيب الخيارات، وكسر الكاش، وسياسة عدم تحويل الاستجابة.
+- إزالة الاعتراض العالمي على `express.application.use` و`res.end` الذي كان يتعارض مع `compression` ويقطع استجابات SRT وHTML.
+- تجهيز الجسم داخل المسار نفسه عبر `sendSrtResponse` و`sendStyledSubtitleResponse` و`sendHtmlResponse`.
+- استخدام مرسل SRT نفسه في `/proxy/encoding` وPersonal Vault، ومرسل مستقل لـASS وSSA.
+- تطبيق تثبيت اتجاه العربية قبل الإرسال، ثم ضغط الأجسام النصية المكتملة فقط.
+- استخدام nonce واحد من `res.locals.cspNonce` في ترويسة CSP ووسوم `script` و`style`، مع اختبار حي يمنع اختلافهما.
+- إضافة اختبار Express حقيقي مع `compression` لـSRT صغير وكبير وASS وHTML بعد فك الضغط.
+- إبقاء `ADDON_NAME` المخصص دون إضافة رقم الإصدار إليه.
+- توحيد Redis على اتصال مشترك واحد يسمح بإعادة المحاولة بعد فشل مؤقت.
+- إصلاح إيقاف OpenTelemetry وأنواع إشارات Node.
+- إبقاء `Original` أول خيار، مع تغيير معرّفات الخيارات حسب الإصدار لكسر كاش Stremio القديم.
 
-## الإصلاحان 3.5.1 و3.5.2
+## ملاحظات 3.5.1–3.5.3
 
-- أضاف 3.5.1 تثبيت النقاط وعلامات الاستفهام والتعجب والفواصل والأقواس والاقتباسات العربية.
-- أوقف 3.5.2 تلف الاستجابة الذي كان ممكنًا عند تعديل ملف مضغوط، لكنه أزال طبقة التثبيت الجديدة من مسار الإرسال؛ أعاد 3.5.3 الوظيفة في موضع آمن.
+أضاف 3.5.1 تثبيت علامات الترقيم العربية. أزال 3.5.2 التعديل المتأخر بعد اكتشاف خطر التعامل مع بيانات مضغوطة. حاول 3.5.3 إعادة التثبيت باعتراض عام للاستجابة، لكن اختبارًا تكامليًا كشف تعارضه مع `compression`. يستبدل 3.5.4 ذلك الأسلوب بالكامل بإرسال صريح داخل كل مسار.
 
-## ما أضيف في 3.5.0
+## الإعداد
 
-- حدود طلبات موزعة عبر Redis بدل عدادات مستقلة لكل نسخة خادم.
-- Singleflight محلي وقفل Redis موزع لمنع تكرار جلب المزودات عند الطلبات المتزامنة.
-- تشغيل Docker كمستخدم غير root، بصورة Node مثبتة على Digest، ودعم نظام ملفات Read-only.
-- تثبيت جميع GitHub Actions على SHA كامل غير قابل للتحريك.
-- إضافة ESLint وTypeScript كبوابات فحص إلزامية.
-- إضافة OpenTelemetry لتتبّع Express وHTTP وUndici عبر OTLP/HTTP.
-- إضافة CodeQL وCycloneDX SBOM وTrivy وDependabot لسلسلة التوريد.
-- تفعيل Content Security Policy باستخدام Nonce تلقائي لجميع واجهات HTML.
+متغيرات الإنتاج الإلزامية:
 
-تعتمد المطابقة الأدق على `videoHash` أولًا، ثم اسم ملف الفيديو الذي يرسله Stremio. عند توفر اسم الإصدار، لا تستطيع أولوية المزود وحدها دفع نتيجة أقل تطابقًا إلى المركز الأول.
+- `NODE_ENV=production`
+- `ENCODING_PROXY_SECRET`: قيمة مختلفة وعشوائية بطول 32 بايت على الأقل.
+- `ADMIN_TOKEN`: قيمة مختلفة وعشوائية بطول 32 بايت على الأقل.
 
-## Companion المحلي
+اربط Redis واضبط `REDIS_URL` لاستخدام الكاش وحدود الطلبات والأقفال الموزعة. يستخدم الكاش ومحدد المعدل اتصال Redis مشتركًا واحدًا.
 
-لفحص ملف واحد وحفظ هويته:
+اترك `CACHE_STALE_WHILE_REVALIDATE` غير مضبوط أو اضبطه على `false` حتى تُنفذ طبقة SWR الجديدة التي تفصل نتائج البحث عن روابط التنزيل قصيرة العمر.
 
-```powershell
-npm run companion:scan -- "D:\Movies\Movie.mkv" --server https://pleasing-gentleness-production.up.railway.app --imdb tt1375666
-```
+لتفعيل التتبّع اضبط `ENABLE_TRACING=true` و`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`.
 
-لمراقبة مكتبة كاملة وفحص الملفات الجديدة فقط:
+## الروابط
 
-```powershell
-npm run companion:scan -- --watch "D:\Media" --server https://pleasing-gentleness-production.up.railway.app --extract-arabic
-```
-
-## روابط الاستخدام
-
-- [الصفحة الرئيسية](https://pleasing-gentleness-production.up.railway.app/)
-- [Manifest](https://pleasing-gentleness-production.up.railway.app/manifest.json)
 - [الحالة العامة](https://pleasing-gentleness-production.up.railway.app/health)
 - [البحث والمعاينة](https://pleasing-gentleness-production.up.railway.app/resolver.html)
 - [Personal Vault](https://pleasing-gentleness-production.up.railway.app/vault.html)
 - [لوحة الإدارة](https://pleasing-gentleness-production.up.railway.app/admin.html)
 
-صفحتا Resolver وVault تطلبان `ADMIN_TOKEN`. أما Manifest ومسارات الترجمات الموقعة فتبقى عامة لأن Stremio يحتاج إلى جلبها مباشرة.
-
-## إعداد Railway
-
-متغيرات الإنتاج الإلزامية:
-
-- `NODE_ENV=production`
-- `ENCODING_PROXY_SECRET`: قيمة عشوائية بطول 32 بايت على الأقل.
-- `ADMIN_TOKEN`: قيمة عشوائية مختلفة بطول 32 بايت على الأقل.
-
-اربط Redis بالخدمة واضبط `REDIS_URL` حتى تصبح حدود الطلبات والكاش وأقفال Singleflight مشتركة بين جميع النسخ. عند غياب Redis يستمر التطبيق بالعمل بكاش وحدود محلية.
-
-لأعلى موثوقية يظل `CACHE_STALE_WHILE_REVALIDATE` غير مضبوط أو يضبط على `false`. ضبطه صراحة على `true` يسمح بعرض نتائج بحث متقادمة مؤقتًا، وقد تعود بعض روابط المزودات المباشرة منتهية.
-
-لتفعيل التتبّع اضبط `ENABLE_TRACING=true` و`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` على مسار OTLP/HTTP منتهيًا بـ `/v1/traces`.
-
-للاحتفاظ بمحتوى Vault وسجل النسخ بعد إعادة النشر، اربط Railway Volume بالمسار `/app/data` ثم اضبط:
-
-- `PERSONAL_VAULT_PATH=/app/data/personal-vault.json`
-- `VERSION_REGISTRY_PATH=/app/data/version-registry.json`
-
 ## سلسلة التوريد
 
-يولّد CI ملف `package-lock.json` حديثًا وCycloneDX SBOM من الاعتماديات الدقيقة المثبتة في `package.json`، ثم يحفظهما معًا كدليل إصدار قابل للتنزيل. بهذه الطريقة لا يبقى في المستودع ملف قفل قديم أو غير متزامن.
+يجب الالتزام بملف `package-lock.json` المتزامن مع `package.json`، ثم استخدام `npm ci` في CI وDocker. يولّد CI أيضًا CycloneDX SBOM.
 
 ## التحقق
 
-يجب أن يعيد `/health`:
-
 ```json
-{"status":"ok","version":"3.5.3","ai":false}
+{"status":"ok","version":"3.5.4","ai":false}
 ```
 
-تفاصيل المزودات والكاش والتتبّع موجودة في `/admin.html` و`/api/admin/health` و`/metrics` وتتطلب رمز الإدارة.
+بوابات الدمج المطلوبة: ESLint، TypeScript، الاختبارات والتغطية، `npm audit --omit=dev --audit-level=high`، CodeQL، بناء Docker، وTrivy.
