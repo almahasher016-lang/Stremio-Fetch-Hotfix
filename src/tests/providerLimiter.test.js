@@ -10,19 +10,27 @@ test('provider limiter enforces an independent concurrency ceiling', async () =>
   const task = () => limiter.run(async () => {
     active += 1;
     maxActive = Math.max(maxActive, active);
-    await new Promise(resolve => releases.push(resolve));
+    await new Promise(resolve => {
+      releases.push(resolve);
+    });
     active -= 1;
   });
 
   const pending = [task(), task(), task()];
-  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => {
+    setImmediate(resolve);
+  });
   assert.equal(limiter.status().active, 1);
   assert.equal(limiter.status().queued, 2);
 
   releases.shift()();
-  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => {
+    setImmediate(resolve);
+  });
   releases.shift()();
-  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => {
+    setImmediate(resolve);
+  });
   releases.shift()();
   await Promise.all(pending);
   assert.equal(maxActive, 1);
