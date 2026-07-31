@@ -20,6 +20,11 @@ export function appendNoTransform(value) {
   return current ? `${current}, no-transform` : 'no-transform';
 }
 
+export function responseBodyCanBeMutated(contentEncoding) {
+  const encoding = String(contentEncoding || '').trim().toLowerCase();
+  return !encoding || encoding === 'identity';
+}
+
 export function shouldPreserveBodyEncoding(pathname) {
   const path = String(pathname || '').split('?', 1)[0];
   return path === '/'
