@@ -76,6 +76,14 @@ test('server exposes the release, administration dashboard, and maintenance acti
     assert.match(html, /^<!doctype html>/i);
     assert.match(html, /<\/html>$/i);
     assert.match(html, new RegExp(config.app.version.replaceAll('.', '\\.')));
+
+    const csp = response.headers.get('content-security-policy') || '';
+    const headerNonce = csp.match(/script-src[^;]*'nonce-([^']+)'/u)?.[1];
+    const elementNonces = [...html.matchAll(/<(?:script|style)\b[^>]*\bnonce="([^"]+)"/giu)]
+      .map(match => match[1]);
+    assert.ok(headerNonce, `${page} must expose a CSP nonce`);
+    assert.ok(elementNonces.length > 0, `${page} must inject nonce attributes`);
+    assert.ok(elementNonces.every(nonce => nonce === headerNonce), `${page} nonce mismatch`);
   }
 
   const unauthorizedMalformedImport = await fetch(`${baseUrl}/api/vault/import`, {
