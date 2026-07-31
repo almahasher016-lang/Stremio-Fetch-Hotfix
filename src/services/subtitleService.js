@@ -8,7 +8,9 @@ const waitMs = Math.min(20_000, Math.max(250, Number(process.env.CACHE_SINGLEFLI
 const pollMs = Math.min(1_000, Math.max(25, Number(process.env.CACHE_SINGLEFLIGHT_POLL_MS) || 100));
 
 function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise(resolve => {
+    setTimeout(resolve, ms);
+  });
 }
 
 function singleflightKey(search) {
