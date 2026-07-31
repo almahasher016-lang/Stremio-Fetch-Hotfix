@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { config } from '../config.js';
-import { assertAdminAuth } from '../api/middleware/adminAuth.js';
+import { assertAdminAuth, tokensMatch } from '../api/middleware/adminAuth.js';
 
 function request(headers = {}, extra = {}) {
   return { headers, query: {}, body: {}, ...extra };
@@ -25,4 +25,12 @@ test('administrator authentication rejects missing, invalid, query, and body tok
   ]) {
     assert.throws(() => assertAdminAuth(req), error => error?.status === 401);
   }
+});
+
+test('administrator token comparison accepts only identical non-empty values', () => {
+  assert.equal(tokensMatch('correct-token-value', 'correct-token-value'), true);
+  assert.equal(tokensMatch('correct-token-value', 'incorrect-token-val'), false);
+  assert.equal(tokensMatch('short', 'a-much-longer-token'), false);
+  assert.equal(tokensMatch('', ''), false);
+  assert.equal(tokensMatch(null, 'configured-token'), false);
 });
