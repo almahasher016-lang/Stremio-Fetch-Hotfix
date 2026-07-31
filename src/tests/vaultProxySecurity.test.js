@@ -13,16 +13,20 @@ function arabicSrt() {
 }
 
 test('a signed Stremio proxy resolves vault content internally', async () => {
+  const videoHash = 'vault-proxy-security-hash';
   const item = await addVaultSubtitle({
-    imdbId: 'tt6666666',
+    id: 'vault-proxy-security-item',
+    videoHash,
     releaseName: 'Vault.Security.1080p.WEB-DL',
     text: arabicSrt(),
   });
   try {
-    const [candidate] = await searchVault({ type: 'movie', imdbId: 'tt6666666' });
+    const [candidate] = await searchVault({ type: 'movie', videoHash });
+    assert.equal(candidate?.providerId, item.id);
     const [subtitle] = toStremioSubtitles([candidate], 'https://addon.example', {
       type: 'movie',
       id: 'tt6666666',
+      videoHash,
     });
     const match = new URL(subtitle.url).pathname.match(/^\/proxy\/encoding\/(.+)\.srt$/);
     assert.ok(match);
