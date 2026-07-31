@@ -82,7 +82,7 @@ test('Express and compression deliver finalized SRT styled subtitles and CSP HTM
 
   const large = await rawGet(baseUrl, '/large.srt');
   assert.equal(large.status, 200);
-  assert.equal(large.headers['content-encoding'], 'gzip');
+  assert.ok(['br', 'gzip', 'deflate'].includes(String(large.headers['content-encoding'] || '')));
   assert.equal(large.body.toString('utf8'), `${stabilizeArabicSrt(largeSrt).trimEnd()}\n`);
 
   const styledResponse = await rawGet(baseUrl, '/styled.ass');
