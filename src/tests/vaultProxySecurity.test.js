@@ -17,7 +17,7 @@ test('a signed Stremio proxy resolves vault content internally', async () => {
   const nonce = randomUUID().replaceAll('-', '');
   const videoHash = `vaultproxy${nonce}`;
   const item = await addVaultSubtitle({
-    id: `vault-proxy-${nonce}`,
+    id: `proxy-${nonce}`,
     videoHash,
     releaseName: 'Vault.Security.1080p.WEB-DL',
     text: arabicSrt(),
