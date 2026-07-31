@@ -22,11 +22,15 @@ import { flushVaultWrites } from './services/vaultService.js';
 import { versionRegistry } from './services/versionRegistryService.js';
 import { assertAdminAuth } from './api/middleware/adminAuth.js';
 import { adminPageHtml } from './ui/adminHtml.js';
+import { securityMiddleware } from './securityBootstrap.js';
+import { getTelemetryStatus } from './telemetry.js';
+import { isResponseBodyFinalized, sendHtmlResponse } from './utils/responseSenders.js';
 
 validateRuntimeConfig(config);
 const app = express();
 const manifestJson = createManifest();
 const manifestBuf = Buffer.from(JSON.stringify(manifestJson));
+const FINALIZED_TEXT_CONTENT_RE = /^(?:text\/html|text\/x-ssa|text\/vtt|application\/(?:x-subrip|srt))/iu;
 
 if (config.server.trustProxy) app.set('trust proxy', 1);
 app.disable('x-powered-by');
@@ -47,13 +51,21 @@ function ownRequestOrigin(req) {
   }
 }
 
+function safeCompressionFilter(req, res) {
+  const contentType = String(res.getHeader('Content-Type') || '');
+  if (FINALIZED_TEXT_CONTENT_RE.test(contentType) && !isResponseBodyFinalized(res)) return false;
+  return compression.filter(req, res);
+}
+
+app.use(securityMiddleware);
+
 // Stremio resources stay cross-origin public. Administrative APIs never use wildcard CORS.
 app.use((req, res, next) => {
   if (publicStremioPath(req.path)) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Accept, Origin, Range, Stremio-User-Agent, X-Request-Id');
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Range, Accept-Ranges, X-Request-Id, X-Source-Encoding, X-Source-Format, X-Source-Archive, X-Source-Archive-Entry, X-Sync-Confidence, X-Subtitle-Fallback');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Type, Content-Length, Content-Range, Accept-Ranges, X-Request-Id, X-Trace-Id, X-Source-Encoding, X-Source-Format, X-Source-Archive, X-Source-Archive-Entry, X-Sync-Confidence, X-Subtitle-Fallback');
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   } else {
     const origin = String(req.headers.origin || '');
@@ -75,7 +87,7 @@ app.use((req, res, next) => {
 });
 
 app.use(requestId);
-app.use(compression({ threshold: 1024, level: 1 }));
+app.use(compression({ threshold: 1024, level: 1, filter: safeCompressionFilter }));
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginResourcePolicy: false,
@@ -93,7 +105,7 @@ app.use(morgan(config.server.isProd ? accessLogFormat : ':method :safe-url :stat
 app.use(apiLimiter);
 app.use(adminWriteLimiter);
 
-const publicHomeHtmlBuf = Buffer.from(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:32px;line-height:1.8;max-width:900px}a{display:inline-block;margin:.25rem .5rem .25rem 0}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>${config.app.name}</h1><p>إضافة ترجمات عربية مباشرة لـ Stremio، بفحص جودة حتمي وبدون ذكاء اصطناعي.</p><p><a href="/manifest.json">Manifest</a><a href="/health">Health</a><a href="/resolver.html">Resolver</a><a href="/vault.html">Vault</a><a href="/admin.html">Admin</a></p><footer><small>الإصدار ${config.app.version}</small></footer></body></html>`);
+const publicHomeHtml = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:32px;line-height:1.8;max-width:900px}a{display:inline-block;margin:.25rem .5rem .25rem 0}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>${config.app.name}</h1><p>إضافة ترجمات عربية مباشرة لـ Stremio، بفحص جودة حتمي وبدون ذكاء اصطناعي.</p><p><a href="/manifest.json">Manifest</a><a href="/health">Health</a><a href="/resolver.html">Resolver</a><a href="/vault.html">Vault</a><a href="/admin.html">Admin</a></p><footer><small>الإصدار ${config.app.version}</small></footer></body></html>`;
 
 function htmlEscape(value) {
   return String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -104,13 +116,9 @@ function secureConfigureHtml(req) {
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>Configure ${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:24px;line-height:1.8;max-width:900px}input{direction:ltr;width:100%;padding:.6rem;box-sizing:border-box}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>إعداد ${config.app.name}</h1><p>تم حفظ أسرار التشغيل في Railway. لا تضع رمز الإدارة أو مفاتيح المزودات داخل رابط Stremio.</p><label>رابط Stremio</label><input readonly value="${htmlEscape(manifestUrl)}" onclick="this.select()"><p><a href="/manifest.json">Manifest</a> · <a href="/health">Health</a> · <a href="/resolver.html">Resolver</a></p><footer><small>الإصدار ${config.app.version} · معالجة حتمية بدون ذكاء اصطناعي</small></footer></body></html>`;
 }
 
-app.get('/', (_req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, max-age=3600');
-  res.setHeader('Content-Length', publicHomeHtmlBuf.byteLength);
-  res.end(publicHomeHtmlBuf);
-});
-
+app.get('/', (_req, res) => sendHtmlResponse(res, publicHomeHtml, {
+  cacheControl: 'public, max-age=3600',
+}));
 
 app.get('/test.html', (req, res) => {
   if (!config.ui.testUiEnabled) return res.status(404).end('disabled');
@@ -119,11 +127,7 @@ app.get('/test.html', (req, res) => {
 
 app.get('/configure', (req, res) => {
   if (!config.ui.configureEnabled) return res.redirect(302, '/manifest.json');
-  const body = Buffer.from(secureConfigureHtml(req));
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Content-Length', body.byteLength);
-  res.end(body);
+  return sendHtmlResponse(res, secureConfigureHtml(req), { cacheControl: 'no-cache' });
 });
 
 app.get('/manifest.json', (_req, res) => {
@@ -146,13 +150,9 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', version: config.app.version, ai: false });
 });
 
-app.get('/admin.html', (_req, res) => {
-  const body = Buffer.from(adminPageHtml());
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Content-Length', body.byteLength);
-  res.end(body);
-});
+app.get('/admin.html', (_req, res) => sendHtmlResponse(res, adminPageHtml(), {
+  cacheControl: 'no-cache',
+}));
 
 app.get('/api/admin/health', async (req, res, next) => {
   try {
@@ -163,6 +163,7 @@ app.get('/api/admin/health', async (req, res, next) => {
       version: config.app.version,
       uptime: process.uptime(),
       ai: false,
+      telemetry: getTelemetryStatus(),
       referenceSync: config.referenceSync,
       providers: await getProvidersStatus(),
       cache: getCacheStatus(),
@@ -201,7 +202,6 @@ app.post('/api/admin/breakers/:provider/reset', (req, res, next) => {
     return next(error);
   }
 });
-
 
 app.get('/metrics', (req, res, next) => {
   try {
