@@ -1,6 +1,10 @@
 // @ts-check
-import Redis from 'ioredis';
 import { config } from '../config.js';
+import {
+  __resetSharedRedisClientForTests,
+  __setSharedRedisClientForTests,
+  getSharedRedisClient,
+} from './redisClient.js';
 
 const INCREMENT_LUA = `
 local current = redis.call('INCR', KEYS[1])
@@ -23,28 +27,8 @@ end
 return redis.call('DECR', KEYS[1])
 `;
 
-/** @type {Redis | null} */
-let redis = null;
-/** @type {any} */
-let redisOverride = null;
-
 function safeSegment(value) {
   return String(value || 'default').replace(/[^A-Za-z0-9_.:-]/g, '_').slice(0, 160);
-}
-
-async function getClient() {
-  if (redisOverride) return redisOverride;
-  if (!config.cache.redisUrl) return null;
-  if (!redis) {
-    redis = new Redis(config.cache.redisUrl, {
-      lazyConnect: true,
-      maxRetriesPerRequest: 1,
-      enableOfflineQueue: false,
-    });
-    redis.on('error', error => console.warn('[rate-limit:redis]', error.message));
-  }
-  if (redis.status === 'wait') await redis.connect();
-  return redis;
 }
 
 export class RedisRateLimitStore {
@@ -64,7 +48,7 @@ export class RedisRateLimitStore {
   }
 
   async increment(clientKey) {
-    const client = await getClient();
+    const client = await getSharedRedisClient();
     if (!client) throw new Error('Redis rate-limit store is not configured');
     const raw = /** @type {any} */ (await client.eval(INCREMENT_LUA, 1, this.key(clientKey), this.windowMs));
     const totalHits = Math.max(1, Number(raw?.[0]) || 1);
@@ -73,12 +57,12 @@ export class RedisRateLimitStore {
   }
 
   async decrement(clientKey) {
-    const client = await getClient();
+    const client = await getSharedRedisClient();
     if (client) await client.eval(DECREMENT_LUA, 1, this.key(clientKey));
   }
 
   async resetKey(clientKey) {
-    const client = await getClient();
+    const client = await getSharedRedisClient();
     if (client) await client.del(this.key(clientKey));
   }
 
@@ -90,11 +74,9 @@ export function createDistributedRateLimitStore(namespace) {
 }
 
 export function __setRateLimitRedisForTests(client) {
-  redisOverride = client;
+  __setSharedRedisClientForTests(client);
 }
 
 export async function __resetRateLimitRedisForTests() {
-  redisOverride = null;
-  if (redis) await redis.quit().catch(() => undefined);
-  redis = null;
+  __resetSharedRedisClientForTests();
 }
