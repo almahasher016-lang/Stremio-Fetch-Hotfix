@@ -1,5 +1,4 @@
 const VERSION_SUFFIX_RE = /-v[0-9A-Za-z_]+$/u;
-const STANDALONE_SUBTITLE_PATH_RE = /\.(?:srt|ass|ssa|vtt)$/iu;
 
 function versionTag(version) {
   return String(version || 'unknown').replace(/[^0-9A-Za-z]+/gu, '_').replace(/^_+|_+$/gu, '') || 'unknown';
@@ -12,25 +11,6 @@ function modeRank(id) {
   if (/-refsync$/u.test(value)) return 2;
   if (/-styled-(?:ass|ssa)$/u.test(value)) return 3;
   return 4;
-}
-
-export function appendNoTransform(value) {
-  const current = String(value || '').trim();
-  if (/(?:^|,)\s*no-transform\s*(?:,|$)/iu.test(current)) return current;
-  return current ? `${current}, no-transform` : 'no-transform';
-}
-
-export function responseBodyCanBeMutated(contentEncoding) {
-  const encoding = String(contentEncoding || '').trim().toLowerCase();
-  return !encoding || encoding === 'identity';
-}
-
-export function shouldPreserveBodyEncoding(pathname) {
-  const path = String(pathname || '').split('?', 1)[0];
-  return path === '/'
-    || path === '/configure'
-    || /\.html$/iu.test(path)
-    || STANDALONE_SUBTITLE_PATH_RE.test(path);
 }
 
 export function normalizeStremioSubtitleResponse(body, version) {
