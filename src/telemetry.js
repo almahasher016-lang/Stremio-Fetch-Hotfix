@@ -52,11 +52,7 @@ export async function shutdownTelemetry() {
   const activeSdk = sdk;
   sdk = null;
   status.active = false;
-  try {
-    await activeSdk.shutdown();
-  } finally {
-    isShuttingDown = false;
-  }
+  await activeSdk.shutdown();
 }
 
 /** @type {readonly NodeJS.Signals[]} */
