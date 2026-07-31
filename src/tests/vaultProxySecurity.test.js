@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { addVaultSubtitle, deleteVaultSubtitle, searchVault } from '../services/vaultService.js';
 import { resolveProxiedSubtitle, verifyEncodingToken } from '../utils/encodingProxy.js';
 import { toStremioSubtitles } from '../utils/stremio.js';
@@ -13,16 +14,21 @@ function arabicSrt() {
 }
 
 test('a signed Stremio proxy resolves vault content internally', async () => {
+  const nonce = randomUUID().replaceAll('-', '');
+  const videoHash = `vaultproxy${nonce}`;
   const item = await addVaultSubtitle({
-    imdbId: 'tt6666666',
+    id: `proxy-${nonce}`,
+    videoHash,
     releaseName: 'Vault.Security.1080p.WEB-DL',
     text: arabicSrt(),
   });
   try {
-    const [candidate] = await searchVault({ type: 'movie', imdbId: 'tt6666666' });
+    const [candidate] = await searchVault({ type: 'movie', videoHash });
+    assert.equal(candidate?.providerId, item.id);
     const [subtitle] = toStremioSubtitles([candidate], 'https://addon.example', {
       type: 'movie',
       id: 'tt6666666',
+      videoHash,
     });
     const match = new URL(subtitle.url).pathname.match(/^\/proxy\/encoding\/(.+)\.srt$/);
     assert.ok(match);

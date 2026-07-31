@@ -51,6 +51,23 @@ test('ZIP extraction chooses the strongest Arabic subtitle candidate', async () 
   assert.equal(result.buffer.toString('utf8'), ARABIC_SRT);
 });
 
+test('ZIP extraction ignores absolute and traversal entry paths', async () => {
+  const archive = zipSync({
+    '../Escape.Arabic.srt': strToU8(ARABIC_SRT),
+    '/Absolute.Arabic.srt': strToU8(ARABIC_SRT),
+    'C:/Windows/Drive.Arabic.srt': strToU8(ARABIC_SRT),
+    'safe/Movie.Arabic.srt': strToU8(ARABIC_SRT),
+  });
+  const result = await extractSubtitlePayload(Buffer.from(archive), {
+    sourceName: 'Movie.2026.zip',
+    maxDecompressedBytes: 100_000,
+    maxArchiveEntries: 10,
+  });
+
+  assert.equal(result.entryName, 'Movie.Arabic.srt');
+  assert.equal(result.buffer.toString('utf8'), ARABIC_SRT);
+});
+
 test('ZIP extraction recognizes ASS and SSA subtitle entries', async () => {
   for (const extension of ['ass', 'ssa']) {
     const entryName = `Movie.Arabic.${extension}`;

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildConfig, validateRuntimeConfig } from '../config.js';
+import { buildConfig as buildCoreConfig } from '../configCore.js';
+import { RELEASE_ID, RELEASE_NAME, RELEASE_USER_AGENT, RELEASE_VERSION } from '../release.js';
 
 test('configuration prefers explicit environment values and ships no credentials', () => {
   const defaults = buildConfig({});
@@ -19,6 +21,19 @@ test('configuration prefers explicit environment values and ships no credentials
   assert.equal(configured.app.name, 'Custom resolver');
   assert.equal(configured.providers.excludeMachineTranslated, false);
   assert.equal(configured.openSubtitles.apiKey, 'provider-key-from-env');
+});
+
+test('core and runtime configuration share one release metadata source', () => {
+  const core = buildCoreConfig({});
+  const runtime = buildConfig({});
+  assert.equal(core.app.id, RELEASE_ID);
+  assert.equal(core.app.name, RELEASE_NAME);
+  assert.equal(core.app.version, RELEASE_VERSION);
+  assert.equal(core.app.userAgent, RELEASE_USER_AGENT);
+  assert.equal(runtime.app.version, RELEASE_VERSION);
+  assert.equal(runtime.app.name, RELEASE_NAME);
+  assert.equal(runtime.app.userAgent, RELEASE_USER_AGENT);
+  assert.match(runtime.cache.keyPrefix, new RegExp(`:release:${RELEASE_VERSION.replaceAll('.', '\\.')}$`));
 });
 
 test('production validation rejects missing, short, or shared security secrets', () => {

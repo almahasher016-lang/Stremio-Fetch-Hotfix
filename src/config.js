@@ -1,6 +1,6 @@
 import { buildConfig as buildCoreConfig, validateRuntimeConfig as validateCoreRuntimeConfig } from './configCore.js';
+import { RELEASE_VERSION } from './release.js';
 
-const RELEASE_VERSION = '3.5.4';
 const VERSION_IN_NAME_RE = /\bv\d+\.\d+\.\d+\b/u;
 
 function explicitlyConfigured(env, key) {

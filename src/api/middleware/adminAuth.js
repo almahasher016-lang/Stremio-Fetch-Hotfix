@@ -1,12 +1,16 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { config } from '../../config.js';
 import { httpError } from '../../utils/httpError.js';
 
-function tokensMatch(supplied, expected) {
-  const actualBytes = Buffer.from(String(supplied || ''), 'utf8');
-  const expectedBytes = Buffer.from(String(expected || ''), 'utf8');
-  if (!actualBytes.length || actualBytes.length !== expectedBytes.length) return false;
-  return timingSafeEqual(actualBytes, expectedBytes);
+function tokenDigest(value) {
+  return createHash('sha256').update(String(value || ''), 'utf8').digest();
+}
+
+export function tokensMatch(supplied, expected) {
+  const actualValue = String(supplied || '');
+  const expectedValue = String(expected || '');
+  const matched = timingSafeEqual(tokenDigest(actualValue), tokenDigest(expectedValue));
+  return Boolean(actualValue) && Boolean(expectedValue) && matched;
 }
 
 function bearerToken(value) {

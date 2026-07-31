@@ -28,6 +28,13 @@ export function detectArchiveFormat(input) {
   return null;
 }
 
+function unsafeArchivePath(value) {
+  const normalized = String(value || '').replaceAll('\\', '/');
+  if (!normalized || normalized.includes('\0')) return true;
+  if (normalized.startsWith('/') || /^[a-z]:\//iu.test(normalized)) return true;
+  return normalized.split('/').some(segment => segment === '..');
+}
+
 function safeEntryName(value) {
   return String(value || '')
     .replaceAll('\\', '/')
@@ -51,7 +58,7 @@ function normalizedAllowedExtensions(value) {
 
 function isSubtitleEntry(name, allowedExtensions = SUBTITLE_EXTENSIONS) {
   const normalized = String(name || '').replaceAll('\\', '/');
-  if (!normalized || normalized.endsWith('/')) return false;
+  if (unsafeArchivePath(normalized) || normalized.endsWith('/')) return false;
   const segments = normalized.split('/').filter(Boolean);
   if (segments.some(segment => segment === '__MACOSX' || segment.startsWith('.'))) return false;
   return allowedExtensions.has(extensionOf(normalized));
