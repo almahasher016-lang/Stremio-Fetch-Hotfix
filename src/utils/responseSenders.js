@@ -1,6 +1,7 @@
 import { stabilizeArabicSrt } from './arabicBidi.js';
 
 const FINALIZED_BODY = Symbol.for('m7md.response.body-finalized');
+const FINALIZED_TEXT_CONTENT_RE = /^(?:text\/html|text\/x-ssa|text\/vtt|application\/(?:x-subrip|srt))/iu;
 
 function responseNonce(res) {
   const nonce = String(res.locals?.cspNonce || '');
@@ -25,6 +26,12 @@ export function markResponseBodyFinalized(res) {
 
 export function isResponseBodyFinalized(res) {
   return Boolean(res.locals?.[FINALIZED_BODY]);
+}
+
+export function finalizedBodyCompressionFilter(req, res, defaultFilter) {
+  const contentType = String(res.getHeader('Content-Type') || '');
+  if (FINALIZED_TEXT_CONTENT_RE.test(contentType) && !isResponseBodyFinalized(res)) return false;
+  return defaultFilter(req, res);
 }
 
 export function sendHtmlResponse(res, html, {
