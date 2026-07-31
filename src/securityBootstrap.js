@@ -3,11 +3,9 @@ import express from 'express';
 import { trace } from '@opentelemetry/api';
 import { config } from './config.js';
 import { getTelemetryStatus } from './telemetry.js';
-import { stabilizeArabicSrt } from './utils/arabicBidi.js';
 
 const INSTALLED = Symbol.for('m7md.security-bootstrap.installed');
 const originalUse = express.application.use;
-const SRT_CONTENT_TYPE_RE = /(?:application\/x-subrip|application\/srt|text\/srt)/iu;
 
 function cspHeader(nonce) {
   const directives = [
@@ -67,11 +65,7 @@ function securityMiddleware(req, res, next) {
   const originalEnd = res.end.bind(res);
   res.end = (chunk, encoding, callback) => {
     const contentType = String(res.getHeader('Content-Type') || '');
-    if (chunk != null && SRT_CONTENT_TYPE_RE.test(contentType)) {
-      const text = stabilizeArabicSrt(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : chunk);
-      chunk = Buffer.from(text);
-      res.setHeader('Content-Length', chunk.byteLength);
-    } else if (chunk != null && contentType.includes('text/html')) {
+    if (chunk != null && contentType.includes('text/html')) {
       const text = injectNonce(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : chunk, nonce);
       chunk = Buffer.from(text);
       res.setHeader('Content-Length', chunk.byteLength);
