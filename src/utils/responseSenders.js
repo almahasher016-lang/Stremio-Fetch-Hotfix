@@ -30,7 +30,9 @@ export function isResponseBodyFinalized(res) {
 
 export function finalizedBodyCompressionFilter(req, res, defaultFilter) {
   const contentType = String(res.getHeader('Content-Type') || '');
-  if (FINALIZED_TEXT_CONTENT_RE.test(contentType) && !isResponseBodyFinalized(res)) return false;
+  if (FINALIZED_TEXT_CONTENT_RE.test(contentType)) {
+    return isResponseBodyFinalized(res);
+  }
   return defaultFilter(req, res);
 }
 
