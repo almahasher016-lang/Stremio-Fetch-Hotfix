@@ -1,5 +1,17 @@
 # Changelog
 
+## 3.5.3 - Audited Stremio Subtitle Delivery
+- Restored deterministic Arabic punctuation stabilization in a plaintext-safe response stage.
+- Applied `Cache-Control: no-transform` before compression to SRT, ASS, SSA, VTT, and late-mutated HTML responses.
+- Placed the direct Original subtitle before Auto Sync and Reference Sync options for faster, safer selection.
+- Versioned Stremio subtitle option IDs to invalidate client-side cached entries after delivery fixes.
+- Disabled stale search-result delivery by default so expired provider URLs are not returned unless explicitly enabled.
+- Added regression tests for option ordering, ID cache busting, and response transformation policy.
+
+## 3.5.2 - Emergency Response-Corruption Hotfix
+- Removed unsafe SRT mutation from the generic response interceptor after it could encounter compressed response bytes.
+- Kept Railway service availability while the end-to-end subtitle path was audited.
+
 ## 3.5.1 - Deterministic Arabic Punctuation Anchoring
 - Added dual right-to-left anchors around every Arabic-dominant SRT cue line.
 - Stabilized terminal punctuation, leading dialogue marks, paired brackets, braces, and quotation marks.
