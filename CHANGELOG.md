@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.5.1 - Deterministic Arabic Punctuation Anchoring
+- Added dual right-to-left anchors around every Arabic-dominant SRT cue line.
+- Stabilized terminal punctuation, leading dialogue marks, paired brackets, braces, and quotation marks.
+- Preserved mixed Latin release names and numbers inside an isolated Arabic paragraph.
+- Reprocessed outgoing SRT responses so previously cached subtitles receive the correction immediately.
+- Added deterministic, idempotent regression coverage for punctuation, brackets, mixed scripts, timings, indexes, and numeric dialogue.
+
 ## 3.5.0 - Modern Distributed Production Stack
 - Added Redis-backed distributed rate limiting with graceful local fallback.
 - Added local and distributed singleflight around subtitle searches.
