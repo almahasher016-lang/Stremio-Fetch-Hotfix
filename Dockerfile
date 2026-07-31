@@ -1,8 +1,8 @@
 FROM node:24.18.0-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
 WORKDIR /app
 ENV NODE_ENV=production
-COPY package.json ./
-RUN npm install --omit=dev --ignore-scripts --no-audit --no-fund \
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
   && npm cache clean --force \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx
 COPY --chown=node:node src ./src
