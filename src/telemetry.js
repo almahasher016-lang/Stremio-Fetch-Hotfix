@@ -3,6 +3,7 @@ import { config } from './config.js';
 
 /** @type {import('@opentelemetry/sdk-node').NodeSDK | null} */
 let sdk = null;
+let isShuttingDown = false;
 const endpoint = String(process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT || '').trim();
 const requested = !['0', 'false', 'no', 'off'].includes(
   String(process.env.ENABLE_TRACING || Boolean(endpoint)).toLowerCase(),
@@ -46,13 +47,21 @@ export function getTelemetryStatus() {
 }
 
 export async function shutdownTelemetry() {
-  if (!sdk) return;
-  await sdk.shutdown();
+  if (isShuttingDown || !sdk) return;
+  isShuttingDown = true;
+  const activeSdk = sdk;
   sdk = null;
   status.active = false;
+  try {
+    await activeSdk.shutdown();
+  } finally {
+    isShuttingDown = false;
+  }
 }
 
-for (const signal of ['SIGTERM', 'SIGINT']) {
+/** @type {readonly NodeJS.Signals[]} */
+const shutdownSignals = ['SIGTERM', 'SIGINT'];
+for (const signal of shutdownSignals) {
   process.prependOnceListener(signal, () => {
     shutdownTelemetry().catch(error => console.warn('[telemetry:shutdown]', error.message));
   });
