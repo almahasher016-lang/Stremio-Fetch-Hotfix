@@ -20,6 +20,12 @@ import { versionRegistry } from '../../services/versionRegistryService.js';
 import { resolverHtml } from '../../ui/resolverHtml.js';
 import { vaultPageHtml } from '../../ui/vaultHtml.js';
 import { assertAdminAuth, requireAdminAuth } from '../middleware/adminAuth.js';
+import { normalizeStremioSubtitleResponse } from '../../utils/stremioResponseCompat.js';
+import {
+  sendHtmlResponse,
+  sendSrtResponse,
+  sendStyledSubtitleResponse,
+} from '../../utils/responseSenders.js';
 
 const router = express.Router();
 const EMPTY_SUBTITLES_BUF = Buffer.from('{"subtitles":[]}');
@@ -92,20 +98,12 @@ export function toPublicPreview(results, baseUrl, search = {}) {
 
 router.get('/vault.html', (_req, res) => {
   if (!config.vault.enabled) return res.status(404).end('disabled');
-  const body = Buffer.from(vaultPageHtml());
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Content-Length', body.byteLength);
-  res.end(body);
+  return sendHtmlResponse(res, vaultPageHtml(), { cacheControl: 'no-cache' });
 });
 
-router.get('/resolver.html', (_req, res) => {
-  const body = Buffer.from(resolverHtml());
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Content-Length', body.byteLength);
-  res.end(body);
-});
+router.get('/resolver.html', (_req, res) => sendHtmlResponse(res, resolverHtml(), {
+  cacheControl: 'no-cache',
+}));
 
 router.get('/api/versions', async (req, res, next) => {
   try {
@@ -186,10 +184,10 @@ router.get('/vault/subtitles/:id.srt', async (req, res, next) => {
     assertAdminAuth(req);
     const item = await getVaultSubtitle(req.params.id);
     if (!item) throw httpError(404, 'Vault subtitle not found');
-    const text = item.text.replace(/\r\n/g, '\n');
-    res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
-    res.setHeader('Cache-Control', 'private, no-store');
-    res.end(text);
+    return sendSrtResponse(res, item.text.replace(/\r\n/g, '\n'), {
+      cacheControl: 'private, no-store',
+      filename: `vault-${req.params.id}.srt`,
+    });
   } catch (err) { next(err); }
 });
 
@@ -256,7 +254,10 @@ async function stremioHandler(req, res, next) {
     const search = buildStremioSubtitleSearch({ type: req.params.type, id: req.params.id, extra });
     const results = await searchSubtitles(search);
     res.setHeader('Cache-Control', 'public, max-age=1800, stale-while-revalidate=300');
-    res.json({ subtitles: toStremioSubtitles(results, getBaseUrl(req), search) });
+    const body = normalizeStremioSubtitleResponse({
+      subtitles: toStremioSubtitles(results, getBaseUrl(req), search),
+    }, config.app.version);
+    res.json(body);
   } catch (err) {
     if (err.status === 503) {
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -275,14 +276,16 @@ router.get('/subtitle/:type/:id/:extra.json', stremioHandler);
 router.get('/proxy/encoding/:token.srt', async (req, res, next) => {
   try {
     const result = await resolveProxiedSubtitle(req.params.token);
-    res.setHeader('Content-Type', 'application/x-subrip; charset=utf-8');
-    res.setHeader('Cache-Control', result.cache === 'hit' ? 'public, max-age=604800, immutable' : 'public, max-age=86400');
     res.setHeader('X-Source-Encoding', result.encoding || 'utf-8');
     res.setHeader('X-Source-Format', result.format || 'srt');
     if (result.archive) res.setHeader('X-Source-Archive', result.archive);
     if (result.sync) res.setHeader('X-Sync-Confidence', String(result.sync.confidence));
     if (result.fallbackIndex > 0) res.setHeader('X-Subtitle-Fallback', String(result.fallbackIndex));
-    res.end(result.text);
+    return sendSrtResponse(res, result.text, {
+      cacheControl: result.cache === 'hit'
+        ? 'public, max-age=604800, immutable'
+        : 'public, max-age=86400',
+    });
   } catch (err) {
     next(err);
   }
@@ -291,14 +294,16 @@ router.get('/proxy/encoding/:token.srt', async (req, res, next) => {
 async function styledSubtitleHandler(req, res, next) {
   try {
     const result = await resolveStyledSubtitle(req.params.token);
-    res.setHeader('Content-Type', 'text/x-ssa; charset=utf-8');
-    res.setHeader('Content-Disposition', `inline; filename="subtitle.${result.format || 'ass'}"`);
-    res.setHeader('Cache-Control', result.cache === 'hit' ? 'public, max-age=604800, immutable' : 'public, max-age=86400');
     res.setHeader('X-Source-Encoding', result.encoding || 'utf-8');
     res.setHeader('X-Source-Format', result.format || 'ass');
     if (result.archive) res.setHeader('X-Source-Archive', result.archive);
     if (result.archiveEntry) res.setHeader('X-Source-Archive-Entry', result.archiveEntry);
-    res.end(result.text);
+    return sendStyledSubtitleResponse(res, result.text, {
+      format: result.format || 'ass',
+      cacheControl: result.cache === 'hit'
+        ? 'public, max-age=604800, immutable'
+        : 'public, max-age=86400',
+    });
   } catch (err) {
     next(err);
   }
