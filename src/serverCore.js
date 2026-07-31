@@ -24,13 +24,12 @@ import { assertAdminAuth } from './api/middleware/adminAuth.js';
 import { adminPageHtml } from './ui/adminHtml.js';
 import { securityMiddleware } from './securityBootstrap.js';
 import { getTelemetryStatus } from './telemetry.js';
-import { isResponseBodyFinalized, sendHtmlResponse } from './utils/responseSenders.js';
+import { finalizedBodyCompressionFilter, sendHtmlResponse } from './utils/responseSenders.js';
 
 validateRuntimeConfig(config);
 const app = express();
 const manifestJson = createManifest();
 const manifestBuf = Buffer.from(JSON.stringify(manifestJson));
-const FINALIZED_TEXT_CONTENT_RE = /^(?:text\/html|text\/x-ssa|text\/vtt|application\/(?:x-subrip|srt))/iu;
 
 if (config.server.trustProxy) app.set('trust proxy', 1);
 app.disable('x-powered-by');
@@ -49,12 +48,6 @@ function ownRequestOrigin(req) {
   } catch {
     return '';
   }
-}
-
-function safeCompressionFilter(req, res) {
-  const contentType = String(res.getHeader('Content-Type') || '');
-  if (FINALIZED_TEXT_CONTENT_RE.test(contentType) && !isResponseBodyFinalized(res)) return false;
-  return compression.filter(req, res);
 }
 
 app.use(securityMiddleware);
@@ -87,7 +80,11 @@ app.use((req, res, next) => {
 });
 
 app.use(requestId);
-app.use(compression({ threshold: 1024, level: 1, filter: safeCompressionFilter }));
+app.use(compression({
+  threshold: 1024,
+  level: 1,
+  filter: (req, res) => finalizedBodyCompressionFilter(req, res, compression.filter),
+}));
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginResourcePolicy: false,
