@@ -1,25 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
-import Redis from 'ioredis';
 import { config } from '../config.js';
 import { recordCache, recordRefreshLock, getCacheMetrics } from '../utils/metrics.js';
+import {
+  __resetSharedRedisClientForTests,
+  __setSharedRedisClientForTests,
+  closeSharedRedisClient,
+  getSharedRedisClient,
+} from './redisClient.js';
 
-let redis = null;
-let redisClientOverride = null;
 const memory = new Map();
-
-function getRedis() {
-  if (redisClientOverride) return redisClientOverride;
-  if (!config.cache.redisUrl) return null;
-  if (!redis) {
-    redis = new Redis(config.cache.redisUrl, {
-      lazyConnect: true,
-      maxRetriesPerRequest: 1,
-      enableOfflineQueue: false,
-    });
-    redis.on('error', err => console.warn('[redis]', err.message));
-  }
-  return redis;
-}
 
 function nowSeconds() {
   return Math.floor(Date.now() / 1000);
@@ -76,13 +65,12 @@ export async function cacheGetEntry(key, options = {}) {
   }
   if (memory.has(fullKey)) memory.delete(fullKey);
 
-  const client = getRedis();
+  const client = await getSharedRedisClient();
   if (!client) {
     recordCache('miss');
     return null;
   }
   try {
-    if (client.status === 'wait') await client.connect();
     const raw = await client.get(fullKey);
     const parsed = raw ? JSON.parse(raw) : null;
     const fromRedis = unwrap(parsed, options);
@@ -113,10 +101,9 @@ export async function cacheSet(key, value, ttlSeconds = config.cache.ttlSeconds,
   pruneMemory();
   recordCache('set');
 
-  const client = getRedis();
+  const client = await getSharedRedisClient();
   if (!client) return;
   try {
-    if (client.status === 'wait') await client.connect();
     const redisTtl = Math.max(1, ttlSeconds + staleSeconds);
     await client.set(fullKey, JSON.stringify(entry), 'EX', redisTtl);
   } catch (err) {
@@ -139,11 +126,10 @@ export async function clearCache(scope = 'all') {
     memoryDeleted += 1;
   }
 
-  const client = getRedis();
+  const client = await getSharedRedisClient();
   if (!client) return { scope: normalizedScope, memoryDeleted, redisDeleted: 0 };
   let redisDeleted = 0;
   try {
-    if (client.status === 'wait') await client.connect();
     let cursor = '0';
     const pattern = `${scopedPrefix}*`;
     do {
@@ -161,9 +147,8 @@ export async function clearCache(scope = 'all') {
   }
 }
 
-
 export async function acquireRefreshLock(key, ttlSeconds = config.cache.refreshLockTtlSeconds) {
-  const client = getRedis();
+  const client = await getSharedRedisClient();
   if (!client) {
     recordRefreshLock('fallback-local');
     return { acquired: true, distributed: false, key: null, token: null };
@@ -172,7 +157,6 @@ export async function acquireRefreshLock(key, ttlSeconds = config.cache.refreshL
   const fullKey = normalizeKey(safeLockKey(key));
   const token = randomUUID();
   try {
-    if (client.status === 'wait') await client.connect();
     const result = await client.set(fullKey, token, 'NX', 'EX', Math.max(1, ttlSeconds));
     if (result === 'OK') {
       recordRefreshLock('redis-acquired');
@@ -196,10 +180,9 @@ return 0
 
 export async function releaseRefreshLock(lock) {
   if (!lock?.distributed || !lock.key || !lock.token) return;
-  const client = getRedis();
+  const client = await getSharedRedisClient();
   if (!client) return;
   try {
-    if (client.status === 'wait') await client.connect();
     const released = await client.eval(RELEASE_LOCK_LUA, 1, lock.key, lock.token);
     recordRefreshLock(Number(released) === 1 ? 'redis-released' : 'redis-release-skipped');
   } catch (err) {
@@ -208,13 +191,12 @@ export async function releaseRefreshLock(lock) {
   }
 }
 
-
 export function __setRedisClientForTests(client) {
-  redisClientOverride = client;
+  __setSharedRedisClientForTests(client);
 }
 
 export function __resetCacheForTests() {
-  redisClientOverride = null;
+  __resetSharedRedisClientForTests();
   memory.clear();
 }
 
@@ -223,9 +205,7 @@ export function __lockKeyForTests(key) {
 }
 
 export async function closeRedis() {
-  if (!redis) return;
-  await redis.quit().catch(() => undefined);
-  redis = null;
+  await closeSharedRedisClient();
 }
 
 export function getCacheStatus() {
