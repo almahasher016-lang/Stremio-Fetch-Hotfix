@@ -19,8 +19,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24.18.0
-          cache: npm
-      - run: npm ci --ignore-scripts
+      - run: npm install --ignore-scripts --no-audit --no-fund
       - run: npm audit --omit=dev --audit-level=high
       - run: npm audit signatures
       - run: npm run lint
@@ -32,8 +31,10 @@ jobs:
         run: npm sbom --sbom-format=cyclonedx > sbom.cdx.json
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: sbom-${{ github.sha }}
-          path: sbom.cdx.json
+          name: release-evidence-${{ github.sha }}
+          path: |
+            package-lock.json
+            sbom.cdx.json
           retention-days: 30
       - run: docker build --tag m7md-ci:${{ github.sha }} .
       - name: Scan production image

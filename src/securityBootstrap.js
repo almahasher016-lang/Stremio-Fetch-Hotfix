@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import express from 'express';
 import { trace } from '@opentelemetry/api';
@@ -7,7 +6,6 @@ import { getTelemetryStatus } from './telemetry.js';
 
 const INSTALLED = Symbol.for('m7md.security-bootstrap.installed');
 const originalUse = express.application.use;
-const LOCK_EXPORT_PATH = '/__release_lock/e_KFOBIneLBCtFJBJcVm6bM3XTCFVryQgwlFnEOkUAc';
 
 function cspHeader(nonce) {
   const directives = [
@@ -35,19 +33,7 @@ function injectNonce(body, nonce) {
     .replace(/\s+onclick="this\.select\(\)"/gu, '');
 }
 
-async function securityMiddleware(req, res, next) {
-  if (req.path === LOCK_EXPORT_PATH) {
-    try {
-      const lock = await readFile('/app/package-lock.json');
-      res.setHeader('Content-Type', 'application/json; charset=utf-8');
-      res.setHeader('Cache-Control', 'private, no-store');
-      res.setHeader('Content-Length', lock.byteLength);
-      return res.end(lock);
-    } catch {
-      return res.status(404).json({ error: 'Build lock not available' });
-    }
-  }
-
+function securityMiddleware(req, res, next) {
   const nonce = randomBytes(18).toString('base64');
   res.locals.cspNonce = nonce;
   res.setHeader('Content-Security-Policy', cspHeader(nonce));
@@ -80,10 +66,7 @@ async function securityMiddleware(req, res, next) {
   res.end = (chunk, encoding, callback) => {
     const contentType = String(res.getHeader('Content-Type') || '');
     if (chunk != null && contentType.includes('text/html')) {
-      let text = injectNonce(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : chunk, nonce);
-      if (req.path === '/resolver.html') {
-        text = text.replace('</body>', `<p><a href="${LOCK_EXPORT_PATH}">Production lock</a></p></body>`);
-      }
+      const text = injectNonce(Buffer.isBuffer(chunk) ? chunk.toString('utf8') : chunk, nonce);
       chunk = Buffer.from(text);
       res.setHeader('Content-Length', chunk.byteLength);
     }

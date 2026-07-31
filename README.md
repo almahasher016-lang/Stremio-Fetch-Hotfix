@@ -65,6 +65,10 @@ npm run companion:scan -- --watch "D:\Media" --server https://pleasing-gentlenes
 - `PERSONAL_VAULT_PATH=/app/data/personal-vault.json`
 - `VERSION_REGISTRY_PATH=/app/data/version-registry.json`
 
+## سلسلة التوريد
+
+يولّد CI ملف `package-lock.json` حديثًا وCycloneDX SBOM من الاعتماديات الدقيقة المثبتة في `package.json`، ثم يحفظهما معًا كدليل إصدار قابل للتنزيل. بهذه الطريقة لا يبقى في المستودع ملف قفل قديم أو غير متزامن.
+
 ## التحقق
 
 يجب أن يعيد `/health`:
