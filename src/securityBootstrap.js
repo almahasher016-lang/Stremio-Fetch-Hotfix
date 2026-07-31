@@ -48,6 +48,11 @@ function bodyBuffer(chunk, encoding) {
   return Buffer.from(String(chunk ?? ''), typeof encoding === 'string' ? encoding : 'utf8');
 }
 
+function responseBodyIsEncoded(res) {
+  const encoding = String(res.getHeader('Content-Encoding') || '').trim().toLowerCase();
+  return Boolean(encoding && encoding !== 'identity');
+}
+
 function securityMiddleware(req, res, next) {
   const nonce = randomBytes(18).toString('base64');
   const preserveBodyEncoding = shouldPreserveBodyEncoding(req.path);
@@ -90,19 +95,20 @@ function securityMiddleware(req, res, next) {
   const originalEnd = res.end.bind(res);
   res.end = (chunk, encoding, callback) => {
     const contentType = String(res.getHeader('Content-Type') || '');
-    if (chunk != null && SRT_CONTENT_TYPE_RE.test(contentType)) {
+    const encoded = responseBodyIsEncoded(res);
+    if (chunk != null && SRT_CONTENT_TYPE_RE.test(contentType) && !encoded) {
       let text = stabilizeArabicSrt(bodyBuffer(chunk, encoding).toString('utf8'));
       if (text && !text.endsWith('\n')) text += '\n';
       chunk = Buffer.from(text, 'utf8');
       encoding = undefined;
       originalSetHeader('Content-Disposition', 'inline; filename="m7md-arabic.srt"');
       originalSetHeader('Content-Length', chunk.byteLength);
-    } else if (chunk != null && contentType.includes('text/html')) {
+    } else if (chunk != null && contentType.includes('text/html') && !encoded) {
       const text = injectNonce(bodyBuffer(chunk, encoding).toString('utf8'), nonce);
       chunk = Buffer.from(text, 'utf8');
       encoding = undefined;
       originalSetHeader('Content-Length', chunk.byteLength);
-    } else if (chunk != null && TEXT_SUBTITLE_CONTENT_TYPE_RE.test(contentType)) {
+    } else if (chunk != null && TEXT_SUBTITLE_CONTENT_TYPE_RE.test(contentType) && !encoded) {
       chunk = bodyBuffer(chunk, encoding);
       encoding = undefined;
       originalSetHeader('Content-Length', chunk.byteLength);
