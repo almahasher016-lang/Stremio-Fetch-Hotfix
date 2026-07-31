@@ -1,6 +1,6 @@
 import { buildConfig as buildCoreConfig, validateRuntimeConfig as validateCoreRuntimeConfig } from './configCore.js';
 
-const RELEASE_VERSION = '3.5.0';
+const RELEASE_VERSION = '3.5.1';
 
 export function buildConfig(env = process.env) {
   const runtime = buildCoreConfig(env);
