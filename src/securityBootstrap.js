@@ -7,6 +7,7 @@ import { stabilizeArabicSrt } from './utils/arabicBidi.js';
 import {
   appendNoTransform,
   normalizeStremioSubtitleResponse,
+  responseBodyCanBeMutated,
   shouldPreserveBodyEncoding,
 } from './utils/stremioResponseCompat.js';
 
@@ -46,11 +47,6 @@ function bodyBuffer(chunk, encoding) {
   if (Buffer.isBuffer(chunk)) return chunk;
   if (chunk instanceof Uint8Array) return Buffer.from(chunk);
   return Buffer.from(String(chunk ?? ''), typeof encoding === 'string' ? encoding : 'utf8');
-}
-
-function responseBodyIsEncoded(res) {
-  const encoding = String(res.getHeader('Content-Encoding') || '').trim().toLowerCase();
-  return Boolean(encoding && encoding !== 'identity');
 }
 
 function securityMiddleware(req, res, next) {
@@ -95,20 +91,20 @@ function securityMiddleware(req, res, next) {
   const originalEnd = res.end.bind(res);
   res.end = (chunk, encoding, callback) => {
     const contentType = String(res.getHeader('Content-Type') || '');
-    const encoded = responseBodyIsEncoded(res);
-    if (chunk != null && SRT_CONTENT_TYPE_RE.test(contentType) && !encoded) {
+    const canMutate = responseBodyCanBeMutated(res.getHeader('Content-Encoding'));
+    if (chunk != null && SRT_CONTENT_TYPE_RE.test(contentType) && canMutate) {
       let text = stabilizeArabicSrt(bodyBuffer(chunk, encoding).toString('utf8'));
       if (text && !text.endsWith('\n')) text += '\n';
       chunk = Buffer.from(text, 'utf8');
       encoding = undefined;
       originalSetHeader('Content-Disposition', 'inline; filename="m7md-arabic.srt"');
       originalSetHeader('Content-Length', chunk.byteLength);
-    } else if (chunk != null && contentType.includes('text/html') && !encoded) {
+    } else if (chunk != null && contentType.includes('text/html') && canMutate) {
       const text = injectNonce(bodyBuffer(chunk, encoding).toString('utf8'), nonce);
       chunk = Buffer.from(text, 'utf8');
       encoding = undefined;
       originalSetHeader('Content-Length', chunk.byteLength);
-    } else if (chunk != null && TEXT_SUBTITLE_CONTENT_TYPE_RE.test(contentType) && !encoded) {
+    } else if (chunk != null && TEXT_SUBTITLE_CONTENT_TYPE_RE.test(contentType) && canMutate) {
       chunk = bodyBuffer(chunk, encoding);
       encoding = undefined;
       originalSetHeader('Content-Length', chunk.byteLength);
