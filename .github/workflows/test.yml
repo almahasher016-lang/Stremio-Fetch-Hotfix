@@ -33,8 +33,21 @@ jobs:
           base64 --decode /tmp/hardening.patch.b64 > /tmp/hardening.patch
           git fetch origin main
           git checkout origin/main -- .github/workflows/test.yml
-          git apply --check /tmp/hardening.patch
-          git apply /tmp/hardening.patch
+          git apply --check --exclude=package.json --exclude=package-lock.json /tmp/hardening.patch
+          git apply --exclude=package.json --exclude=package-lock.json /tmp/hardening.patch
+          node --input-type=module <<'NODE'
+          import { readFile, writeFile } from 'node:fs/promises';
+          const packageJson = JSON.parse(await readFile('package.json', 'utf8'));
+          packageJson.version = '3.5.5';
+          packageJson.dependencies.morgan = '^1.11.0';
+          await writeFile('package.json', `${JSON.stringify(packageJson, null, 2)}\n`);
+
+          const packageLock = JSON.parse(await readFile('package-lock.json', 'utf8'));
+          packageLock.version = '3.5.5';
+          packageLock.packages[''].version = '3.5.5';
+          packageLock.packages[''].dependencies.morgan = '^1.11.0';
+          await writeFile('package-lock.json', `${JSON.stringify(packageLock, null, 2)}\n`);
+          NODE
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add -A
