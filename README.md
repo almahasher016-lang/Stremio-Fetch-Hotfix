@@ -62,6 +62,8 @@
 
 يجب الالتزام بملف `package-lock.json` المتزامن مع `package.json`، ثم استخدام `npm ci` في CI وDocker. يولّد CI أيضًا CycloneDX SBOM.
 
+للإبلاغ عن ثغرة أو مشكلة أمنية حساسة، اتبع سياسة الإفصاح الموجودة في [`SECURITY.md`](SECURITY.md) بدل نشر الأسرار في Issue عامة.
+
 ## التحقق
 
 ```json
