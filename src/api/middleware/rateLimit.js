@@ -4,6 +4,7 @@ import { createDistributedRateLimitStore } from '../../cache/rateLimitStore.js';
 
 const READ_ONLY_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 const ADMIN_WRITE_PATH = /^\/api\/(?:admin|vault|versions|companion)(?:\/|$)/;
+const ADMIN_AUTH_PATH = /^\/(?:api(?:\/|$)|metrics(?:\/|$)|downloads(?:\/|$)|vault\/subtitles(?:\/|$))/;
 const passOnStoreError = !['0', 'false', 'no', 'off'].includes(
   String(process.env.RATE_LIMIT_PASS_ON_STORE_ERROR || 'true').toLowerCase(),
 );
@@ -22,6 +23,19 @@ export const apiLimiter = rateLimit({
   identifier: 'public-api',
   skip: req => req.path === '/health',
   ...storeOptions('public'),
+});
+
+export const adminAuthLimiter = rateLimit({
+  windowMs: config.rateLimit.adminAuthWindowMs,
+  max: config.rateLimit.adminAuthMax,
+  standardHeaders: 'draft-8',
+  legacyHeaders: false,
+  passOnStoreError,
+  identifier: 'admin-auth',
+  skip: req => !ADMIN_AUTH_PATH.test(req.path),
+  skipSuccessfulRequests: true,
+  message: { success: false, error: 'Too many administrative authentication attempts' },
+  ...storeOptions('admin-auth'),
 });
 
 export const adminWriteLimiter = rateLimit({

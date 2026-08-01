@@ -23,11 +23,6 @@ export function buildConfig(env = process.env) {
   runtime.app.userAgent = `m7mdArabicDirect/${RELEASE_VERSION}`;
   runtime.cache.keyPrefix = String(runtime.cache.keyPrefix || 'subtitles').replace(/:release:[^:]+$/u, `:release:${RELEASE_VERSION}`);
 
-  // Cached provider download links can expire while a stale search result is still visible in Stremio.
-  // Reliability is the default; operators may explicitly re-enable stale-while-revalidate in Railway.
-  if (!explicitlyConfigured(env, 'CACHE_STALE_WHILE_REVALIDATE')) {
-    runtime.cache.staleWhileRevalidate = false;
-  }
 
   return runtime;
 }

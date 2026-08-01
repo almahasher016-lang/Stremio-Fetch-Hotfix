@@ -12,6 +12,8 @@ test('configuration prefers explicit environment values and ships no credentials
   assert.equal(defaults.subdl.apiKey, '');
   assert.equal(defaults.subsource.apiKey, '');
   assert.equal(defaults.cache.redisUrl, '');
+  assert.equal(defaults.cache.staleWhileRevalidate, false);
+  assert.equal(defaults.ui.testUiEnabled, true);
 
   const configured = buildConfig({
     ADDON_NAME: 'Custom resolver',
@@ -34,6 +36,24 @@ test('core and runtime configuration share one release metadata source', () => {
   assert.equal(runtime.app.name, RELEASE_NAME);
   assert.equal(runtime.app.userAgent, RELEASE_USER_AGENT);
   assert.match(runtime.cache.keyPrefix, new RegExp(`:release:${RELEASE_VERSION.replaceAll('.', '\\.')}$`));
+});
+
+
+test('production defaults disable the test UI and require an explicit ADMIN_TOKEN', () => {
+  const production = buildCoreConfig({ NODE_ENV: 'production' });
+  assert.equal(production.ui.testUiEnabled, false);
+  assert.equal(production.cache.staleWhileRevalidate, false);
+
+  const legacy = buildConfig({
+    NODE_ENV: 'production',
+    ENCODING_PROXY_SECRET: 'proxy-production-secret-is-long-enough-12345',
+    PERSONAL_VAULT_TOKEN: 'legacy-admin-secret-is-long-enough-67890',
+  });
+  assert.equal(legacy.admin.tokenSource, 'PERSONAL_VAULT_TOKEN');
+  assert.throws(() => validateRuntimeConfig(legacy), /ADMIN_TOKEN must be configured explicitly/);
+
+  const enabled = buildCoreConfig({ NODE_ENV: 'production', ENABLE_TEST_UI: 'true' });
+  assert.equal(enabled.ui.testUiEnabled, true);
 });
 
 test('production validation rejects missing, short, or shared security secrets', () => {

@@ -67,7 +67,12 @@ function railwayBaseUrl(env) {
 
 export function buildConfig(env = process.env) {
   const get = (key, fallback = '') => setting(env, key, fallback);
-  const adminToken = get('ADMIN_TOKEN') || get('PERSONAL_VAULT_TOKEN') || get('VERSION_REGISTRY_TOKEN');
+  const explicitAdminToken = get('ADMIN_TOKEN');
+  const legacyAdminTokenSource = !explicitAdminToken && get('PERSONAL_VAULT_TOKEN')
+    ? 'PERSONAL_VAULT_TOKEN'
+    : (!explicitAdminToken && get('VERSION_REGISTRY_TOKEN') ? 'VERSION_REGISTRY_TOKEN' : '');
+  const adminToken = explicitAdminToken
+    || (legacyAdminTokenSource ? get(legacyAdminTokenSource) : '');
   const nodeEnv = get('NODE_ENV', 'development');
 
   return {
@@ -87,6 +92,7 @@ export function buildConfig(env = process.env) {
     },
     admin: {
       token: adminToken,
+      tokenSource: explicitAdminToken ? 'ADMIN_TOKEN' : legacyAdminTokenSource,
       allowedOrigins: csv(get('ADMIN_ALLOWED_ORIGINS')),
     },
     server: {
@@ -145,7 +151,7 @@ export function buildConfig(env = process.env) {
     },
     ui: {
       configureEnabled: toBool(get('ENABLE_CONFIGURE_UI'), true),
-      testUiEnabled: toBool(get('ENABLE_TEST_UI'), true),
+      testUiEnabled: toBool(get('ENABLE_TEST_UI'), nodeEnv !== 'production'),
       previewMaxItems: toInt(get('PREVIEW_MAX_ITEMS'), 5, 1, 20),
     },
     metrics: {
@@ -236,13 +242,15 @@ export function buildConfig(env = process.env) {
       redisUrl: get('REDIS_URL'),
       memoryMaxItems: toInt(get('MEMORY_CACHE_MAX_ITEMS'), 750, 50, 10000),
       keyPrefix: cachePrefix(get('CACHE_KEY_PREFIX', 'subtitles')),
-      staleWhileRevalidate: toBool(get('CACHE_STALE_WHILE_REVALIDATE'), true),
+      staleWhileRevalidate: toBool(get('CACHE_STALE_WHILE_REVALIDATE'), false),
     },
     rateLimit: {
       windowMs: toInt(get('RATE_LIMIT_WINDOW_MS'), 60000, 1000, 3600000),
       max: toInt(get('RATE_LIMIT_MAX'), 180, 1, 10000),
       adminWindowMs: toInt(get('ADMIN_RATE_LIMIT_WINDOW_MS'), 60000, 1000, 3600000),
       adminMax: toInt(get('ADMIN_RATE_LIMIT_MAX'), 60, 1, 1000),
+      adminAuthWindowMs: toInt(get('ADMIN_AUTH_RATE_LIMIT_WINDOW_MS'), 60000, 1000, 3600000),
+      adminAuthMax: toInt(get('ADMIN_AUTH_RATE_LIMIT_MAX'), 30, 1, 1000),
     },
   };
 }
@@ -259,7 +267,9 @@ export function validateRuntimeConfig(runtime = config) {
     || runtime.vault.enabled
     || runtime.versionRegistry.enabled
     || runtime.ui.testUiEnabled;
-  if (adminRequired && Buffer.byteLength(runtime.admin.token || '', 'utf8') < 32) {
+  if (adminRequired && runtime.admin.tokenSource !== 'ADMIN_TOKEN') {
+    invalid.push('ADMIN_TOKEN must be configured explicitly');
+  } else if (adminRequired && Buffer.byteLength(runtime.admin.token || '', 'utf8') < 32) {
     invalid.push('ADMIN_TOKEN (minimum 32 bytes)');
   }
   if (runtime.admin.token && runtime.admin.token === runtime.encodingProxy.secret) {
