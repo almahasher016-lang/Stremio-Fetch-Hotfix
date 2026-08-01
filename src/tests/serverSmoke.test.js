@@ -35,6 +35,8 @@ test('server exposes the release, administration dashboard, and maintenance acti
       ENCODING_PROXY_SECRET: 'test-proxy-secret-which-is-at-least-32-bytes',
       ADMIN_RATE_LIMIT_MAX: '6',
       ADMIN_RATE_LIMIT_WINDOW_MS: '60000',
+      ADMIN_AUTH_RATE_LIMIT_MAX: '20',
+      ADMIN_AUTH_RATE_LIMIT_WINDOW_MS: '60000',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -50,6 +52,18 @@ test('server exposes the release, administration dashboard, and maintenance acti
   const healthResponse = await fetch(`${baseUrl}/health`);
   assert.equal(healthResponse.status, 200);
   assert.deepEqual(await healthResponse.json(), { status: 'ok', version: config.app.version, ai: false });
+
+  const faviconResponse = await fetch(`${baseUrl}/favicon.ico`);
+  assert.equal(faviconResponse.status, 204);
+  assert.match(faviconResponse.headers.get('cache-control') || '', /immutable/);
+
+  const missingResponse = await fetch(`${baseUrl}/missing-route`);
+  assert.equal(missingResponse.status, 404);
+  assert.deepEqual(await missingResponse.json(), {
+    success: false,
+    error: 'Not found',
+    requestId: missingResponse.headers.get('x-request-id'),
+  });
 
   const styledPreflight = await fetch(`${baseUrl}/proxy/styled/invalid.ass`, {
     method: 'OPTIONS',
@@ -116,4 +130,15 @@ test('server exposes the release, administration dashboard, and maintenance acti
   const limitedResponse = await fetch(`${baseUrl}/api/admin/cache/clear?scope=search`, { method: 'POST', headers });
   assert.equal(limitedResponse.status, 429);
   assert.match((await limitedResponse.json()).error, /administrative write requests/i);
+
+  let authLimited = null;
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    const response = await fetch(`${baseUrl}/metrics`, { headers: { 'x-admin-token': `wrong-${attempt}` } });
+    if (response.status === 429) {
+      authLimited = await response.json();
+      break;
+    }
+    assert.equal(response.status, 401);
+  }
+  assert.match(authLimited?.error || '', /administrative authentication attempts/i);
 });

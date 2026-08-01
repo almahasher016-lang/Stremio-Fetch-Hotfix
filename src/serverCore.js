@@ -4,7 +4,7 @@ import morgan from 'morgan';
 import compression from 'compression';
 import subtitlesRoute from './api/routes/subtitles.js';
 import { errorHandler } from './api/middleware/errorHandler.js';
-import { adminWriteLimiter, apiLimiter } from './api/middleware/rateLimit.js';
+import { adminAuthLimiter, adminWriteLimiter, apiLimiter } from './api/middleware/rateLimit.js';
 import { requestId } from './api/middleware/requestId.js';
 import {
   getBreakersStatus,
@@ -22,6 +22,7 @@ import { flushVaultWrites } from './services/vaultService.js';
 import { versionRegistry } from './services/versionRegistryService.js';
 import { assertAdminAuth } from './api/middleware/adminAuth.js';
 import { adminPageHtml } from './ui/adminHtml.js';
+import { homePageHtml } from './ui/homeHtml.js';
 import { securityMiddleware } from './securityBootstrap.js';
 import { getTelemetryStatus } from './telemetry.js';
 import { finalizedBodyCompressionFilter, sendHtmlResponse } from './utils/responseSenders.js';
@@ -100,9 +101,8 @@ app.use(morgan(config.server.isProd ? accessLogFormat : ':method :safe-url :stat
   skip: req => req.path === '/health' || req.path === '/manifest.json',
 }));
 app.use(apiLimiter);
+app.use(adminAuthLimiter);
 app.use(adminWriteLimiter);
-
-const publicHomeHtml = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:32px;line-height:1.8;max-width:900px}a{display:inline-block;margin:.25rem .5rem .25rem 0}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>${config.app.name}</h1><p>إضافة ترجمات عربية مباشرة لـ Stremio، بفحص جودة حتمي وبدون ذكاء اصطناعي.</p><p><a href="/manifest.json">Manifest</a><a href="/health">Health</a><a href="/resolver.html">Resolver</a><a href="/vault.html">Vault</a><a href="/admin.html">Admin</a></p><footer><small>الإصدار ${config.app.version}</small></footer></body></html>`;
 
 function htmlEscape(value) {
   return String(value ?? '').replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
@@ -113,9 +113,14 @@ function secureConfigureHtml(req) {
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>Configure ${config.app.name}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:system-ui;margin:24px;line-height:1.8;max-width:900px}input{direction:ltr;width:100%;padding:.6rem;box-sizing:border-box}footer{margin-top:2rem;color:#64748b}</style></head><body><h1>إعداد ${config.app.name}</h1><p>تم حفظ أسرار التشغيل في Railway. لا تضع رمز الإدارة أو مفاتيح المزودات داخل رابط Stremio.</p><label>رابط Stremio</label><input readonly value="${htmlEscape(manifestUrl)}" onclick="this.select()"><p><a href="/manifest.json">Manifest</a> · <a href="/health">Health</a> · <a href="/resolver.html">Resolver</a></p><footer><small>الإصدار ${config.app.version} · معالجة حتمية بدون ذكاء اصطناعي</small></footer></body></html>`;
 }
 
-app.get('/', (_req, res) => sendHtmlResponse(res, publicHomeHtml, {
+app.get('/', (_req, res) => sendHtmlResponse(res, homePageHtml(), {
   cacheControl: 'public, max-age=3600',
 }));
+
+app.get('/favicon.ico', (_req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+  return res.status(204).end();
+});
 
 app.get('/test.html', (req, res) => {
   if (!config.ui.testUiEnabled) return res.status(404).end('disabled');
@@ -224,6 +229,10 @@ app.get('/metrics', (req, res, next) => {
 });
 
 app.use(subtitlesRoute);
+app.use((req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(404).json({ success: false, error: 'Not found', requestId: req.id });
+});
 app.use(errorHandler);
 
 const server = app.listen(config.server.port, () => {
@@ -235,7 +244,22 @@ async function shutdown(signal) {
   if (shuttingDown) return;
   shuttingDown = true;
   console.log(`\n[Server] received ${signal} — shutting down gracefully`);
+
+  const forceCloseTimer = setTimeout(() => {
+    console.warn('[Server] closing remaining HTTP connections');
+    server.closeAllConnections();
+  }, 8_000);
+  forceCloseTimer.unref();
+
+  const forceExitTimer = setTimeout(() => {
+    console.error('[Server] forced shutdown after timeout');
+    process.exit(1);
+  }, 10_000);
+  forceExitTimer.unref();
+
   server.close(async () => {
+    clearTimeout(forceCloseTimer);
+    clearTimeout(forceExitTimer);
     try {
       await Promise.all([flushVaultWrites(), versionRegistry.flush(), closeRedis()]);
       console.log('[Server] closed');
@@ -245,10 +269,6 @@ async function shutdown(signal) {
       process.exit(1);
     }
   });
-  setTimeout(() => {
-    console.error('[Server] forced shutdown after timeout');
-    process.exit(1);
-  }, 10_000).unref();
 }
 
 process.on('SIGTERM', () => shutdown('SIGTERM'));

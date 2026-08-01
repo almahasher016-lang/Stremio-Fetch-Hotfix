@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.5.5 - Production Administration Hardening
+- Added a dedicated distributed limiter for failed administrative authentication attempts without charging successful requests.
+- Made stale-while-revalidate disabled in the core configuration until short-lived download links are separated from long-lived search results.
+- Disabled the test UI by default in production and required `ADMIN_TOKEN` to be configured explicitly instead of relying on legacy token aliases.
+- Raised the Morgan dependency floor to 1.11.0 while preserving reproducible `npm ci` installs.
+- Added a late graceful-shutdown connection drain, favicon handling, a consistent JSON 404 response, and a separate home-page UI module.
+- Added `SECURITY.md` and regression coverage for production defaults, explicit token configuration, administrative auth limiting, favicon, and 404 behavior.
+
 ## 3.5.4 - Route-Level Response Finalization
 - Removed the global Express `use` and `res.end` interception that conflicted with `compression` and could reset SRT and HTML connections after headers were sent.
 - Added explicit route-level senders for SRT, Vault SRT, ASS/SSA, and HTML responses.

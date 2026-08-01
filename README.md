@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v3.5.4
+# m7md Arabic Resolver v3.5.5
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,16 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 3.5.5
+
+- إضافة محدد مستقل لمحاولات المصادقة الإدارية على `/api/*` و`/metrics` والتنزيلات الخاصة، مع عدم احتساب الطلبات الناجحة.
+- جعل `CACHE_STALE_WHILE_REVALIDATE=false` القيمة الأساسية حتى تكتمل طبقة الكاش ثنائية العمر.
+- تعطيل واجهة الاختبار افتراضيًا في الإنتاج، مع إبقائها قابلة للتفعيل الصريح.
+- اشتراط `ADMIN_TOKEN` صراحةً في الإنتاج والتحذير من متغيرات التوكن القديمة.
+- رفع الحد الأدنى لـMorgan إلى 1.11.0 وتثبيته عبر lockfile.
+- إضافة إغلاق قسري للاتصالات المتبقية قبل مهلة الخروج، ومسار favicon بلا 404، واستجابة 404 موحدة.
+- نقل الصفحة الرئيسية إلى `src/ui/homeHtml.js` وإضافة `SECURITY.md`.
 
 ## ما الجديد في 3.5.4
 
@@ -55,7 +65,7 @@
 ## التحقق
 
 ```json
-{"status":"ok","version":"3.5.4","ai":false}
+{"status":"ok","version":"3.5.5","ai":false}
 ```
 
 بوابات الدمج المطلوبة: ESLint، TypeScript، الاختبارات والتغطية، `npm audit --omit=dev --audit-level=high`، CodeQL، بناء Docker، وTrivy.
