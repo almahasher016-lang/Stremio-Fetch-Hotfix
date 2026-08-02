@@ -1,4 +1,5 @@
 import { stabilizeArabicSrt } from './arabicBidi.js';
+import { stabilizeArabicStyledSubtitle } from './styledArabicBidi.js';
 
 const FINALIZED_BODY = Symbol.for('m7md.response.body-finalized');
 const FINALIZED_TEXT_CONTENT_RE = /^(?:text\/html|text\/x-ssa|text\/vtt|application\/(?:x-subrip|srt))/iu;
@@ -68,7 +69,7 @@ export function sendStyledSubtitleResponse(res, text, {
   format = 'ass',
 } = {}) {
   const safeFormat = String(format || '').toLowerCase() === 'ssa' ? 'ssa' : 'ass';
-  const body = Buffer.from(String(text || ''), 'utf8');
+  const body = Buffer.from(stabilizeArabicStyledSubtitle(String(text || '')), 'utf8');
   markResponseBodyFinalized(res);
   res.setHeader('Content-Type', 'text/x-ssa; charset=utf-8');
   res.setHeader('Content-Disposition', `inline; filename="subtitle.${safeFormat}"`);
