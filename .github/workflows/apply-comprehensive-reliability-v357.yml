@@ -44,3 +44,5 @@ jobs:
           git diff --cached --check
           git commit -m "Fix subtitle text and synchronization reliability v3.5.7"
           git push origin HEAD:fix/comprehensive-subtitle-reliability-v3.5.7
+
+# retriggered after initial workflow registration
