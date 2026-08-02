@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - fix/comprehensive-subtitle-reliability-v3.5.7
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
