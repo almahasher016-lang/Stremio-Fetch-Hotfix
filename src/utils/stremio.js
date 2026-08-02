@@ -115,8 +115,8 @@ function qualityBadges(item, mode) {
   if (item.releaseMatchTier >= 5) badges.push('🎯 Strong Name Match');
   else if (item.releaseMatchTier >= 3) badges.push('✅ Name Match');
   if (item.trusted) badges.push('🏆 Verified');
-  if (mode === 'reference') badges.push('⚡ RefSync');
-  if (mode === 'sync') badges.push('⏱ AutoSync');
+  if (mode === 'reference') badges.push('🧪 Experimental RefSync');
+  if (mode === 'sync') badges.push('⏱ Manual Timing');
   if (styledModeFormat(mode)) badges.push('🎨 Original Styles');
   if (item.searchReason === 'hash-first' || item.movieHash) badges.push('🔑 Hash');
   if (item.hearingImpaired || item.sdh) badges.push('👂 SDH');
@@ -128,8 +128,8 @@ function qualityBadges(item, mode) {
 function subtitleName(item, mode = 'original') {
   const parts = [config.app.subtitleDisplayName];
   const styledFormat = styledModeFormat(mode);
-  if (mode === 'sync') parts.push('Auto Sync');
-  else if (mode === 'reference') parts.push('Reference Sync');
+  if (mode === 'sync') parts.push('Manual Timing');
+  else if (mode === 'reference') parts.push('Experimental Reference Sync');
   else if (styledFormat) parts.push(`Styled ${styledFormat.toUpperCase()}`);
   else parts.push('Original');
   parts.push(...qualityBadges(item, mode));
@@ -144,106 +144,113 @@ export function subtitleDisplayName(item, mode = 'original') {
   return subtitleName(item, mode);
 }
 
+function subtitleOptionId(item, mode, index) {
+  const base = item.id || item.providerId || `subtitle-${index}`;
+  return `${base}-${mode}-v${config.app.version}`;
+}
+
 export function toStremioSubtitles(results, baseUrl, search = {}) {
   const output = [];
   const videoRelease = parseRelease(search.filename || search.query || '');
-  let referenceCount = 0;
-  let autoSyncCount = 0;
-  let originalCount = 0;
-  let styledCount = 0;
+  const eligible = [];
 
   for (const [index, item] of results.entries()) {
-    if (output.length >= config.ranking.maxStremioSubtitles) break;
     const rankedFallbacks = [
       ...results.slice(index + 1),
       ...results.slice(0, index),
     ].filter(candidate => candidate?.download || candidate?.url);
     const originalUrl = proxiedSubtitleUrl(baseUrl, item, null, null, search, rankedFallbacks);
     if (!originalUrl) continue;
+    eligible.push({ item, index, rankedFallbacks, originalUrl });
+  }
 
-    const reference = referenceForProxy(baseUrl, item);
-    const syncPlan = detectSyncPlan({
-      subtitleRelease: item.parsedRelease || parseRelease(item.releaseName || item.fileName || item.name),
-      videoRelease,
-      extra: search.extra || {},
+  let originalCount = 0;
+  for (const { item, index, originalUrl } of eligible) {
+    if (
+      originalCount >= config.ranking.maxOriginalOptions
+      || output.length >= config.ranking.maxStremioSubtitles
+    ) break;
+    output.push({
+      id: subtitleOptionId(item, 'orig', index),
+      url: originalUrl,
+      lang: 'ara',
+      name: subtitleName(item, 'original'),
     });
-    const referenceFallbacks = rankedFallbacks
-      .map(candidate => ({ ...candidate, reference: referenceForProxy(baseUrl, candidate) }))
-      .filter(candidate => candidate.reference);
-    const autoSyncFallbacks = rankedFallbacks
-      .map(candidate => ({
-        ...candidate,
-        syncPlan: detectSyncPlan({
-          subtitleRelease: candidate.parsedRelease || parseRelease(candidate.releaseName || candidate.fileName || candidate.name),
-          videoRelease,
-          extra: search.extra || {},
-        }),
-      }))
-      .filter(candidate => (
-        candidate.syncPlan.enabled
-        && candidate.syncPlan.confidence >= config.ranking.autoSyncMinConfidence
-      ));
+    originalCount += 1;
+  }
 
-    const canAddReference = config.ranking.enableReferenceAutoSync
-      && reference
-      && referenceCount < config.ranking.maxReferenceOptions
-      && output.length < config.ranking.maxStremioSubtitles;
+  let styledCount = 0;
+  for (const { item, index } of eligible) {
+    if (output.length >= config.ranking.maxStremioSubtitles || styledCount >= 2) break;
+    const styledFormat = styledSubtitleFormatHint(item);
+    if (!styledFormat) continue;
+    const url = styledSubtitleUrl(baseUrl, item, search);
+    if (!url) continue;
+    output.push({
+      id: subtitleOptionId(item, `styled-${styledFormat}`, index),
+      url,
+      lang: 'ara',
+      name: subtitleName(item, `styled-${styledFormat}`),
+    });
+    styledCount += 1;
+  }
 
-    if (canAddReference) {
-      output.push({
-        id: `${item.id || item.providerId || output.length}-refsync`,
-        url: proxiedSubtitleUrl(baseUrl, item, null, reference, search, referenceFallbacks),
-        lang: 'ara',
-        name: subtitleName(item, 'reference'),
+  if (config.ranking.enableAutoSyncOption) {
+    let autoSyncCount = 0;
+    for (const { item, index, rankedFallbacks } of eligible) {
+      if (
+        output.length >= config.ranking.maxStremioSubtitles
+        || autoSyncCount >= config.ranking.maxAutoSyncOptions
+      ) break;
+      const syncPlan = detectSyncPlan({
+        subtitleRelease: item.parsedRelease || parseRelease(item.releaseName || item.fileName || item.name),
+        videoRelease,
+        extra: search.extra || {},
       });
-      referenceCount++;
-    }
-
-    const canAddAutoSync = config.ranking.enableAutoSyncOption
-      && syncPlan.enabled
-      && syncPlan.confidence >= config.ranking.autoSyncMinConfidence
-      && autoSyncCount < config.ranking.maxAutoSyncOptions
-      && output.length < config.ranking.maxStremioSubtitles;
-
-    if (canAddAutoSync) {
+      if (
+        !syncPlan.enabled
+        || !syncPlan.verified
+        || syncPlan.confidence < config.ranking.autoSyncMinConfidence
+      ) continue;
+      const autoSyncFallbacks = rankedFallbacks
+        .map(candidate => ({
+          ...candidate,
+          syncPlan: detectSyncPlan({
+            subtitleRelease: candidate.parsedRelease || parseRelease(candidate.releaseName || candidate.fileName || candidate.name),
+            videoRelease,
+            extra: search.extra || {},
+          }),
+        }))
+        .filter(candidate => candidate.syncPlan.enabled && candidate.syncPlan.verified);
       output.push({
-        id: `${item.id || item.providerId || output.length}-sync`,
+        id: subtitleOptionId(item, 'manual-sync', index),
         url: proxiedSubtitleUrl(baseUrl, item, syncPlan, null, search, autoSyncFallbacks),
         lang: 'ara',
         name: subtitleName(item, 'sync'),
       });
-      autoSyncCount++;
+      autoSyncCount += 1;
     }
+  }
 
-    const canAddOriginal = originalCount < config.ranking.maxOriginalOptions
-      && output.length < config.ranking.maxStremioSubtitles;
-
-    if (canAddOriginal) {
+  if (config.ranking.enableReferenceAutoSync) {
+    let referenceCount = 0;
+    for (const { item, index, rankedFallbacks } of eligible) {
+      if (
+        output.length >= config.ranking.maxStremioSubtitles
+        || referenceCount >= config.ranking.maxReferenceOptions
+      ) break;
+      const reference = referenceForProxy(baseUrl, item);
+      if (!reference) continue;
+      const referenceFallbacks = rankedFallbacks
+        .map(candidate => ({ ...candidate, reference: referenceForProxy(baseUrl, candidate) }))
+        .filter(candidate => candidate.reference);
       output.push({
-        id: `${item.id || item.providerId || output.length}-orig`,
-        url: originalUrl,
+        id: subtitleOptionId(item, 'experimental-refsync', index),
+        url: proxiedSubtitleUrl(baseUrl, item, null, reference, search, referenceFallbacks),
         lang: 'ara',
-        name: subtitleName(item, 'original'),
+        name: subtitleName(item, 'reference'),
       });
-      originalCount++;
-    }
-
-    const styledFormat = styledSubtitleFormatHint(item);
-    const canAddStyled = styledFormat
-      && styledCount < 2
-      && output.length < config.ranking.maxStremioSubtitles;
-
-    if (canAddStyled) {
-      const url = styledSubtitleUrl(baseUrl, item, search);
-      if (url) {
-        output.push({
-          id: `${item.id || item.providerId || output.length}-styled-${styledFormat}`,
-          url,
-          lang: 'ara',
-          name: subtitleName(item, `styled-${styledFormat}`),
-        });
-        styledCount++;
-      }
+      referenceCount += 1;
     }
   }
 

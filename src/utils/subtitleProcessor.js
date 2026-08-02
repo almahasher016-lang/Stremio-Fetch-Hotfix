@@ -17,13 +17,7 @@ const CP1256 = new Map(Object.entries({
   248: 'ْ', 249: 'ù', 250: 'ú', 251: 'û', 252: 'ü', 253: 'ے', 254: '‍', 255: 'ی'
 }).map(([k, v]) => [Number(k), v]));
 
-const BIDI_CONTROL_RE = /[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
-const LETTER_RE = /\p{L}/u;
-const ARABIC_SCRIPT_RE = /\p{Script_Extensions=Arabic}/u;
-const TERMINAL_NEUTRAL_RE = /[\p{P}\p{S}]$/u;
-const RIGHT_TO_LEFT_ISOLATE = '\u2067';
-const RIGHT_TO_LEFT_MARK = '\u200F';
-const POP_DIRECTIONAL_ISOLATE = '\u2069';
+const BIDI_CONTROL_RE = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
 
 function decodeCp1256(buffer) {
   let output = '';
@@ -97,31 +91,8 @@ function stripControlMarks(text) {
   return String(text || '').replace(BIDI_CONTROL_RE, '');
 }
 
-function arabicDominatesLine(line) {
-  let arabicLetters = 0;
-  let otherLetters = 0;
-  let firstLetterIsArabic = false;
-  let foundFirstLetter = false;
-
-  for (const character of line) {
-    if (!LETTER_RE.test(character)) continue;
-    const isArabic = ARABIC_SCRIPT_RE.test(character);
-    if (!foundFirstLetter) {
-      firstLetterIsArabic = isArabic;
-      foundFirstLetter = true;
-    }
-    if (isArabic) arabicLetters += 1;
-    else otherLetters += 1;
-  }
-
-  return arabicLetters > 0 && (arabicLetters >= otherLetters || firstLetterIsArabic);
-}
-
 function isolateArabicLine(line) {
-  const clean = stripControlMarks(line).trimEnd();
-  if (!arabicDominatesLine(clean)) return clean;
-  const compatibilityMark = TERMINAL_NEUTRAL_RE.test(clean) ? RIGHT_TO_LEFT_MARK : '';
-  return `${RIGHT_TO_LEFT_ISOLATE}${clean}${compatibilityMark}${POP_DIRECTIONAL_ISOLATE}`;
+  return stripControlMarks(line).trimEnd();
 }
 
 function stripTags(line) {

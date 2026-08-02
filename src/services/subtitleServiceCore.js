@@ -283,12 +283,10 @@ async function buildFreshSubtitles(input) {
     includeHash: false,
   });
   const raw = [...hashRaw];
-  let ranked = hashRanked;
   for (const stage of plan) {
     raw.push(...await runStage(stage, search, 'ar'));
-    ranked = await rankArabic(raw, search);
-    if (ranked.length >= config.providers.topN) break;
   }
+  const ranked = await rankArabic(raw, search);
   const withReferences = await attachReferenceCandidates(ranked, search);
   const suggestedCurrent = registryResults.some(item => item.searchReason === 'suggested-version');
   if (suggestedCurrent) await versionRegistry.suggestUpgrade(search, withReferences);
