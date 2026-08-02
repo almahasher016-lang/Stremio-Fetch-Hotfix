@@ -1,0 +1,71 @@
+name: bump-version-3.5.6
+
+on:
+  push:
+    branches:
+      - fix/bump-version-v3.5.6
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: fix/bump-version-v3.5.6
+          fetch-depth: 0
+      - name: Bump release identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const version = '3.5.6';
+
+          const read = path => fs.readFileSync(path, 'utf8');
+          const write = (path, value) => fs.writeFileSync(path, value);
+
+          const pkg = JSON.parse(read('package.json'));
+          pkg.version = version;
+          write('package.json', `${JSON.stringify(pkg, null, 2)}\n`);
+
+          const lock = JSON.parse(read('package-lock.json'));
+          lock.version = version;
+          if (lock.packages?.['']) lock.packages[''].version = version;
+          write('package-lock.json', `${JSON.stringify(lock, null, 2)}\n`);
+
+          const releasePath = 'src/release.js';
+          const release = read(releasePath).replace(
+            /export const RELEASE_VERSION = '[^']+';/,
+            `export const RELEASE_VERSION = '${version}';`,
+          );
+          write(releasePath, release);
+
+          const readmePath = 'README.md';
+          let readme = read(readmePath)
+            .replace(/^# m7md Arabic Resolver v[^\n]+/m, `# m7md Arabic Resolver v${version}`)
+            .replace(/"version":"3\.5\.5"/g, `"version":"${version}"`);
+          const readmeSection = `## ما الجديد في ${version}\n\n- تصحيح ترتيب الترجمات ليعتمد على الأدلة الأقوى أولًا بدل جعل WEB-DL وBluRay والدقة والمجموعة حاسمة.\n- تخفيض معلومات الإصدار إلى إشارات ثانوية، مع الحفاظ على Hash وVault والجودة الموثقة كأقوى الأدلة.\n- تنويع البدائل القريبة حتى لا تمتلئ قائمة Stremio بنتائج متشابهة من نفس عائلة الإصدار.\n- رفع رقم Manifest مع إبقاء معرّف الإضافة ثابتًا ليظهر تحديث Stremio.\n\n`;
+          if (!readme.includes(`## ما الجديد في ${version}`)) {
+            readme = readme.replace(/(معرّف الإضافة ثابت[^\n]*\n\n)/, `$1${readmeSection}`);
+          }
+          write(readmePath, readme);
+
+          const changelogPath = 'CHANGELOG.md';
+          let changelog = read(changelogPath);
+          const changelogSection = `## ${version} - Evidence-First Subtitle Ranking\n- Changed subtitle ordering so exact and provider-confirmed hashes remain the strongest evidence.\n- Reduced WEB-DL, BluRay, resolution, release-group, codec, service, audio, HDR, and FPS labels to secondary ranking signals.\n- Removed release-name tier as a primary sort key and diversified plausible alternatives from different release families.\n- Renamed release badges to avoid claiming synchronization from filename metadata alone.\n- Bumped the public manifest version while preserving the stable add-on ID.\n\n`;
+          if (!changelog.includes(`## ${version} -`)) {
+            changelog = changelog.replace('# Changelog\n\n', `# Changelog\n\n${changelogSection}`);
+          }
+          write(changelogPath, changelog);
+          NODE
+
+          rm -f .github/workflows/bump-version-3.5.6.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.json package-lock.json src/release.js README.md CHANGELOG.md .github/workflows/bump-version-3.5.6.yml
+          git commit -m "Bump release to 3.5.6"
+          git push origin HEAD:fix/bump-version-v3.5.6
