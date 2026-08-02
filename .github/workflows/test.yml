@@ -24,12 +24,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat scripts/ranking-hotfix.patch.b64.* | base64 --decode > /tmp/ranking-hotfix.patch
-          git apply --check /tmp/ranking-hotfix.patch
-          git apply /tmp/ranking-hotfix.patch
+          node scripts/apply-ranking-hotfix.mjs
+          node --test src/tests/scoring.test.js
           git fetch origin main
           git checkout origin/main -- .github/workflows/test.yml
-          rm -f scripts/ranking-hotfix.patch.b64.*
+          rm -f scripts/apply-ranking-hotfix.mjs scripts/ranking-hotfix.patch.b64.*
           rmdir scripts 2>/dev/null || true
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
