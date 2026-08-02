@@ -2,9 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { stabilizeArabicCueLine, stabilizeArabicSrt } from '../utils/arabicBidi.js';
 
-const BIDI_CONTROL_RE = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/u;
+const RLM = '\u200F';
+const UNSAFE_BIDI_RE = /[\u061C\u200E\u202A-\u202E\u2066-\u2069]/u;
 
-test('preserves Arabic punctuation, brackets, quotes, and ellipsis exactly', () => {
+test('anchors the terminal comma from the user-visible Stremio failure', () => {
+  const source = 'ربما أنك حلمت بهذا الحدث،';
+  assert.equal(stabilizeArabicCueLine(source), `${source}${RLM}`);
+});
+
+test('keeps internal Arabic punctuation untouched when the line ends with a letter', () => {
+  const cases = [
+    'نعم، منذ زمن بعيد، انتقلت',
+    'أنا.. وبعض صديقاتي',
+  ];
+  for (const source of cases) assert.equal(stabilizeArabicCueLine(source), source);
+});
+
+test('anchors terminal punctuation, paired brackets, quotes, and ellipsis without moving visible text', () => {
   const cases = [
     'مرحبا بالعالم.',
     '(مرحبا بالعالم.)',
@@ -15,24 +29,25 @@ test('preserves Arabic punctuation, brackets, quotes, and ellipsis exactly', () 
     'هل شاهدت (WEB-DL 1080p)؟',
   ];
   for (const source of cases) {
-    assert.equal(stabilizeArabicCueLine(source), source);
+    assert.equal(stabilizeArabicCueLine(source), `${source}${RLM}`);
   }
 });
 
-test('removes upstream bidi controls without moving visible characters', () => {
+test('replaces upstream bidi controls with exactly one trailing RLM', () => {
   const source = '\u200F\u2067\u200F(مرحبا.)\u200F\u2069\u200F';
-  assert.equal(stabilizeArabicCueLine(source), '(مرحبا.)');
+  assert.equal(stabilizeArabicCueLine(source), `(مرحبا.)${RLM}`);
 });
 
-test('is exactly idempotent and leaves no hidden direction controls', () => {
+test('is exactly idempotent and preserves indexes and timings', () => {
   const source = `1\n00:00:01,000 --> 00:00:02,000\n\u2067(مرحبا.)\u200F\u2069\n`;
   const once = stabilizeArabicSrt(source);
   assert.equal(stabilizeArabicSrt(once), once);
-  assert.equal(once, '1\n00:00:01,000 --> 00:00:02,000\n(مرحبا.)\n');
-  assert.doesNotMatch(once, BIDI_CONTROL_RE);
+  assert.equal(once, `1\n00:00:01,000 --> 00:00:02,000\n(مرحبا.)${RLM}\n`);
+  assert.doesNotMatch(once, UNSAFE_BIDI_RE);
+  assert.equal((once.match(/\u200F/gu) || []).length, 1);
 });
 
-test('does not alter indexes, timings, numeric dialogue, or mixed Latin lines', () => {
+test('does not anchor numeric dialogue or a Latin-dominant mixed line', () => {
   const source = `1\n00:00:01,000 --> 00:00:02,000\n1984\nWEB-DL release with مرحبا!\n`;
   assert.equal(stabilizeArabicSrt(source), source);
 });

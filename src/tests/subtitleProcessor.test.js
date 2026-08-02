@@ -154,11 +154,20 @@ WEB-DL release with مرحبا! \u202C
 });
 
 
-test('processSubtitleBuffer preserves paired punctuation without injecting bidi controls', () => {
-  const visible = '— (هل شاهدت [Euphoria]؟) «نعم، شاهدته...»';
+test('processSubtitleBuffer anchors terminal Arabic punctuation with one RLM', () => {
+  const visible = 'ربما أنك حلمت بهذا الحدث،';
+  const input = Buffer.from(`1\n00:00:01,000 --> 00:00:03,000\n${visible}\n`, 'utf8');
+  const result = processSubtitleBuffer(input);
+  assert.ok(result.text.includes(`${visible}\u200F`));
+  assert.equal((result.text.match(/\u200F/gu) || []).length, 1);
+  assert.doesNotMatch(result.text, /[\u061C\u200E\u202A-\u202E\u2066-\u2069]/u);
+  assert.equal(processSubtitleBuffer(Buffer.from(result.text)).text, result.text);
+});
+
+test('processSubtitleBuffer leaves internal punctuation in source order', () => {
+  const visible = 'نعم، منذ زمن بعيد، انتقلت\nأنا.. وبعض صديقاتي';
   const input = Buffer.from(`1\n00:00:01,000 --> 00:00:03,000\n${visible}\n`, 'utf8');
   const result = processSubtitleBuffer(input);
   assert.ok(result.text.includes(visible));
-  assert.doesNotMatch(result.text, /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/u);
-  assert.equal(processSubtitleBuffer(Buffer.from(result.text)).text, result.text);
+  assert.doesNotMatch(result.text, /\u200F/u);
 });

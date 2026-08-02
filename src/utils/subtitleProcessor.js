@@ -18,6 +18,10 @@ const CP1256 = new Map(Object.entries({
 }).map(([k, v]) => [Number(k), v]));
 
 const BIDI_CONTROL_RE = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
+const LETTER_RE = /\p{L}/u;
+const ARABIC_SCRIPT_RE = /\p{Script_Extensions=Arabic}/u;
+const TERMINAL_NEUTRAL_RE = /[\p{P}\p{S}]$/u;
+const RIGHT_TO_LEFT_MARK = '\u200F';
 
 function decodeCp1256(buffer) {
   let output = '';
@@ -91,8 +95,33 @@ function stripControlMarks(text) {
   return String(text || '').replace(BIDI_CONTROL_RE, '');
 }
 
+function arabicDominatesLine(line) {
+  let arabicLetters = 0;
+  let otherLetters = 0;
+  let firstLetterIsArabic = false;
+  let foundFirstLetter = false;
+
+  for (const character of line) {
+    if (!LETTER_RE.test(character)) continue;
+    const isArabic = ARABIC_SCRIPT_RE.test(character);
+    if (!foundFirstLetter) {
+      firstLetterIsArabic = isArabic;
+      foundFirstLetter = true;
+    }
+    if (isArabic) arabicLetters += 1;
+    else otherLetters += 1;
+  }
+
+  return arabicLetters > 0 && (arabicLetters >= otherLetters || firstLetterIsArabic);
+}
+
 function isolateArabicLine(line) {
-  return stripControlMarks(line).trimEnd();
+  const clean = stripControlMarks(line).trimEnd();
+  if (!clean || !arabicDominatesLine(clean) || !TERMINAL_NEUTRAL_RE.test(clean)) return clean;
+
+  // Anchor only terminal neutral punctuation to the Arabic run. One trailing RLM is
+  // sufficient and avoids the bracket corruption caused by wrapping the whole line.
+  return `${clean}${RIGHT_TO_LEFT_MARK}`;
 }
 
 function stripTags(line) {
