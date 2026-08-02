@@ -1,47 +1,246 @@
-name: test
+name: apply-selective-terminal-bidi-v359
 on:
   push:
-  pull_request:
+    branches: [fix/selective-terminal-bidi-v3.5.9]
 
 permissions:
-  contents: read
-
-concurrency:
-  group: test-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  contents: write
 
 jobs:
-  node-test:
+  apply:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 24.18.0
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run test:coverage
-      - run: npm audit --omit=dev --audit-level=high
-      - run: npm audit signatures
-      - run: npm pack --dry-run --ignore-scripts
-      - name: Generate CycloneDX SBOM
-        run: npm sbom --sbom-format=cyclonedx > sbom.cdx.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: release-evidence-${{ github.sha }}
-          path: |
-            package-lock.json
-            sbom.cdx.json
-          retention-days: 30
-      - run: docker build --tag m7md-ci:${{ github.sha }} .
-      - name: Scan production image
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: m7md-ci:${{ github.sha }}
-          format: table
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: '1'
+      - name: Apply production fix and regression coverage
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          bidi = Path('src/utils/arabicBidi.js')
+          bidi.write_text(r'''const BIDI_CONTROL_RE = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
+          const LETTER_RE = /\p{L}/u;
+          const ARABIC_SCRIPT_RE = /\p{Script_Extensions=Arabic}/u;
+          const TERMINAL_BOUNDARY_RE = /(?:[.,،:;!؟؛…"'’”]|\p{Pe}|\p{Pf})$/u;
+          const RIGHT_TO_LEFT_MARK = '\u200F';
+
+          export function stripBidiControls(value) {
+            return String(value ?? '').replace(BIDI_CONTROL_RE, '');
+          }
+
+          function arabicDominatesLine(line) {
+            let arabicLetters = 0;
+            let otherLetters = 0;
+            let firstLetterIsArabic = false;
+            let foundFirstLetter = false;
+
+            for (const character of line) {
+              if (!LETTER_RE.test(character)) continue;
+              const isArabic = ARABIC_SCRIPT_RE.test(character);
+              if (!foundFirstLetter) {
+                firstLetterIsArabic = isArabic;
+                foundFirstLetter = true;
+              }
+              if (isArabic) arabicLetters += 1;
+              else otherLetters += 1;
+            }
+
+            return arabicLetters > 0 && (arabicLetters >= otherLetters || firstLetterIsArabic);
+          }
+
+          export function stabilizeArabicCueLine(line) {
+            const clean = stripBidiControls(line).trimEnd();
+            if (!clean || !arabicDominatesLine(clean) || !TERMINAL_BOUNDARY_RE.test(clean)) return clean;
+
+            // Anchor only selected terminal punctuation and closing punctuation to the Arabic run.
+            // Do not add marks at line start or around inline brackets.
+            return `${clean}${RIGHT_TO_LEFT_MARK}`;
+          }
+
+          export function stabilizeArabicSrt(text) {
+            return String(text ?? '')
+              .replace(/\r\n?/gu, '\n')
+              .split('\n')
+              .map(stabilizeArabicCueLine)
+              .join('\n');
+          }
+          '''.replace('          ', ''), encoding='utf-8')
+
+          processor_path = Path('src/utils/subtitleProcessor.js')
+          processor = processor_path.read_text(encoding='utf-8')
+          if not processor.startswith("import { stabilizeArabicCueLine, stripBidiControls } from './arabicBidi.js';"):
+              processor = "import { stabilizeArabicCueLine, stripBidiControls } from './arabicBidi.js';\n\n" + processor
+          processor = re.sub(
+              r"const BIDI_CONTROL_RE = .*?const RIGHT_TO_LEFT_MARK = '\\u200F';\n\n",
+              '',
+              processor,
+              count=1,
+              flags=re.S,
+          )
+          processor = re.sub(
+              r"function stripControlMarks\(text\) \{.*?\n\}\n\nfunction stripTags",
+              'function stripTags',
+              processor,
+              count=1,
+              flags=re.S,
+          )
+          processor = processor.replace('isolateArabicLine(line)', 'stabilizeArabicCueLine(line)')
+          processor = processor.replace('stripControlMarks(decoded.text)', 'stripBidiControls(decoded.text)')
+          forbidden = ['TERMINAL_NEUTRAL_RE', 'RIGHT_TO_LEFT_MARK', 'function isolateArabicLine', 'function arabicDominatesLine', 'function stripControlMarks']
+          for token in forbidden:
+              if token in processor:
+                  raise SystemExit(f'old duplicated bidi logic remains: {token}')
+          processor_path.write_text(processor, encoding='utf-8')
+
+          tests = Path('src/tests/arabicBidi.test.js')
+          tests.write_text(r'''import test from 'node:test';
+          import assert from 'node:assert/strict';
+          import {
+            stabilizeArabicCueLine,
+            stabilizeArabicSrt,
+            stripBidiControls,
+          } from '../utils/arabicBidi.js';
+
+          const RLM = '\u200F';
+          const UNSAFE_BIDI_RE = /[\u061C\u200E\u202A-\u202E\u2066-\u2069]/u;
+
+          test('anchors the terminal Arabic comma from the user-visible Stremio failure', () => {
+            const source = 'ربما أنك حلمت بهذا الحدث،';
+            assert.equal(stabilizeArabicCueLine(source), `${source}${RLM}`);
+          });
+
+          test('anchors selected terminal punctuation and closing punctuation only', () => {
+            const cases = [
+              'مرحبا بالعالم.',
+              'انتبه!',
+              'هل أنت بخير؟',
+              'توقف؛',
+              'قال:',
+              'ربما...',
+              '(مرحبا بالعالم.)',
+              '[هل أنت بخير؟]',
+              '{انتبه!}',
+              '«هذا صحيح»',
+              'قال "نعم"',
+            ];
+            for (const source of cases) assert.equal(stabilizeArabicCueLine(source), `${source}${RLM}`);
+          });
+
+          test('does not anchor generic symbols or opening punctuation', () => {
+            const cases = [
+              'الناتج +',
+              'القيمة =',
+              'حقوق النشر ©',
+              'ابدأ من (',
+              'ابدأ من [',
+              'ابدأ من {',
+            ];
+            for (const source of cases) assert.equal(stabilizeArabicCueLine(source), source);
+          });
+
+          test('keeps internal punctuation and brackets untouched when the line ends with a letter', () => {
+            const cases = [
+              'نعم، منذ زمن بعيد، انتقلت',
+              'أنا.. وبعض صديقاتي',
+              'شاهدت (الحلقة) أمس',
+              'الإصدار [WEB-DL] متاح',
+            ];
+            for (const source of cases) assert.equal(stabilizeArabicCueLine(source), source);
+          });
+
+          test('removes upstream bidi controls then adds at most one calculated trailing RLM', () => {
+            const source = '\u200F\u2067\u200F(مرحبا.)\u200F\u2069\u200F';
+            assert.equal(stabilizeArabicCueLine(source), `(مرحبا.)${RLM}`);
+            assert.equal(stripBidiControls(source), '(مرحبا.)');
+          });
+
+          test('is exactly idempotent and preserves indexes and timings', () => {
+            const source = `1\n00:00:01,000 --> 00:00:02,000\n\u2067(مرحبا.)\u200F\u2069\n`;
+            const once = stabilizeArabicSrt(source);
+            assert.equal(stabilizeArabicSrt(once), once);
+            assert.equal(once, `1\n00:00:01,000 --> 00:00:02,000\n(مرحبا.)${RLM}\n`);
+            assert.doesNotMatch(once, UNSAFE_BIDI_RE);
+            assert.equal((once.match(/\u200F/gu) || []).length, 1);
+          });
+
+          test('does not anchor numeric dialogue or a Latin-dominant mixed line', () => {
+            const source = `1\n00:00:01,000 --> 00:00:02,000\n1984\nWEB-DL release with مرحبا!\n`;
+            assert.equal(stabilizeArabicSrt(source), source);
+          });
+          '''.replace('          ', ''), encoding='utf-8')
+
+          processor_tests = Path('src/tests/subtitleProcessor.test.js')
+          processor_test_text = processor_tests.read_text(encoding='utf-8')
+          marker = "test('processor shares the selective terminal bidi policy'"
+          if marker not in processor_test_text:
+              processor_test_text += r'''
+
+          test('processor shares the selective terminal bidi policy', () => {
+            const input = Buffer.from(`1
+          00:00:01,000 --> 00:00:02,000
+          مرحبا،
+
+          2
+          00:00:03,000 --> 00:00:04,000
+          الناتج +
+
+          3
+          00:00:05,000 --> 00:00:06,000
+          شاهدت (الحلقة) أمس
+          `, 'utf8');
+            const result = processSubtitleBuffer(input).text;
+            assert.match(result, /مرحبا،\u200F/u);
+            assert.match(result, /الناتج \+\n/u);
+            assert.doesNotMatch(result, /الناتج \+\u200F/u);
+            assert.match(result, /شاهدت \(الحلقة\) أمس\n/u);
+            assert.doesNotMatch(result, /\u200F\(|\)\u200F/u);
+          });
+          '''.replace('          ', '')
+          processor_tests.write_text(processor_test_text, encoding='utf-8')
+
+          release = Path('src/release.js')
+          release.write_text(release.read_text(encoding='utf-8').replace("'3.5.8'", "'3.5.9'"), encoding='utf-8')
+
+          package = Path('package.json')
+          package.write_text(package.read_text(encoding='utf-8').replace('"version": "3.5.8"', '"version": "3.5.9"', 1), encoding='utf-8')
+          lock = Path('package-lock.json')
+          lock.write_text(lock.read_text(encoding='utf-8').replace('"version": "3.5.8"', '"version": "3.5.9"'), encoding='utf-8')
+
+          proxy = Path('src/utils/encodingProxy.js')
+          proxy_text = proxy.read_text(encoding='utf-8').replace('v3.5.8', 'v3.5.9').replace('v3_5_8', 'v3_5_9')
+          proxy.write_text(proxy_text, encoding='utf-8')
+
+          changelog = Path('CHANGELOG.md')
+          change_text = changelog.read_text(encoding='utf-8')
+          section = '''# Changelog\n\n## 3.5.9 - Selective Terminal BiDi Anchoring\n- Replaced the broad terminal `\\p{P}|\\p{S}` policy with an explicit set of sentence-ending marks plus Unicode closing punctuation.\n- Stopped adding RLM after generic symbols, mathematical operators, copyright symbols, and opening punctuation.\n- Centralized bidi cleanup and cue stabilization in `arabicBidi.js`; `subtitleProcessor.js` now imports the shared implementation.\n- Preserved removal of untrusted provider bidi controls before conversion and added regression tests for punctuation, closing brackets, mixed text, and idempotence.\n- Bumped the public manifest and subtitle cache identity to 3.5.9.\n\n'''
+          if not change_text.startswith(section):
+              change_text = change_text.replace('# Changelog\n\n', section, 1)
+          changelog.write_text(change_text, encoding='utf-8')
+
+          readme = Path('README.md')
+          readme_text = readme.read_text(encoding='utf-8')
+          readme_text = readme_text.replace('# m7md Arabic Resolver v3.5.8', '# m7md Arabic Resolver v3.5.9', 1)
+          readme_text = readme_text.replace('{"status":"ok","version":"3.5.8","ai":false}', '{"status":"ok","version":"3.5.9","ai":false}')
+          readme_section = '''## ما الجديد في 3.5.9\n\n- حُصرت إضافة `RLM` في علامات نهاية الجملة المحددة وأقواس/اقتباسات الإغلاق فقط، بدل جميع فئات الترقيم والرموز.\n- لا تُضاف علامة اتجاه بعد الرموز العامة مثل `+` و`=` و`©` أو بعد الأقواس المفتوحة.\n- وُحّد منطق تنظيف اتجاه النص وتثبيت السطر في `arabicBidi.js`، وأصبح `subtitleProcessor.js` يستخدم الدالة المشتركة نفسها.\n- بقي تنظيف علامات BiDi القادمة من ملفات المزودات قبل التحويل، مع اختبارات تمنع تكرار العلامات أو تغيير الأقواس الداخلية.\n\n'''
+          if '## ما الجديد في 3.5.9' not in readme_text:
+              readme_text = readme_text.replace('## ما الجديد في 3.5.8', readme_section + '## ما الجديد في 3.5.8', 1)
+          readme.write_text(readme_text, encoding='utf-8')
+          PY
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run test:coverage
+          git fetch origin main
+          git show origin/main:.github/workflows/test.yml > .github/workflows/test.yml
+          git config user.name "almahasher016-lang"
+          git config user.email "283951741+almahasher016-lang@users.noreply.github.com"
+          git add src/utils/arabicBidi.js src/utils/subtitleProcessor.js src/utils/encodingProxy.js src/tests/arabicBidi.test.js src/tests/subtitleProcessor.test.js src/release.js package.json package-lock.json README.md CHANGELOG.md .github/workflows/test.yml
+          git commit -m "Centralize selective Arabic terminal bidi handling v3.5.9"
+          git push origin HEAD:fix/selective-terminal-bidi-v3.5.9
