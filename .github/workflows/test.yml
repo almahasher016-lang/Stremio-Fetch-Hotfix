@@ -9,9 +9,9 @@ permissions:
 jobs:
   live-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
-      - name: Verify deployed manifest, health, and Euphoria route
+      - name: Verify deployed manifest, health, Euphoria route, and delivered SRT files
         env:
           BASE_URL: https://pleasing-gentleness-production.up.railway.app
         run: |
@@ -21,6 +21,9 @@ jobs:
           curl --fail --silent --show-error --retry 3 --retry-all-errors --max-time 90 "$BASE_URL/subtitles/series/tt8772296:1:1.json" -o euphoria.json
           python3 - <<'PY'
           import json
+          import re
+          import urllib.request
+
           health = json.load(open('health.json', encoding='utf-8'))
           manifest = json.load(open('manifest.json', encoding='utf-8'))
           response = json.load(open('euphoria.json', encoding='utf-8'))
@@ -29,17 +32,51 @@ jobs:
           assert health.get('version') == '3.5.7', health
           assert manifest.get('version') == '3.5.7', manifest
           assert manifest.get('id') == 'community.m7md-arabic-direct-v233-private', manifest
-          assert isinstance(subtitles, list), response
+          assert isinstance(subtitles, list) and subtitles, response
+
           names = [str(item.get('name', '')) for item in subtitles]
           ids = [str(item.get('id', '')) for item in subtitles]
           forbidden = ('Auto Sync', 'Reference Sync', 'RefSync')
           assert not any(any(label in name for label in forbidden) for name in names), names
-          assert subtitles, response
+
+          bidi_controls = re.compile(r'[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]')
+          timing = re.compile(r'\d{2,3}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2,3}:\d{2}:\d{2},\d{3}')
+          arabic = re.compile(r'[\u0600-\u06FF]')
+          delivered = []
+
+          for item in subtitles:
+              url = item.get('url')
+              assert isinstance(url, str) and url.startswith('https://'), item
+              request = urllib.request.Request(url, headers={'User-Agent': 'm7md-live-verifier/3.5.7'})
+              with urllib.request.urlopen(request, timeout=90) as result:
+                  content_type = result.headers.get('Content-Type', '')
+                  raw = result.read()
+              text = raw.decode('utf-8-sig')
+              control_count = len(bidi_controls.findall(text))
+              cue_count = len(timing.findall(text))
+              arabic_count = len(arabic.findall(text))
+              bracket_count = sum(text.count(char) for char in '()[]{}«»')
+              punctuation_count = sum(text.count(char) for char in '.،؛؟!…')
+              assert 'text/plain' in content_type.lower(), content_type
+              assert control_count == 0, {'id': item.get('id'), 'control_count': control_count}
+              assert cue_count >= 8, {'id': item.get('id'), 'cue_count': cue_count}
+              assert arabic_count >= 50, {'id': item.get('id'), 'arabic_count': arabic_count}
+              delivered.append({
+                  'id': item.get('id'),
+                  'bytes': len(raw),
+                  'cues': cue_count,
+                  'arabic_chars': arabic_count,
+                  'bidi_controls': control_count,
+                  'brackets_quotes': bracket_count,
+                  'punctuation': punctuation_count,
+              })
+
           print(json.dumps({
               'health': health,
               'manifest': {'id': manifest.get('id'), 'version': manifest.get('version')},
               'euphoria_count': len(subtitles),
               'euphoria_names': names,
               'euphoria_ids': ids,
+              'delivered_srt': delivered,
           }, ensure_ascii=False, indent=2))
           PY
