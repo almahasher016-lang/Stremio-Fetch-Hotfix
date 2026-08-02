@@ -213,73 +213,73 @@ export function scoreSubtitle(candidate, search = {}) {
   else if (exists(episode) && exists(candidateEpisode)) add(-1100, 'episode-mismatch');
 
   const overlap = tokenOverlapScore(target.tokens, release.tokens);
-  if (overlap >= 0.75) add(360, 'release-token-exactish');
-  else if (overlap >= 0.55) add(250, 'release-token-high');
-  else if (overlap >= 0.35) add(130, 'release-token-medium');
-  else if (overlap >= 0.18) add(45, 'release-token-low');
+  if (overlap >= 0.75) add(100, 'release-token-exactish');
+  else if (overlap >= 0.55) add(70, 'release-token-high');
+  else if (overlap >= 0.35) add(35, 'release-token-medium');
+  else if (overlap >= 0.18) add(10, 'release-token-low');
 
   if (target.quality && release.quality) {
-    if (target.quality === release.quality) add(220, 'quality-match');
-    else add(-260, 'quality-mismatch');
+    if (target.quality === release.quality) add(18, 'quality-match');
+    else add(-2, 'quality-different');
   }
 
   if (target.source && release.source) {
-    if (target.source === release.source) add(260, 'source-match');
-    else add(-360, 'source-mismatch');
+    if (target.source === release.source) add(25, 'source-match');
+    else add(-5, 'source-different');
   }
 
   if (target.codec && release.codec) {
-    if (target.codecFamily === release.codecFamily) add(90, 'codec-match');
-    else add(-110, 'codec-mismatch');
+    if (target.codecFamily === release.codecFamily) add(8, 'codec-match');
+    else add(0, 'codec-different');
   }
 
   if (target.releaseGroup && release.releaseGroup) {
-    if (target.releaseGroup === release.releaseGroup) add(340, 'release-group-match');
-    else add(-230, 'release-group-mismatch');
+    if (target.releaseGroup === release.releaseGroup) add(30, 'release-group-match');
+    else add(0, 'release-group-different');
   }
 
   if (target.hdr && release.hdr) {
-    if (target.hdr === release.hdr) add(55, 'hdr-match');
-    else add(-70, 'hdr-mismatch');
+    if (target.hdr === release.hdr) add(5, 'hdr-match');
+    else add(0, 'hdr-different');
   }
 
   if (target.service && release.service) {
-    if (target.service === release.service) add(170, 'streaming-service-match');
-    else add(-260, 'streaming-service-mismatch');
+    if (target.service === release.service) add(15, 'streaming-service-match');
+    else add(-3, 'streaming-service-different');
   }
 
   if (target.bitDepth && release.bitDepth) {
-    if (target.bitDepth === release.bitDepth) add(45, 'bit-depth-match');
-    else add(-45, 'bit-depth-mismatch');
+    if (target.bitDepth === release.bitDepth) add(4, 'bit-depth-match');
+    else add(0, 'bit-depth-different');
   }
 
   if (target.audioCodec && release.audioCodec) {
-    if (target.audioCodec === release.audioCodec) add(65, 'audio-codec-match');
-    else add(-55, 'audio-codec-mismatch');
+    if (target.audioCodec === release.audioCodec) add(5, 'audio-codec-match');
+    else add(0, 'audio-codec-different');
   }
 
   if (target.audioChannels && release.audioChannels) {
-    if (target.audioChannels === release.audioChannels) add(45, 'audio-channels-match');
-    else add(-40, 'audio-channels-mismatch');
+    if (target.audioChannels === release.audioChannels) add(4, 'audio-channels-match');
+    else add(0, 'audio-channels-different');
   }
 
   if (target.audioProfile && release.audioProfile) {
-    if (target.audioProfile === release.audioProfile) add(35, 'audio-profile-match');
-    else add(-30, 'audio-profile-mismatch');
+    if (target.audioProfile === release.audioProfile) add(3, 'audio-profile-match');
+    else add(0, 'audio-profile-different');
   }
 
   if (target.edition && release.edition) {
-    if (target.edition === release.edition) add(380, 'edition-match');
-    else add(-520, 'edition-mismatch');
+    if (target.edition === release.edition) add(90, 'edition-match');
+    else add(-120, 'edition-mismatch');
   } else if (target.edition && !release.edition) {
-    add(-420, 'edition-missing');
+    add(-60, 'edition-missing');
   } else if (!target.edition && release.edition && release.edition !== 'theatrical') {
-    add(-260, 'unexpected-special-edition');
+    add(-80, 'unexpected-special-edition');
   }
 
   if (target.fps && release.fps) {
-    if (Math.abs(target.fps - release.fps) <= 0.02) add(130, 'fps-match');
-    else add(-180, 'fps-mismatch');
+    if (Math.abs(target.fps - release.fps) <= 0.02) add(20, 'fps-match');
+    else add(-30, 'fps-mismatch');
   }
 
   if (target.year && release.year) {
@@ -287,9 +287,9 @@ export function scoreSubtitle(candidate, search = {}) {
     else add(-100, 'year-mismatch');
   }
 
-  if (releaseMatch.exactFingerprint) add(520, 'exact-release-fingerprint');
-  else if (releaseMatch.similarity >= 0.9) add(90, 'deterministic-filename-similarity');
-  else if (releaseMatch.similarity >= 0.78) add(45, 'deterministic-filename-similarity');
+  if (releaseMatch.exactFingerprint) add(100, 'exact-release-name-fingerprint');
+  else if (releaseMatch.similarity >= 0.9) add(35, 'deterministic-filename-similarity');
+  else if (releaseMatch.similarity >= 0.78) add(15, 'deterministic-filename-similarity');
 
   const downloads = Number(candidate.downloads || candidate.downloadCount || 0);
   if (downloads > 0) add(Math.min(65, Math.log10(downloads + 1) * 22), 'download-popularity-capped');
@@ -316,6 +316,50 @@ export function makeDedupeKey(item) {
   const hash = lower(item.movieHash || item.hash || '');
   if (hash) return `${lang}:${season}:${episode}:hash:${hash}`;
   return `${lang}:${season}:${episode}:${provider}:${name.slice(0, 96)}`;
+}
+
+function evidenceRank(item) {
+  const reasons = item.scoreReasons || [];
+  if (item.sourceType === 'personal-vault-exact-hash' || item.sourceType === 'version-registry-exact-hash') return 3;
+  if (reasons.some(reason => reason.reason === 'exact-video-hash-match')) return 3;
+  if (reasons.some(reason => reason.reason === 'provider-confirmed-hash-match')) return 2;
+  return 0;
+}
+
+function releaseFamilyKey(item) {
+  const release = item.parsedRelease || {};
+  const fps = Number.isFinite(Number(release.fps)) ? Number(release.fps).toFixed(3) : '';
+  const fields = [release.source, release.edition, release.releaseGroup, release.quality, fps]
+    .map(value => lower(value))
+    .filter(Boolean);
+  return fields.length ? fields.join(':') : `provider:${lower(item.provider || 'unknown')}`;
+}
+
+function diversifyPlausibleAlternatives(items, scoreWindow = 240) {
+  const output = [];
+  let cursor = 0;
+  while (cursor < items.length) {
+    const anchor = items[cursor];
+    const anchorEvidence = evidenceRank(anchor);
+    const band = [];
+    while (
+      cursor < items.length
+      && evidenceRank(items[cursor]) === anchorEvidence
+      && items[cursor].score >= anchor.score - scoreWindow
+    ) {
+      band.push(items[cursor]);
+      cursor += 1;
+    }
+    const seenFamilies = new Set();
+    for (const item of band) {
+      const family = releaseFamilyKey(item);
+      if (seenFamilies.has(family)) continue;
+      seenFamilies.add(family);
+      output.push(item);
+    }
+    for (const item of band) if (!output.includes(item)) output.push(item);
+  }
+  return output;
 }
 
 export function rankAndFilter(results, search = {}, config = {}) {
@@ -346,19 +390,14 @@ export function rankAndFilter(results, search = {}, config = {}) {
   }
 
   ranked.sort((a, b) => {
-    const aHash = a.scoreReasons?.some(r => r.reason.includes('hash')) ? 1 : 0;
-    const bHash = b.scoreReasons?.some(r => r.reason.includes('hash')) ? 1 : 0;
-    if (aHash !== bHash) return bHash - aHash;
-    const useReleasePriority = (a.releaseMatch?.targetFields || b.releaseMatch?.targetFields || 0) > 0;
-    if (useReleasePriority) {
-      if (a.releaseMatchTier !== b.releaseMatchTier) return b.releaseMatchTier - a.releaseMatchTier;
-      if (a.releaseMatch?.priority !== b.releaseMatch?.priority) {
-        return (b.releaseMatch?.priority || 0) - (a.releaseMatch?.priority || 0);
-      }
-    }
-    if ((b.provider === 'vault') !== (a.provider === 'vault')) return b.provider === 'vault' ? 1 : -1;
+    const evidenceDelta = evidenceRank(b) - evidenceRank(a);
+    if (evidenceDelta) return evidenceDelta;
     if (b.score !== a.score) return b.score - a.score;
     if (Boolean(b.trusted) !== Boolean(a.trusted)) return b.trusted ? 1 : -1;
+    if ((b.provider === 'vault') !== (a.provider === 'vault')) return b.provider === 'vault' ? 1 : -1;
+    if (a.releaseMatch?.priority !== b.releaseMatch?.priority) {
+      return (b.releaseMatch?.priority || 0) - (a.releaseMatch?.priority || 0);
+    }
     const downloadDelta = Number(b.downloads || b.downloadCount || 0) - Number(a.downloads || a.downloadCount || 0);
     if (downloadDelta) return downloadDelta;
     return `${a.provider || ''}:${a.id || a.providerId || ''}`.localeCompare(`${b.provider || ''}:${b.id || b.providerId || ''}`);
@@ -373,5 +412,5 @@ export function rankAndFilter(results, search = {}, config = {}) {
     deduped.push(item);
   }
 
-  return deduped;
+  return diversifyPlausibleAlternatives(deduped);
 }
