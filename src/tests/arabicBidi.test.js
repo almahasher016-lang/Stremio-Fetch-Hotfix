@@ -7,14 +7,44 @@ import {
 } from '../utils/arabicBidi.js';
 
 const RLM = '\u200F';
-const UNSAFE_BIDI_RE = /[\u061C\u200E\u202A-\u202E\u2066-\u2069]/u;
+const RLI = '\u2067';
+const PDI = '\u2069';
+const UNSAFE_BIDI_RE = /[\u061C\u200E\u202A-\u202E\u2066\u2068]/u;
 
-test('anchors the terminal Arabic comma from the user-visible Stremio failure', () => {
+test('isolates the paired-parenthesis line shown incorrectly on the TV', () => {
+  const source = '(شخص يُقتل في مدينة نيويورك)';
+  assert.equal(stabilizeArabicCueLine(source), `${RLI}${source}${PDI}`);
+});
+
+test('isolates a bracket-bearing Arabic line exactly once, including nested pairs', () => {
+  const cases = [
+    'شاهدت (الحلقة) أمس',
+    '(شخص يُقتل في مدينة (نيويورك))',
+    '[هل أنت بخير؟]',
+    '{انتبه!}',
+    'النص 【العربي】 هنا',
+  ];
+  for (const source of cases) {
+    assert.equal(stabilizeArabicCueLine(source), `${RLI}${source}${PDI}`);
+  }
+});
+
+test('does not isolate unmatched brackets or brackets containing Latin text only', () => {
+  const cases = [
+    'ابدأ من (',
+    'انتهى هنا )',
+    'الإصدار [WEB-DL] متاح',
+    'الدقة (1080p) ممتازة',
+  ];
+  for (const source of cases) assert.equal(stabilizeArabicCueLine(source), source);
+});
+
+test('anchors the terminal Arabic comma from the earlier Stremio failure', () => {
   const source = 'ربما أنك حلمت بهذا الحدث،';
   assert.equal(stabilizeArabicCueLine(source), `${source}${RLM}`);
 });
 
-test('anchors selected terminal punctuation and closing punctuation only', () => {
+test('anchors selected terminal punctuation on lines without Arabic bracket pairs', () => {
   const cases = [
     'مرحبا بالعالم.',
     'انتبه!',
@@ -22,11 +52,7 @@ test('anchors selected terminal punctuation and closing punctuation only', () =>
     'توقف؛',
     'قال:',
     'ربما...',
-    '(مرحبا بالعالم.)',
-    '[هل أنت بخير؟]',
-    '{انتبه!}',
-    '«هذا صحيح»',
-    'قال "نعم"',
+    'قال «نعم»',
   ];
   for (const source of cases) assert.equal(stabilizeArabicCueLine(source), `${source}${RLM}`);
 });
@@ -36,39 +62,44 @@ test('does not anchor generic symbols or opening punctuation', () => {
     'الناتج +',
     'القيمة =',
     'حقوق النشر ©',
-    'ابدأ من (',
     'ابدأ من [',
     'ابدأ من {',
   ];
   for (const source of cases) assert.equal(stabilizeArabicCueLine(source), source);
 });
 
-test('keeps internal punctuation and brackets untouched when the line ends with a letter', () => {
+test('keeps internal punctuation unchanged on bracket-free lines ending with a letter', () => {
   const cases = [
     'نعم، منذ زمن بعيد، انتقلت',
     'أنا.. وبعض صديقاتي',
-    'شاهدت (الحلقة) أمس',
-    'الإصدار [WEB-DL] متاح',
   ];
   for (const source of cases) assert.equal(stabilizeArabicCueLine(source), source);
 });
 
-test('removes upstream bidi controls then adds at most one calculated trailing RLM', () => {
-  const source = '\u200F\u2067\u200F(مرحبا.)\u200F\u2069\u200F';
-  assert.equal(stabilizeArabicCueLine(source), `(مرحبا.)${RLM}`);
-  assert.equal(stripBidiControls(source), '(مرحبا.)');
+test('removes upstream controls before applying one calculated strategy', () => {
+  const bracketSource = `\u200F\u2067(مرحبا.)\u2069\u200F`;
+  assert.equal(stabilizeArabicCueLine(bracketSource), `${RLI}(مرحبا.)${PDI}`);
+  assert.equal(stripBidiControls(bracketSource), '(مرحبا.)');
+
+  const punctuationSource = '\u202Bمرحبا!\u202C';
+  assert.equal(stabilizeArabicCueLine(punctuationSource), `مرحبا!${RLM}`);
 });
 
-test('is exactly idempotent and preserves indexes and timings', () => {
-  const source = `1\n00:00:01,000 --> 00:00:02,000\n\u2067(مرحبا.)\u200F\u2069\n`;
+test('is exactly idempotent for bracket isolation and terminal punctuation', () => {
+  const source = `1\n00:00:01,000 --> 00:00:02,000\n\u2067(شخص يُقتل في مدينة نيويورك)\u2069\n\n2\n00:00:03,000 --> 00:00:04,000\nمرحبا!\n`;
   const once = stabilizeArabicSrt(source);
   assert.equal(stabilizeArabicSrt(once), once);
-  assert.equal(once, `1\n00:00:01,000 --> 00:00:02,000\n(مرحبا.)${RLM}\n`);
+  assert.equal(
+    once,
+    `1\n00:00:01,000 --> 00:00:02,000\n${RLI}(شخص يُقتل في مدينة نيويورك)${PDI}\n\n2\n00:00:03,000 --> 00:00:04,000\nمرحبا!${RLM}\n`,
+  );
   assert.doesNotMatch(once, UNSAFE_BIDI_RE);
+  assert.equal((once.match(/\u2067/gu) || []).length, 1);
+  assert.equal((once.match(/\u2069/gu) || []).length, 1);
   assert.equal((once.match(/\u200F/gu) || []).length, 1);
 });
 
-test('does not anchor numeric dialogue or a Latin-dominant mixed line', () => {
+test('does not modify numeric dialogue or a Latin-dominant mixed line', () => {
   const source = `1\n00:00:01,000 --> 00:00:02,000\n1984\nWEB-DL release with مرحبا!\n`;
   assert.equal(stabilizeArabicSrt(source), source);
 });
