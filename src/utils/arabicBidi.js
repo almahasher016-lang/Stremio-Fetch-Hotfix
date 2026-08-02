@@ -1,10 +1,10 @@
 const BIDI_CONTROL_RE = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/gu;
 const LETTER_RE = /\p{L}/u;
 const ARABIC_SCRIPT_RE = /\p{Script_Extensions=Arabic}/u;
-const TERMINAL_NEUTRAL_RE = /[\p{P}\p{S}]$/u;
+const TERMINAL_BOUNDARY_RE = /(?:[.,،:;!؟؛…"'’”]|\p{Pe}|\p{Pf})$/u;
 const RIGHT_TO_LEFT_MARK = '\u200F';
 
-function stripBidiControls(value) {
+export function stripBidiControls(value) {
   return String(value ?? '').replace(BIDI_CONTROL_RE, '');
 }
 
@@ -30,10 +30,10 @@ function arabicDominatesLine(line) {
 
 export function stabilizeArabicCueLine(line) {
   const clean = stripBidiControls(line).trimEnd();
-  if (!clean || !arabicDominatesLine(clean) || !TERMINAL_NEUTRAL_RE.test(clean)) return clean;
+  if (!clean || !arabicDominatesLine(clean) || !TERMINAL_BOUNDARY_RE.test(clean)) return clean;
 
-  // UAX #9 recommends a trailing RLM for a neutral punctuation mark on an RTL boundary.
-  // Keep exactly one mark after the visible punctuation; never wrap or reorder the line.
+  // Anchor only selected terminal punctuation and closing punctuation to the Arabic run.
+  // Do not add marks at line start or around inline brackets.
   return `${clean}${RIGHT_TO_LEFT_MARK}`;
 }
 

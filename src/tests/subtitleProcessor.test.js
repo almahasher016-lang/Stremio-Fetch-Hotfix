@@ -171,3 +171,25 @@ test('processSubtitleBuffer leaves internal punctuation in source order', () => 
   assert.ok(result.text.includes(visible));
   assert.doesNotMatch(result.text, /\u200F/u);
 });
+
+
+test('processor shares the selective terminal bidi policy', () => {
+  const input = Buffer.from(`1
+00:00:01,000 --> 00:00:02,000
+مرحبا،
+
+2
+00:00:03,000 --> 00:00:04,000
+الناتج +
+
+3
+00:00:05,000 --> 00:00:06,000
+شاهدت (الحلقة) أمس
+`, 'utf8');
+  const result = processSubtitleBuffer(input).text;
+  assert.match(result, /مرحبا،\u200F/u);
+  assert.match(result, /الناتج \+\n/u);
+  assert.doesNotMatch(result, /الناتج \+\u200F/u);
+  assert.match(result, /شاهدت \(الحلقة\) أمس\n/u);
+  assert.doesNotMatch(result, /\u200F\(|\)\u200F/u);
+});

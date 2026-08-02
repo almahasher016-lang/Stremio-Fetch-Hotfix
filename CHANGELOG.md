@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.5.9 - Selective Terminal BiDi Anchoring
+- Replaced the broad terminal `\p{P}|\p{S}` policy with an explicit set of sentence-ending marks plus Unicode closing punctuation.
+- Stopped adding RLM after generic symbols, mathematical operators, copyright symbols, and opening punctuation.
+- Centralized bidi cleanup and cue stabilization in `arabicBidi.js`; `subtitleProcessor.js` now imports the shared implementation.
+- Preserved removal of untrusted provider bidi controls before conversion and added regression tests for punctuation, closing brackets, mixed text, and idempotence.
+- Bumped the public manifest and subtitle cache identity to 3.5.9.
+
 ## 3.5.8 - Terminal Arabic Punctuation Direction
 - Fixed terminal Arabic punctuation rendering on Stremio by adding exactly one trailing RLM after a neutral punctuation or closing symbol on Arabic-dominant cue lines.
 - Kept internal punctuation and visible character order unchanged, without wrapping full lines in embeddings or isolates.
