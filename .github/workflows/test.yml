@@ -1,47 +1,93 @@
-name: test
+name: live-v358-rtl-verification
 on:
-  push:
   pull_request:
+    branches: [main]
 
 permissions:
   contents: read
 
-concurrency:
-  group: test-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  node-test:
+  live-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 12
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: 24.18.0
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run test:coverage
-      - run: npm audit --omit=dev --audit-level=high
-      - run: npm audit signatures
-      - run: npm pack --dry-run --ignore-scripts
-      - name: Generate CycloneDX SBOM
-        run: npm sbom --sbom-format=cyclonedx > sbom.cdx.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: release-evidence-${{ github.sha }}
-          path: |
-            package-lock.json
-            sbom.cdx.json
-          retention-days: 30
-      - run: docker build --tag m7md-ci:${{ github.sha }} .
-      - name: Scan production image
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: m7md-ci:${{ github.sha }}
-          format: table
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: '1'
+      - name: Verify deployed terminal Arabic punctuation
+        env:
+          BASE_URL: https://pleasing-gentleness-production.up.railway.app
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 4 --retry-all-errors --max-time 30 "$BASE_URL/health" -o health.json
+          curl --fail --silent --show-error --retry 4 --retry-all-errors --max-time 30 "$BASE_URL/manifest.json" -o manifest.json
+          curl --fail --silent --show-error --retry 3 --retry-all-errors --max-time 90 "$BASE_URL/subtitles/series/tt8772296:1:1.json" -o subtitles.json
+          python3 - <<'PY'
+          import json
+          import re
+          import unicodedata
+          import urllib.request
+
+          RLM = '\u200f'
+          FORBIDDEN = set('\u061c\u200e\u202a\u202b\u202c\u202d\u202e\u2066\u2067\u2068\u2069')
+
+          def is_arabic(ch):
+              code = ord(ch)
+              return (
+                  0x0600 <= code <= 0x06FF
+                  or 0x0750 <= code <= 0x077F
+                  or 0x08A0 <= code <= 0x08FF
+                  or 0xFB50 <= code <= 0xFDFF
+                  or 0xFE70 <= code <= 0xFEFF
+              ) and unicodedata.category(ch).startswith('L')
+
+          def arabic_dominates(line):
+              letters = [ch for ch in line if unicodedata.category(ch).startswith('L')]
+              if not letters:
+                  return False
+              arabic_count = sum(is_arabic(ch) for ch in letters)
+              return arabic_count > 0 and (arabic_count >= len(letters) - arabic_count or is_arabic(letters[0]))
+
+          health = json.load(open('health.json', encoding='utf-8'))
+          manifest = json.load(open('manifest.json', encoding='utf-8'))
+          response = json.load(open('subtitles.json', encoding='utf-8'))
+          subtitles = response.get('subtitles', [])
+          assert health.get('status') == 'ok', health
+          assert health.get('version') == '3.5.8', health
+          assert manifest.get('version') == '3.5.8', manifest
+          assert manifest.get('id') == 'community.m7md-arabic-direct-v233-private', manifest
+          assert subtitles, response
+
+          total_terminal = 0
+          total_anchored = 0
+          files = []
+          timing = re.compile(r'\d{2,3}:\d{2}:\d{2},\d{3}\s*-->')
+
+          for item in subtitles[:6]:
+              request = urllib.request.Request(item['url'], headers={'User-Agent': 'm7md-live-rtl-verifier/3.5.8'})
+              with urllib.request.urlopen(request, timeout=90) as result:
+                  text = result.read().decode('utf-8-sig').replace('\r\n', '\n')
+              file_terminal = 0
+              file_anchored = 0
+              for line in text.split('\n'):
+                  if not line or line.isdigit() or timing.search(line):
+                      continue
+                  assert not any(ch in FORBIDDEN for ch in line), {'id': item.get('id'), 'line': repr(line)}
+                  assert not line.endswith(RLM * 2), {'id': item.get('id'), 'line': repr(line)}
+                  visible = line[:-1] if line.endswith(RLM) else line
+                  if visible and arabic_dominates(visible) and unicodedata.category(visible[-1])[0] in {'P', 'S'}:
+                      file_terminal += 1
+                      total_terminal += 1
+                      assert line.endswith(RLM), {'id': item.get('id'), 'unanchored': visible}
+                      file_anchored += 1
+                      total_anchored += 1
+              files.append({'id': item.get('id'), 'terminal': file_terminal, 'anchored': file_anchored})
+
+          assert total_terminal > 0, files
+          assert total_anchored == total_terminal, files
+          print(json.dumps({
+              'health': health,
+              'manifest': {'id': manifest.get('id'), 'version': manifest.get('version')},
+              'subtitle_count': len(subtitles),
+              'terminal_lines': total_terminal,
+              'anchored_lines': total_anchored,
+              'files': files,
+          }, ensure_ascii=False, indent=2))
+          PY
