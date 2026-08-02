@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v3.5.5
+# m7md Arabic Resolver v3.5.6
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,13 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 3.5.6
+
+- تصحيح ترتيب الترجمات ليعتمد على الأدلة الأقوى أولًا بدل جعل WEB-DL وBluRay والدقة والمجموعة حاسمة.
+- تخفيض معلومات الإصدار إلى إشارات ثانوية، مع الحفاظ على Hash وVault والجودة الموثقة كأقوى الأدلة.
+- تنويع البدائل القريبة حتى لا تمتلئ قائمة Stremio بنتائج متشابهة من نفس عائلة الإصدار.
+- رفع رقم Manifest مع إبقاء معرّف الإضافة ثابتًا ليظهر تحديث Stremio.
 
 ## ما الجديد في 3.5.5
 
@@ -67,7 +74,7 @@
 ## التحقق
 
 ```json
-{"status":"ok","version":"3.5.5","ai":false}
+{"status":"ok","version":"3.5.6","ai":false}
 ```
 
 بوابات الدمج المطلوبة: ESLint، TypeScript، الاختبارات والتغطية، `npm audit --omit=dev --audit-level=high`، CodeQL، بناء Docker، وTrivy.

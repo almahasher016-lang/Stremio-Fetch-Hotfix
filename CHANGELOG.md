@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.5.6 - Evidence-First Subtitle Ranking
+- Changed subtitle ordering so exact and provider-confirmed hashes remain the strongest evidence.
+- Reduced WEB-DL, BluRay, resolution, release-group, codec, service, audio, HDR, and FPS labels to secondary ranking signals.
+- Removed release-name tier as a primary sort key and diversified plausible alternatives from different release families.
+- Renamed release badges to avoid claiming synchronization from filename metadata alone.
+- Bumped the public manifest version while preserving the stable add-on ID.
+
 ## Unreleased - Evidence-First Subtitle Ranking
 - Stopped sorting release-name tiers ahead of the actual subtitle score.
 - Reduced WEB-DL, BluRay, resolution, release group, codec, HDR, service, audio, and FPS labels to weak secondary signals.
