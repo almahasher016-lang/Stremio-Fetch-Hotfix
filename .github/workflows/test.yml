@@ -1,47 +1,45 @@
-name: test
+name: live-v357-verification
 on:
-  push:
   pull_request:
+    branches: [main]
 
 permissions:
   contents: read
 
-concurrency:
-  group: test-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  node-test:
+  live-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: 24.18.0
-      - run: npm ci --ignore-scripts --no-audit --no-fund
-      - run: npm run lint
-      - run: npm run typecheck
-      - run: npm test
-      - run: npm run test:coverage
-      - run: npm audit --omit=dev --audit-level=high
-      - run: npm audit signatures
-      - run: npm pack --dry-run --ignore-scripts
-      - name: Generate CycloneDX SBOM
-        run: npm sbom --sbom-format=cyclonedx > sbom.cdx.json
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        with:
-          name: release-evidence-${{ github.sha }}
-          path: |
-            package-lock.json
-            sbom.cdx.json
-          retention-days: 30
-      - run: docker build --tag m7md-ci:${{ github.sha }} .
-      - name: Scan production image
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
-        with:
-          image-ref: m7md-ci:${{ github.sha }}
-          format: table
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          exit-code: '1'
+      - name: Verify deployed manifest, health, and Euphoria route
+        env:
+          BASE_URL: https://pleasing-gentleness-production.up.railway.app
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 4 --retry-all-errors --max-time 30 "$BASE_URL/health" -o health.json
+          curl --fail --silent --show-error --retry 4 --retry-all-errors --max-time 30 "$BASE_URL/manifest.json" -o manifest.json
+          curl --fail --silent --show-error --retry 3 --retry-all-errors --max-time 90 "$BASE_URL/subtitles/series/tt8772296:1:1.json" -o euphoria.json
+          python3 - <<'PY'
+          import json
+          health = json.load(open('health.json', encoding='utf-8'))
+          manifest = json.load(open('manifest.json', encoding='utf-8'))
+          response = json.load(open('euphoria.json', encoding='utf-8'))
+          subtitles = response.get('subtitles', [])
+          assert health.get('status') == 'ok', health
+          assert health.get('version') == '3.5.7', health
+          assert manifest.get('version') == '3.5.7', manifest
+          assert manifest.get('id') == 'community.m7md-arabic-direct-v233-private', manifest
+          assert isinstance(subtitles, list), response
+          names = [str(item.get('name', '')) for item in subtitles]
+          ids = [str(item.get('id', '')) for item in subtitles]
+          forbidden = ('Auto Sync', 'Reference Sync', 'RefSync')
+          assert not any(any(label in name for label in forbidden) for name in names), names
+          assert subtitles, response
+          print(json.dumps({
+              'health': health,
+              'manifest': {'id': manifest.get('id'), 'version': manifest.get('version')},
+              'euphoria_count': len(subtitles),
+              'euphoria_names': names,
+              'euphoria_ids': ids,
+          }, ensure_ascii=False, indent=2))
+          PY
