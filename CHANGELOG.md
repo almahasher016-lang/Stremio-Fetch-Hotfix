@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.5.8 - Terminal Arabic Punctuation Direction
+- Fixed terminal Arabic punctuation rendering on Stremio by adding exactly one trailing RLM after a neutral punctuation or closing symbol on Arabic-dominant cue lines.
+- Kept internal punctuation and visible character order unchanged, without wrapping full lines in embeddings or isolates.
+- Added regression tests based on the user-visible `ربما أنك حلمت بهذا الحدث،` failure and retained idempotent cleanup of upstream bidi controls.
+- Bumped the encoding cache namespace and public manifest version while preserving the stable add-on ID.
+
 ## 3.5.7 - Conservative Text and Search Reliability
 - Removed both layers of resolver-injected RLM/RLI/PDI controls; SRT delivery now strips untrusted bidi controls while preserving every visible bracket, quote, ellipsis, and punctuation mark in source order.
 - Disabled metadata-only FPS synchronization and placed all original subtitle candidates before any explicitly enabled experimental transform.
