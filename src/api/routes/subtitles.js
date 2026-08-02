@@ -291,26 +291,32 @@ router.get('/proxy/encoding/:token.srt', async (req, res, next) => {
   }
 });
 
-async function styledSubtitleHandler(req, res, next) {
-  try {
-    const result = await resolveStyledSubtitle(req.params.token);
-    res.setHeader('X-Source-Encoding', result.encoding || 'utf-8');
-    res.setHeader('X-Source-Format', result.format || 'ass');
-    if (result.archive) res.setHeader('X-Source-Archive', result.archive);
-    if (result.archiveEntry) res.setHeader('X-Source-Archive-Entry', result.archiveEntry);
-    return sendStyledSubtitleResponse(res, result.text, {
-      format: result.format || 'ass',
-      cacheControl: result.cache === 'hit'
-        ? 'public, max-age=604800, immutable'
-        : 'public, max-age=86400',
-    });
-  } catch (err) {
-    next(err);
-  }
+export function registerStyledSubtitleRoutes(targetRouter, {
+  resolver = resolveStyledSubtitle,
+} = {}) {
+  const styledSubtitleHandler = async (req, res, next) => {
+    try {
+      const result = await resolver(req.params.token);
+      res.setHeader('X-Source-Encoding', result.encoding || 'utf-8');
+      res.setHeader('X-Source-Format', result.format || 'ass');
+      if (result.archive) res.setHeader('X-Source-Archive', result.archive);
+      if (result.archiveEntry) res.setHeader('X-Source-Archive-Entry', result.archiveEntry);
+      return sendStyledSubtitleResponse(res, result.text, {
+        format: result.format || 'ass',
+        cacheControl: result.cache === 'hit'
+          ? 'public, max-age=604800, immutable'
+          : 'public, max-age=86400',
+      });
+    } catch (err) {
+      return next(err);
+    }
+  };
+
+  targetRouter.get('/proxy/styled/:token.ass', styledSubtitleHandler);
+  targetRouter.get('/proxy/styled/:token.ssa', styledSubtitleHandler);
 }
 
-router.get('/proxy/styled/:token.ass', styledSubtitleHandler);
-router.get('/proxy/styled/:token.ssa', styledSubtitleHandler);
+registerStyledSubtitleRoutes(router);
 
 router.get('/preview/encoding/:token.json', async (req, res, next) => {
   try {

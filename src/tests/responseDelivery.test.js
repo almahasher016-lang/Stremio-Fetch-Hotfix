@@ -6,6 +6,7 @@ import express from 'express';
 import compression from 'compression';
 import { securityMiddleware } from '../securityBootstrap.js';
 import { stabilizeArabicSrt } from '../utils/arabicBidi.js';
+import { stabilizeArabicStyledSubtitle } from '../utils/styledArabicBidi.js';
 import {
   finalizedBodyCompressionFilter,
   sendHtmlResponse,
@@ -87,7 +88,7 @@ test('Express and compression deliver finalized SRT styled subtitles and CSP HTM
 
   const styledResponse = await rawGet(baseUrl, '/styled.ass');
   assert.equal(styledResponse.status, 200);
-  assert.equal(styledResponse.body.toString('utf8'), styled);
+  assert.equal(styledResponse.body.toString('utf8'), stabilizeArabicStyledSubtitle(styled));
   assert.match(String(styledResponse.headers['content-disposition']), /subtitle\.ass/);
 
   const page = await rawGet(baseUrl, '/page.html');

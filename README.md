@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v3.5.10
+# m7md Arabic Resolver v3.5.11
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,14 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 3.5.11
+
+- أضيف تثبيت اتجاه العربية إلى مساري `Styled ASS` و`Styled SSA` بدل إرسالهما مباشرة دون معالجة BiDi.
+- يقرأ المعالج قسم `[Events]` وترتيب `Format` ويغيّر حقل `Text` في أسطر `Dialogue` فقط؛ الترويسات والأنماط والتعليقات لا تتغير.
+- يعالج كل سطر بصري مفصول بـ`\\N` أو `\\n` بصورة مستقلة، ويحافظ على وسوم الموضع والألوان والكاروكي ووسوم HTML كما هي.
+- تُترك أوامر رسومات ASS بين `\\p1` و`\\p0` دون أي حقن لعلامات الاتجاه.
+- أضيفت اختبارات حية لمساري `/proxy/styled/*.ass` و`/proxy/styled/*.ssa`، ورُفع كاش Styled إلى `styled:v2`.
 
 ## ما الجديد في 3.5.10
 
@@ -104,7 +112,7 @@
 ## التحقق
 
 ```json
-{"status":"ok","version":"3.5.10","ai":false}
+{"status":"ok","version":"3.5.11","ai":false}
 ```
 
 بوابات الدمج المطلوبة: ESLint، TypeScript، الاختبارات والتغطية، `npm audit --omit=dev --audit-level=high`، CodeQL، بناء Docker، وTrivy.

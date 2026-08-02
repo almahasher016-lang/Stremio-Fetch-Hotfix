@@ -264,7 +264,7 @@ export function normalizeStyledSubtitleBuffer(buffer, {
 }
 
 function styledCacheKey(token) {
-  return `styled:v1:${createHash('sha256').update(String(token)).digest('hex')}`;
+  return `styled:v2:${createHash('sha256').update(String(token)).digest('hex')}`;
 }
 
 export async function resolveStyledSubtitle(token, {

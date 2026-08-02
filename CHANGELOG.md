@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.5.11 - Styled ASS/SSA Arabic BiDi Stabilization
+- Applied Arabic direction stabilization to the dedicated Styled ASS and SSA delivery path.
+- Parsed `[Events]` and its `Format` declaration, then changed only the `Text` field of valid `Dialogue` rows.
+- Stabilized each `\\N`/`\\n` visual line independently while preserving override, position, color, karaoke, and HTML tags.
+- Preserved ASS drawing commands between nonzero `\\p` mode and `\\p0` without injecting directional controls into vector data.
+- Added integration coverage for both `/proxy/styled/*.ass` and `/proxy/styled/*.ssa`, and bumped the Styled cache namespace to `styled:v2`.
+- Bumped the public manifest, package, lockfile, and release identity to 3.5.11.
+
 ## 3.5.10 - Paired Arabic Bracket Isolation
 - Fixed the TV-visible case where a balanced Arabic parenthesis pair was split across the rendered line.
 - Wrapped Arabic-dominant cue lines containing a matched bracket pair with Arabic content in exactly one `RLI…PDI` isolate.
