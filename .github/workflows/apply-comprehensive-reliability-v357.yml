@@ -1,0 +1,46 @@
+name: apply-comprehensive-reliability-v357
+
+on:
+  push:
+    branches:
+      - fix/comprehensive-subtitle-reliability-v3.5.7
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/comprehensive-subtitle-reliability-v3.5.7
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.18.0
+      - name: Apply reviewed reliability correction
+        run: |
+          set -euo pipefail
+          python3 scripts/apply-comprehensive-reliability-v357.py
+          rm -f scripts/apply-comprehensive-reliability-v357.py
+          rmdir scripts 2>/dev/null || true
+          rm -f .github/workflows/apply-comprehensive-reliability-v357.yml
+      - name: Verify before publishing branch
+        run: |
+          set -euo pipefail
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run test:coverage
+      - name: Commit corrected implementation
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git diff --cached --check
+          git commit -m "Fix subtitle text and synchronization reliability v3.5.7"
+          git push origin HEAD:fix/comprehensive-subtitle-reliability-v3.5.7
