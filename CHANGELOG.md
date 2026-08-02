@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.5.10 - Paired Arabic Bracket Isolation
+- Fixed the TV-visible case where a balanced Arabic parenthesis pair was split across the rendered line.
+- Wrapped Arabic-dominant cue lines containing a matched bracket pair with Arabic content in exactly one `RLI…PDI` isolate.
+- Kept the selective trailing-RLM policy for bracket-free terminal punctuation and avoided injecting marks beside individual brackets.
+- Ignored unmatched opening brackets and Latin-only bracket contents while retaining the existing terminal treatment for unmatched closing punctuation.
+- Added screenshot-derived, nested-pair, processor-integration, mixed-script, and idempotence regression coverage.
+- Bumped the public manifest, package, lockfile, and subtitle cache identity to 3.5.10.
+
 ## 3.5.9 - Selective Terminal BiDi Anchoring
 - Replaced the broad terminal `\p{P}|\p{S}` policy with an explicit set of sentence-ending marks plus Unicode closing punctuation.
 - Stopped adding RLM after generic symbols, mathematical operators, copyright symbols, and opening punctuation.
