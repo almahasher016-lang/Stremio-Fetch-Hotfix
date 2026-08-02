@@ -29,14 +29,18 @@ test('isolates a bracket-bearing Arabic line exactly once, including nested pair
   }
 });
 
-test('does not isolate unmatched brackets or brackets containing Latin text only', () => {
+test('does not isolate unmatched opening brackets or pairs containing Latin text only', () => {
   const cases = [
     'ابدأ من (',
-    'انتهى هنا )',
     'الإصدار [WEB-DL] متاح',
     'الدقة (1080p) ممتازة',
   ];
   for (const source of cases) assert.equal(stabilizeArabicCueLine(source), source);
+});
+
+test('keeps the existing terminal policy for an unmatched closing bracket', () => {
+  const source = 'انتهى هنا )';
+  assert.equal(stabilizeArabicCueLine(source), `${source}${RLM}`);
 });
 
 test('anchors the terminal Arabic comma from the earlier Stremio failure', () => {
