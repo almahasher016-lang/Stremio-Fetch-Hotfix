@@ -57,7 +57,7 @@ jobs:
               arabic_count = len(arabic.findall(text))
               bracket_count = sum(text.count(char) for char in '()[]{}«»')
               punctuation_count = sum(text.count(char) for char in '.،؛؟!…')
-              assert 'text/plain' in content_type.lower(), content_type
+              assert any(kind in content_type.lower() for kind in ('application/x-subrip', 'text/plain')), content_type
               assert control_count == 0, {'id': item.get('id'), 'control_count': control_count}
               assert cue_count >= 8, {'id': item.get('id'), 'cue_count': cue_count}
               assert arabic_count >= 50, {'id': item.get('id'), 'arabic_count': arabic_count}
