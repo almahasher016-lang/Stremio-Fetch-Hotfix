@@ -1,11 +1,9 @@
 name: test
 on:
   push:
-    branches:
-      - fix/comprehensive-subtitle-reliability-v3.5.7
+    branches: [fix/comprehensive-subtitle-reliability-v3.5.7]
   pull_request:
-    branches:
-      - main
+    branches: [main]
 
 permissions:
   contents: write
@@ -26,51 +24,17 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 24.18.0
-      - name: Apply comprehensive reliability correction
+      - name: Apply comprehensive correction
         run: |
           set -euo pipefail
           sed -i "s/re.subn(pattern, replacement, text, count=1, flags=flags)/re.subn(pattern, lambda _match: replacement, text, count=1, flags=flags)/" scripts/apply-comprehensive-reliability-v357.py
           python3 scripts/apply-comprehensive-reliability-v357.py
-          rm -f scripts/apply-comprehensive-reliability-v357.py
+          python3 scripts/patch-reference-sync-tests-v357.py
+          rm -f scripts/apply-comprehensive-reliability-v357.py scripts/patch-reference-sync-tests-v357.py
           rmdir scripts 2>/dev/null || true
           rm -f .github/workflows/apply-comprehensive-reliability-v357.yml
           git fetch origin main
           git checkout origin/main -- .github/workflows/test.yml
-      - name: Update opt-in reference synchronization tests
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('src/tests/encodingProxy.test.js')
-          text = path.read_text(encoding='utf-8')
-          text = text.replace(
-            "test('provider-backed reference sync never calls a protected self-download route', async () => {\n  const [referenceSubtitle] = toStremioSubtitles([{",
-            "test('provider-backed reference sync never calls a protected self-download route', async () => {\n  const previousReferenceSync = config.ranking.enableReferenceAutoSync;\n  config.ranking.enableReferenceAutoSync = true;\n  try {\n    const referenceOptions = toStremioSubtitles([{",
-            1,
-          )
-          text = text.replace(
-            "  }], 'https://addon.example', { type: 'movie', id: 'tt1375666' });\n  const token = new URL(referenceSubtitle.url).pathname.match(/^\\/proxy\\/encoding\\/(.+)\\.srt$/)[1];",
-            "    }], 'https://addon.example', { type: 'movie', id: 'tt1375666' });\n    const referenceSubtitle = referenceOptions.find(item => item.id.includes('-experimental-refsync-v'));\n    assert.ok(referenceSubtitle);\n    const token = new URL(referenceSubtitle.url).pathname.match(/^\\/proxy\\/encoding\\/(.+)\\.srt$/)[1];",
-            1,
-          )
-          text = text.replace(
-            "  assert.deepEqual(resolvedIds, ['123456', '654321']);\n});\n\ntest('reference fallback selection scans past incompatible higher-ranked candidates', () => {",
-            "    assert.deepEqual(resolvedIds, ['123456', '654321']);\n  } finally {\n    config.ranking.enableReferenceAutoSync = previousReferenceSync;\n  }\n});\n\ntest('reference fallback selection scans past incompatible higher-ranked candidates', () => {\n  const previousReferenceSync = config.ranking.enableReferenceAutoSync;\n  config.ranking.enableReferenceAutoSync = true;\n  try {",
-            1,
-          )
-          text = text.replace(
-            "  const reference = subtitles.find(item => item.id === 'first-refsync');\n  const token = new URL(reference.url).pathname.match(/^\\/proxy\\/encoding\\/(.+)\\.srt$/)[1];",
-            "    const reference = subtitles.find(item => item.id.includes('-experimental-refsync-v'));\n    assert.ok(reference);\n    const token = new URL(reference.url).pathname.match(/^\\/proxy\\/encoding\\/(.+)\\.srt$/)[1];",
-            1,
-          )
-          text = text.replace(
-            "  assert.ok(payload.fallbacks[0].reference?.url);\n});",
-            "    assert.ok(payload.fallbacks[0].reference?.url);\n  } finally {\n    config.ranking.enableReferenceAutoSync = previousReferenceSync;\n  }\n});",
-            1,
-          )
-          if "const referenceOptions" not in text or "previousReferenceSync" not in text:
-            raise SystemExit('reference sync test migration did not apply')
-          path.write_text(text, encoding='utf-8')
-          PY
       - name: Verify corrected tree
         run: |
           set -euo pipefail
