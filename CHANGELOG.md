@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased - Evidence-First Subtitle Ranking
+- Stopped sorting release-name tiers ahead of the actual subtitle score.
+- Reduced WEB-DL, BluRay, resolution, release group, codec, HDR, service, audio, and FPS labels to weak secondary signals.
+- Preserved exact and provider-confirmed hash evidence as the strongest ordering signal.
+- Added bounded release-family diversification and renamed misleading exact-release badges.
+- Added regression coverage for Vault precedence, hash precedence, and useful alternative results.
+
 ## 3.5.5 - Production Administration Hardening
 - Added a dedicated distributed limiter for failed administrative authentication attempts without charging successful requests.
 - Made stale-while-revalidate disabled in the core configuration until short-lived download links are separated from long-lived search results.
