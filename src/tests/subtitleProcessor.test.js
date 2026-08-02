@@ -72,7 +72,7 @@ test('processSubtitleBuffer detects UTF-16 LE and BE without a BOM', () => {
   assert.match(beResult.text, /مرحبا/);
 });
 
-test('processSubtitleBuffer isolates Arabic cue lines and keeps terminal punctuation on the RTL run', () => {
+test('processSubtitleBuffer keeps terminal punctuation on the Arabic run', () => {
   const input = Buffer.from(`1
 00:00:01,000 --> 00:00:02,000
 مرحبا بالعالم.
@@ -90,13 +90,13 @@ test('processSubtitleBuffer isolates Arabic cue lines and keeps terminal punctua
 الإصدار WEB-DL 3.4.0.
 `);
   const result = processSubtitleBuffer(input);
-  assert.match(result.text, /مرحبا بالعالم\./);
-  assert.match(result.text, /هل أنت بخير؟/);
-  assert.match(result.text, /انتبه!/);
-  assert.match(result.text, /الإصدار WEB-DL 3\.4\.0\./);
+  assert.match(result.text, /مرحبا بالعالم\.\u200F/u);
+  assert.match(result.text, /هل أنت بخير؟\u200F/u);
+  assert.match(result.text, /انتبه!\u200F/u);
+  assert.match(result.text, /الإصدار WEB-DL 3\.4\.0\.\u200F/u);
 });
 
-test('Arabic direction normalization is deterministic and does not alter indexes, timings, or numeric dialogue', () => {
+test('Arabic direction normalization is deterministic and preserves indexes, timings, and numeric dialogue', () => {
   const source = `1
 00:00:01,000 --> 00:00:02,000
 \u202Eمرحبا!\u202C
@@ -109,7 +109,7 @@ test('Arabic direction normalization is deterministic and does not alter indexes
   const twice = applyArabicSubtitleDirection(once);
   assert.equal(twice, once);
   assert.match(once, /^1\n00:00:01,000 --> 00:00:02,000\n/u);
-  assert.match(once, /مرحبا!/);
+  assert.match(once, /مرحبا!\u200F/u);
   assert.doesNotMatch(once, /[\u202A-\u202E]/u);
   assert.match(once, /2\n00:00:03,000 --> 00:00:04,000\n1984/u);
 });
@@ -149,10 +149,9 @@ WEB-DL release with مرحبا! \u202C
 
   assert.equal(applyArabicSubtitleDirection(once), once);
   assert.match(once, /WEB-DL release with مرحبا!\n/u);
-  assert.match(once, /مرحبا!/u);
+  assert.match(once, /مرحبا!\u200F/u);
   assert.doesNotMatch(once, /[\u202A-\u202E]| +$/mu);
 });
-
 
 test('processSubtitleBuffer anchors terminal Arabic punctuation with one RLM', () => {
   const visible = 'ربما أنك حلمت بهذا الحدث،';
@@ -164,16 +163,27 @@ test('processSubtitleBuffer anchors terminal Arabic punctuation with one RLM', (
   assert.equal(processSubtitleBuffer(Buffer.from(result.text)).text, result.text);
 });
 
-test('processSubtitleBuffer leaves internal punctuation in source order', () => {
+test('processSubtitleBuffer leaves bracket-free internal punctuation in source order', () => {
   const visible = 'نعم، منذ زمن بعيد، انتقلت\nأنا.. وبعض صديقاتي';
   const input = Buffer.from(`1\n00:00:01,000 --> 00:00:03,000\n${visible}\n`, 'utf8');
   const result = processSubtitleBuffer(input);
   assert.ok(result.text.includes(visible));
-  assert.doesNotMatch(result.text, /\u200F/u);
+  assert.doesNotMatch(result.text, /[\u200F\u2067\u2069]/u);
 });
 
+test('processSubtitleBuffer isolates the exact paired-parenthesis TV regression', () => {
+  const visible = '(شخص يُقتل في مدينة نيويورك)';
+  const input = Buffer.from(`1\n00:00:01,000 --> 00:00:03,000\n${visible}\n`, 'utf8');
+  const result = processSubtitleBuffer(input).text;
 
-test('processor shares the selective terminal bidi policy', () => {
+  assert.ok(result.includes(`\u2067${visible}\u2069`));
+  assert.equal((result.match(/\u2067/gu) || []).length, 1);
+  assert.equal((result.match(/\u2069/gu) || []).length, 1);
+  assert.doesNotMatch(result, /\u200F/u);
+  assert.equal(processSubtitleBuffer(Buffer.from(result)).text, result);
+});
+
+test('processor uses bracket isolation only when a pair contains Arabic', () => {
   const input = Buffer.from(`1
 00:00:01,000 --> 00:00:02,000
 مرحبا،
@@ -185,11 +195,16 @@ test('processor shares the selective terminal bidi policy', () => {
 3
 00:00:05,000 --> 00:00:06,000
 شاهدت (الحلقة) أمس
+
+4
+00:00:07,000 --> 00:00:08,000
+الإصدار [WEB-DL] متاح
 `, 'utf8');
   const result = processSubtitleBuffer(input).text;
   assert.match(result, /مرحبا،\u200F/u);
   assert.match(result, /الناتج \+\n/u);
   assert.doesNotMatch(result, /الناتج \+\u200F/u);
-  assert.match(result, /شاهدت \(الحلقة\) أمس\n/u);
-  assert.doesNotMatch(result, /\u200F\(|\)\u200F/u);
+  assert.match(result, /\u2067شاهدت \(الحلقة\) أمس\u2069/u);
+  assert.match(result, /الإصدار \[WEB-DL\] متاح\n/u);
+  assert.doesNotMatch(result, /\u2067الإصدار/u);
 });
