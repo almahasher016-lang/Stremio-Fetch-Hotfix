@@ -197,7 +197,9 @@ test('provider-backed downloads are internal token sources and original provider
 });
 
 test('provider-backed reference sync never calls a protected self-download route', async () => {
-  const [referenceSubtitle] = toStremioSubtitles([{
+  config.ranking.enableReferenceAutoSync = true;
+  try {
+    const referenceOptions = toStremioSubtitles([{
     id: 'os-primary',
     provider: 'opensubtitles',
     providerId: 'subtitle',
@@ -209,8 +211,10 @@ test('provider-backed reference sync never calls a protected self-download route
       name: 'English reference',
       download: '/downloads/opensubtitles/654321.srt',
     },
-  }], 'https://addon.example', { type: 'movie', id: 'tt1375666' });
-  const token = new URL(referenceSubtitle.url).pathname.match(/^\/proxy\/encoding\/(.+)\.srt$/)[1];
+    }], 'https://addon.example', { type: 'movie', id: 'tt1375666' });
+    const referenceSubtitle = referenceOptions.find(item => item.id.includes('-experimental-refsync-v'));
+    assert.ok(referenceSubtitle);
+    const token = new URL(referenceSubtitle.url).pathname.match(/^\/proxy\/encoding\/(.+)\.srt$/)[1];
   const payload = verifyEncodingToken(token);
   assert.equal(payload.source.kind, 'provider');
   assert.equal(payload.reference.kind, 'provider');
@@ -229,10 +233,15 @@ test('provider-backed reference sync never calls a protected self-download route
     ),
   });
   assert.equal(result.quality.valid, true);
-  assert.deepEqual(resolvedIds, ['123456', '654321']);
+    assert.deepEqual(resolvedIds, ['123456', '654321']);
+  } finally {
+    config.ranking.enableReferenceAutoSync = false;
+  }
 });
 
 test('reference fallback selection scans past incompatible higher-ranked candidates', () => {
+  config.ranking.enableReferenceAutoSync = true;
+  try {
   const make = (id, withReference) => ({
     id,
     provider: 'subdl',
@@ -252,9 +261,13 @@ test('reference fallback selection scans past incompatible higher-ranked candida
     make('third', false),
     make('fourth', true),
   ], 'https://addon.example', { type: 'movie', id: 'tt1375666' });
-  const reference = subtitles.find(item => item.id === 'first-refsync');
-  const token = new URL(reference.url).pathname.match(/^\/proxy\/encoding\/(.+)\.srt$/)[1];
+    const reference = subtitles.find(item => item.id.includes('-experimental-refsync-v'));
+    assert.ok(reference);
+    const token = new URL(reference.url).pathname.match(/^\/proxy\/encoding\/(.+)\.srt$/)[1];
   const payload = verifyEncodingToken(token);
   assert.equal(payload.fallbacks[0].candidate.providerId, 'fourth');
-  assert.ok(payload.fallbacks[0].reference?.url);
+    assert.ok(payload.fallbacks[0].reference?.url);
+  } finally {
+    config.ranking.enableReferenceAutoSync = false;
+  }
 });

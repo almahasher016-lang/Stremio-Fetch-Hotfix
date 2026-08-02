@@ -146,7 +146,7 @@ export async function searchSubdl(variant) {
           all.push(item);
         }
       }
-      if (all.length) break;
+      if (all.length >= config.providers.maxProviderItems) break;
     } catch (err) {
       if (variant.signal?.aborted || err?.name === 'AbortError') throw err;
       // Try the next search shape. The outer service will log only if all shapes fail.

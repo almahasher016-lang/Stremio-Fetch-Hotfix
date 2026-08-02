@@ -28,10 +28,20 @@ test('fpsRatio supports PAL to film conversion', () => {
   assert.ok(Math.abs(fpsRatio(25, 23.976) - 1.0427) < 0.001);
 });
 
-test('detectSyncPlan enables confident fps correction', () => {
+test('detectSyncPlan rejects unverified fps-only correction', () => {
   const plan = detectSyncPlan({ subtitleRelease: { fps: 25 }, videoRelease: { fps: 23.976 } });
+  assert.equal(plan.enabled, false);
+  assert.equal(plan.ratio, 1);
+  assert.equal(plan.confidence, 0);
+  assert.ok(plan.hints.some(hint => hint.startsWith('fps-difference-unverified:')));
+});
+
+test('detectSyncPlan enables only an explicit manual offset', () => {
+  const plan = detectSyncPlan({ extra: { subtitleOffsetMs: 1750 } });
   assert.equal(plan.enabled, true);
-  assert.ok(plan.confidence >= 70);
+  assert.equal(plan.verified, true);
+  assert.equal(plan.offsetMs, 1750);
+  assert.equal(plan.ratio, 1);
 });
 
 test('applySyncPlan performs stretch and offset', () => {

@@ -30,7 +30,7 @@ Dialogue: 0,0:00:01.25,0:00:03.50,Default,,0,0,0,,{\\an8}<i>مرحبا</i>\\Nب�
   const result = processSubtitleBuffer(Buffer.from(input));
   assert.equal(result.format, 'ass');
   assert.match(result.text, /00:00:01,250 --> 00:00:03,500/);
-  assert.match(result.text, /\u2067مرحبا\u2069\n\u2067بك\u2069/);
+  assert.match(result.text, /مرحبا\nبك/);
   assert.doesNotMatch(result.text, /\\an8|<i>/);
   assert.match(assToSrt(input), /00:00:01,250 --> 00:00:03,500/);
 });
@@ -90,10 +90,10 @@ test('processSubtitleBuffer isolates Arabic cue lines and keeps terminal punctua
 الإصدار WEB-DL 3.4.0.
 `);
   const result = processSubtitleBuffer(input);
-  assert.match(result.text, /\u2067مرحبا بالعالم\.\u200F\u2069/);
-  assert.match(result.text, /\u2067هل أنت بخير؟\u200F\u2069/);
-  assert.match(result.text, /\u2067انتبه!\u200F\u2069/);
-  assert.match(result.text, /\u2067الإصدار WEB-DL 3\.4\.0\.\u200F\u2069/);
+  assert.match(result.text, /مرحبا بالعالم\./);
+  assert.match(result.text, /هل أنت بخير؟/);
+  assert.match(result.text, /انتبه!/);
+  assert.match(result.text, /الإصدار WEB-DL 3\.4\.0\./);
 });
 
 test('Arabic direction normalization is deterministic and does not alter indexes, timings, or numeric dialogue', () => {
@@ -109,7 +109,7 @@ test('Arabic direction normalization is deterministic and does not alter indexes
   const twice = applyArabicSubtitleDirection(once);
   assert.equal(twice, once);
   assert.match(once, /^1\n00:00:01,000 --> 00:00:02,000\n/u);
-  assert.match(once, /\u2067مرحبا!\u200F\u2069/);
+  assert.match(once, /مرحبا!/);
   assert.doesNotMatch(once, /[\u202A-\u202E]/u);
   assert.match(once, /2\n00:00:03,000 --> 00:00:04,000\n1984/u);
 });
@@ -149,6 +149,16 @@ WEB-DL release with مرحبا! \u202C
 
   assert.equal(applyArabicSubtitleDirection(once), once);
   assert.match(once, /WEB-DL release with مرحبا!\n/u);
-  assert.match(once, /\u2067مرحبا!\u200F\u2069/u);
+  assert.match(once, /مرحبا!/u);
   assert.doesNotMatch(once, /[\u202A-\u202E]| +$/mu);
+});
+
+
+test('processSubtitleBuffer preserves paired punctuation without injecting bidi controls', () => {
+  const visible = '— (هل شاهدت [Euphoria]؟) «نعم، شاهدته...»';
+  const input = Buffer.from(`1\n00:00:01,000 --> 00:00:03,000\n${visible}\n`, 'utf8');
+  const result = processSubtitleBuffer(input);
+  assert.ok(result.text.includes(visible));
+  assert.doesNotMatch(result.text, /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/u);
+  assert.equal(processSubtitleBuffer(Buffer.from(result.text)).text, result.text);
 });

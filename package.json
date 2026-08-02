@@ -1,9 +1,9 @@
 {
   "name": "m7md-arabic-stremio-subtitles",
-  "version": "3.5.6",
+  "version": "3.5.7",
   "type": "module",
   "private": true,
-  "description": "Private direct Stremio Arabic subtitles add-on with edition-aware deterministic ranking, styled ASS/SSA delivery, resilient providers, media fingerprinting, Personal Vault backups, smart cache, and reference synchronization without AI.",
+  "description": "Arabic-first Stremio subtitle resolver with broad provider search, conservative punctuation handling, Personal Vault, and opt-in experimental synchronization without AI.",
   "engines": {
     "node": ">=24.12 <25"
   },

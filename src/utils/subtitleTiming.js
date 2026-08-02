@@ -45,36 +45,30 @@ export function fpsRatio(sourceFps, targetFps) {
 
 export function detectSyncPlan({ subtitleRelease = {}, videoRelease = {}, extra = {} } = {}) {
   const hints = [];
-  let confidence = 0;
-  let ratio = 1;
-  let offsetMs = 0;
-
   const sourceFps = Number(subtitleRelease.fps || extra.subtitleFps || 0);
   const targetFps = Number(videoRelease.fps || extra.fps || extra.videoFps || 0);
   if (sourceFps && targetFps && Math.abs(sourceFps - targetFps) > 0.01) {
-    ratio = fpsRatio(sourceFps, targetFps);
-    confidence += 75;
-    hints.push(`fps:${sourceFps}->${targetFps}`);
+    hints.push(`fps-difference-unverified:${sourceFps}->${targetFps}`);
   }
 
-  const manualOffset = Number(extra.offsetMs ?? extra.subtitleOffsetMs ?? 0);
-  if (Number.isFinite(manualOffset) && manualOffset !== 0) {
-    offsetMs = manualOffset;
-    confidence += 90;
-    hints.push(`offset:${manualOffset}`);
-  }
+  const rawOffset = extra.offsetMs ?? extra.subtitleOffsetMs;
+  const offsetMs = Number(rawOffset);
+  const hasExplicitOffset = rawOffset !== undefined
+    && rawOffset !== null
+    && String(rawOffset).trim() !== ''
+    && Number.isFinite(offsetMs)
+    && offsetMs !== 0;
 
-  if (subtitleRelease.source && videoRelease.source && subtitleRelease.source === videoRelease.source) confidence += 8;
-  if (subtitleRelease.quality && videoRelease.quality && subtitleRelease.quality === videoRelease.quality) confidence += 8;
-  if (subtitleRelease.releaseGroup && videoRelease.releaseGroup && subtitleRelease.releaseGroup === videoRelease.releaseGroup) confidence += 12;
+  if (hasExplicitOffset) hints.push(`manual-offset:${offsetMs}`);
 
-  confidence = Math.min(100, confidence);
   return {
-    enabled: confidence >= 70 && (Math.abs(ratio - 1) > 0.0001 || offsetMs !== 0),
-    ratio,
-    offsetMs,
-    confidence,
-    hints,
+    enabled: hasExplicitOffset,
+    ratio: 1,
+    offsetMs: hasExplicitOffset ? offsetMs : 0,
+    confidence: hasExplicitOffset ? 100 : 0,
+    hints: hasExplicitOffset ? hints : [...hints, 'metadata-only-sync-disabled'],
+    verified: hasExplicitOffset,
+    method: hasExplicitOffset ? 'manual-offset' : 'none',
   };
 }
 

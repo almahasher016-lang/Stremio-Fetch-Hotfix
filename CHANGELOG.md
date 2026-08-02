@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.5.7 - Conservative Text and Search Reliability
+- Removed both layers of resolver-injected RLM/RLI/PDI controls; SRT delivery now strips untrusted bidi controls while preserving every visible bracket, quote, ellipsis, and punctuation mark in source order.
+- Disabled metadata-only FPS synchronization and placed all original subtitle candidates before any explicitly enabled experimental transform.
+- Added a new `ALLOW_EXPERIMENTAL_SYNC` master gate so legacy Railway flags cannot silently re-enable structural reference sync.
+- Expanded the default result pool to ten originals, searched all configured provider stages before truncation, and allowed SubDL metadata, filename, and title search shapes to contribute together.
+- Raised reference-sync thresholds and disabled DTW/piecewise warping by default.
+- Added regression coverage for paired Arabic punctuation, hidden-control removal, idempotence, safe sync defaults, and explicit manual offsets.
+
 ## 3.5.6 - Evidence-First Subtitle Ranking
 - Changed subtitle ordering so exact and provider-confirmed hashes remain the strongest evidence.
 - Reduced WEB-DL, BluRay, resolution, release-group, codec, service, audio, HDR, and FPS labels to secondary ranking signals.
