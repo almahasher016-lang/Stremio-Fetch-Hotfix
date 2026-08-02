@@ -29,6 +29,7 @@ jobs:
       - name: Apply comprehensive reliability correction
         run: |
           set -euo pipefail
+          sed -i "s/re.subn(pattern, replacement, text, count=1, flags=flags)/re.subn(pattern, lambda _match: replacement, text, count=1, flags=flags)/" scripts/apply-comprehensive-reliability-v357.py
           python3 scripts/apply-comprehensive-reliability-v357.py
           rm -f scripts/apply-comprehensive-reliability-v357.py
           rmdir scripts 2>/dev/null || true
