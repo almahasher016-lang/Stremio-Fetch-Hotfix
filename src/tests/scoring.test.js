@@ -30,7 +30,7 @@ test('buildReleaseMatch assigns a higher tier to the exact streaming release', (
   assert.ok(target.releaseMatch.priority > mismatch.releaseMatch.priority);
 });
 
-test('rankAndFilter puts the matching video release first even when another provider has higher priority', () => {
+test('rankAndFilter does not let a release-name match override a stronger personal result', () => {
   const ranked = rankAndFilter([
     {
       provider: 'vault',
@@ -55,8 +55,8 @@ test('rankAndFilter puts the matching video release first even when another prov
     minRankScore: -1000,
   });
 
-  assert.equal(ranked[0].provider, 'yify');
-  assert.ok(ranked[0].releaseMatchTier >= 5);
+  assert.equal(ranked[0].provider, 'vault');
+  assert.ok(ranked[1].releaseMatchTier >= 5);
 });
 
 test('buildReleaseMatch treats equivalent codec aliases as the same codec family', () => {
@@ -83,7 +83,7 @@ test('rankAndFilter uses explicit Stremio quality hints when a filename is unava
   assert.ok(ranked[0].releaseMatchTier >= 4);
 });
 
-test('rankAndFilter keeps the exact extended cut ahead of a higher-priority normal release', () => {
+test('rankAndFilter keeps edition evidence secondary to a saved personal result', () => {
   const ranked = rankAndFilter([
     {
       provider: 'vault',
@@ -104,10 +104,10 @@ test('rankAndFilter keeps the exact extended cut ahead of a higher-priority norm
     minRankScore: -1000,
   });
 
-  assert.equal(ranked[0].provider, 'yify');
-  assert.ok(ranked[0].releaseMatch.matched.includes('edition'));
-  assert.ok(ranked[0].releaseMatchTier >= 5);
-  assert.equal(ranked[1].releaseMatchTier, 1);
+  assert.equal(ranked[0].provider, 'vault');
+  assert.ok(ranked[1].releaseMatch.matched.includes('edition'));
+  assert.ok(ranked[1].releaseMatchTier >= 5);
+  assert.equal(ranked[0].releaseMatchTier, 1);
 });
 
 test('rankAndFilter consumes Companion FPS, HDR, and audio hints without a release filename', () => {
@@ -144,4 +144,25 @@ test('rankAndFilter consumes Companion FPS, HDR, and audio hints without a relea
   assert.ok(ranked[0].releaseMatch.matched.includes('fps'));
   assert.ok(ranked[0].releaseMatch.matched.includes('hdr'));
   assert.ok(ranked[0].releaseMatch.matched.includes('audioChannels'));
+});
+
+
+test('rankAndFilter keeps an exact video hash first even when its release label differs', () => {
+  const ranked = rankAndFilter([
+    { provider: 'yify', lang: 'ara', releaseName: 'Movie.1080p.WEB-DL-GROUP', movieHash: 'abc123', download: 'https://example.com/hash.srt' },
+    { provider: 'opensubtitles', lang: 'ara', releaseName: 'Movie.2160p.BluRay-OTHER', trusted: true, qualityScore: 100, download: 'https://example.com/name.srt' },
+  ], { filename: 'Movie.2160p.BluRay-OTHER.mkv', videoHash: 'abc123' }, { outputArabicOnly: true, minRankScore: -1000 });
+  assert.equal(ranked[0].movieHash, 'abc123');
+  assert.ok(ranked[0].scoreReasons.some(reason => reason.reason === 'exact-video-hash-match'));
+});
+
+test('rankAndFilter surfaces plausible alternatives before repeated release families', () => {
+  const ranked = rankAndFilter([
+    { provider: 'opensubtitles', lang: 'ara', releaseName: 'Movie.1080p.WEB-DL-GROUP', trusted: true, download: 'https://example.com/a.srt' },
+    { provider: 'subdl', lang: 'ara', releaseName: 'Movie.1080p.WEB-DL-GROUP', trusted: true, download: 'https://example.com/b.srt' },
+    { provider: 'subsource', lang: 'ara', releaseName: 'Movie.1080p.WEB-DL-GROUP', trusted: true, download: 'https://example.com/c.srt' },
+    { provider: 'yify', lang: 'ara', releaseName: 'Movie.1080p.BluRay-OTHER', trusted: true, qualityScore: 80, download: 'https://example.com/d.srt' },
+  ], { filename: 'Movie.1080p.WEB-DL-GROUP.mkv' }, { outputArabicOnly: true, minRankScore: -1000, maxReturnedPerRelease: 1 });
+  assert.equal(ranked[0].provider, 'opensubtitles');
+  assert.equal(ranked[1].parsedRelease.source, 'bluray');
 });
