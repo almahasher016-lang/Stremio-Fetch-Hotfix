@@ -1,3 +1,5 @@
+import { stabilizeArabicCueLine, stripBidiControls } from './arabicBidi.js';
+
 const CP1256 = new Map(Object.entries({
   128: '€', 129: 'پ', 130: '‚', 131: 'ƒ', 132: '„', 133: '…', 134: '†', 135: '‡',
   136: 'ˆ', 137: '‰', 138: 'ٹ', 139: '‹', 140: 'Œ', 141: 'چ', 142: 'ژ', 143: 'ڈ',
@@ -16,12 +18,6 @@ const CP1256 = new Map(Object.entries({
   240: 'ً', 241: 'ٌ', 242: 'ٍ', 243: 'َ', 244: 'ُ', 245: 'ِ', 246: '÷', 247: 'ّ',
   248: 'ْ', 249: 'ù', 250: 'ú', 251: 'û', 252: 'ü', 253: 'ے', 254: '‍', 255: 'ی'
 }).map(([k, v]) => [Number(k), v]));
-
-const BIDI_CONTROL_RE = /[\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
-const LETTER_RE = /\p{L}/u;
-const ARABIC_SCRIPT_RE = /\p{Script_Extensions=Arabic}/u;
-const TERMINAL_NEUTRAL_RE = /[\p{P}\p{S}]$/u;
-const RIGHT_TO_LEFT_MARK = '\u200F';
 
 function decodeCp1256(buffer) {
   let output = '';
@@ -89,39 +85,6 @@ export function decodeSubtitleBuffer(buffer) {
 
   const cp = decodeCp1256(bytes);
   return { text: cp, encoding: 'windows-1256' };
-}
-
-function stripControlMarks(text) {
-  return String(text || '').replace(BIDI_CONTROL_RE, '');
-}
-
-function arabicDominatesLine(line) {
-  let arabicLetters = 0;
-  let otherLetters = 0;
-  let firstLetterIsArabic = false;
-  let foundFirstLetter = false;
-
-  for (const character of line) {
-    if (!LETTER_RE.test(character)) continue;
-    const isArabic = ARABIC_SCRIPT_RE.test(character);
-    if (!foundFirstLetter) {
-      firstLetterIsArabic = isArabic;
-      foundFirstLetter = true;
-    }
-    if (isArabic) arabicLetters += 1;
-    else otherLetters += 1;
-  }
-
-  return arabicLetters > 0 && (arabicLetters >= otherLetters || firstLetterIsArabic);
-}
-
-function isolateArabicLine(line) {
-  const clean = stripControlMarks(line).trimEnd();
-  if (!clean || !arabicDominatesLine(clean) || !TERMINAL_NEUTRAL_RE.test(clean)) return clean;
-
-  // Anchor only terminal neutral punctuation to the Arabic run. One trailing RLM is
-  // sufficient and avoids the bracket corruption caused by wrapping the whole line.
-  return `${clean}${RIGHT_TO_LEFT_MARK}`;
 }
 
 function stripTags(line) {
@@ -266,7 +229,7 @@ export function applyArabicSubtitleDirection(text) {
     const timeIndex = lines.findIndex(line => /\d{2,3}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2,3}:\d{2}:\d{2}[,.]\d{3}/.test(line));
     if (timeIndex === -1) return block;
     return lines
-      .map((line, index) => index > timeIndex ? isolateArabicLine(line) : line)
+      .map((line, index) => index > timeIndex ? stabilizeArabicCueLine(line) : line)
       .join('\n')
       .trimEnd();
   }).join('\n\n');
@@ -275,7 +238,7 @@ export function applyArabicSubtitleDirection(text) {
 
 export function processSubtitleBuffer(buffer, options = {}) {
   const decoded = decodeSubtitleBuffer(buffer);
-  let text = stripControlMarks(decoded.text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  let text = stripBidiControls(decoded.text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const isAss = /^\s*\[(?:Script Info|Events)]/im.test(text) && /^\s*Dialogue\s*:/im.test(text);
   const isVtt = !isAss && (/^\s*WEBVTT/i.test(text) || /(?:^|\n)(?:\d{1,3}:)?\d{2}:\d{2}\.\d{3}\s*-->/.test(text));
   if (isAss) text = assToSrt(text);
