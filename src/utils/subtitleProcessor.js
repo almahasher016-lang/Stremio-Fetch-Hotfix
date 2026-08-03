@@ -1,4 +1,5 @@
 import { stabilizeArabicCueLine, stripBidiControls } from './arabicBidi.js';
+import { repairLegacyArabicSrt } from './legacyArabicSrt.js';
 
 const CP1256 = new Map(Object.entries({
   128: '€', 129: 'پ', 130: '‚', 131: 'ƒ', 132: '„', 133: '…', 134: '†', 135: '‡',
@@ -246,6 +247,7 @@ export function processSubtitleBuffer(buffer, options = {}) {
   text = text.split('\n').map(stripTags).join('\n');
   text = stripSdhLines(text, options);
   text = normalizeSrtIndexes(text);
+  text = repairLegacyArabicSrt(text);
   text = applyArabicSubtitleDirection(text);
   return { text, encoding: decoded.encoding, format: isAss ? 'ass' : isVtt ? 'vtt' : 'srt' };
 }

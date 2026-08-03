@@ -1,6 +1,6 @@
 {
   "name": "m7md-arabic-stremio-subtitles",
-  "version": "3.5.11",
+  "version": "3.5.12",
   "type": "module",
   "private": true,
   "description": "Arabic-first Stremio subtitle resolver with broad provider search, conservative punctuation handling, Personal Vault, and opt-in experimental synchronization without AI.",

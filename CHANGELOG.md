@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.5.12 - Legacy Arabic SRT Bracket Repair
+- Added a subtitle-level detector for repeated legacy Arabic parenthesis layouts found in `Person of Interest S01E01` releases.
+- Repaired only deterministic two-parenthesis imbalances and relocated leading terminal punctuation only after the file-level legacy gate succeeds.
+- Kept healthy subtitles, isolated malformed lines, balanced brackets, timings, indexes, and mixed-script text unchanged.
+- Added regression coverage from the real HDTV subtitle pattern, negative safety cases, processor integration, and exact idempotence.
+- Bumped the processed SRT cache namespace to `encoding:v10` and the public release identity to 3.5.12.
+
 ## 3.5.11 - Styled ASS/SSA Arabic BiDi Stabilization
 - Applied Arabic direction stabilization to the dedicated Styled ASS and SSA delivery path.
 - Parsed `[Events]` and its `Format` declaration, then changed only the `Text` field of valid `Dialogue` rows.
