@@ -328,7 +328,7 @@ function cacheKeyFor(payload) {
     reference: payload.reference || null,
     context: payload.context || null,
   });
-  return `encoding:v9:${sign(normalized)}`;
+  return `encoding:v10:${sign(normalized)}`;
 }
 
 function analyzeProcessedSubtitle(text, context) {
