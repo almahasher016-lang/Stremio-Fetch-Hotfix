@@ -2,14 +2,17 @@ import { promisify } from 'node:util';
 import { gunzip } from 'node:zlib';
 import { Unzip, UnzipInflate } from 'fflate';
 import { Decompressor as XzDecompressor } from '@napi-rs/lzma/xz';
-import { decodeSubtitleBuffer } from './subtitleProcessor.js';
+import { decodeSubtitleBuffer } from './subtitleEncoding.js';
+import { detectSubtitleFormat } from './subtitleFormats.js';
 import { httpError } from './httpError.js';
 
 const gunzipAsync = promisify(gunzip);
-const SUBTITLE_EXTENSIONS = new Set(['srt', 'vtt', 'ass', 'ssa', 'txt']);
-const TIMESTAMP_RE = /(?:\d{1,3}:)?\d{2}:\d{2}[,.]\d{3}\s*-->\s*(?:\d{1,3}:)?\d{2}:\d{2}[,.]\d{3}/g;
+const SUBTITLE_EXTENSIONS = new Set([
+  'srt', 'vtt', 'ass', 'ssa', 'ttml', 'dfxp', 'xml', 'smi', 'sami', 'sub', 'mpl', 'mpl2', 'sbv', 'lrc', 'rt', 'txt',
+]);
+const TIMESTAMP_RE = /(?:\d{1,3}:)?\d{1,2}:\d{2}(?:[,.]\d{1,9})?\s*-->\s*(?:\d{1,3}:)?\d{1,2}:\d{2}(?:[,.]\d{1,9})?/g;
 const ASS_DIALOGUE_RE = /^\s*Dialogue\s*:\s*[^,\r\n]*,\d{1,3}:\d{2}:\d{2}\.\d{1,3},\d{1,3}:\d{2}:\d{2}\.\d{1,3},/gmi;
-const ARABIC_RE = /[\u0600-\u06ff]/g;
+const ARABIC_RE = /\p{Script_Extensions=Arabic}/gu;
 
 function startsWith(bytes, signature) {
   if (bytes.length < signature.length) return false;
@@ -67,7 +70,19 @@ function isSubtitleEntry(name, allowedExtensions = SUBTITLE_EXTENSIONS) {
 function scoreCandidate(candidate, sourceName = '') {
   const decoded = decodeSubtitleBuffer(candidate.buffer);
   const text = decoded.text || '';
-  const timestamps = (text.match(TIMESTAMP_RE) || []).length + (text.match(ASS_DIALOGUE_RE) || []).length;
+  const format = detectSubtitleFormat(text);
+  if (['ttml', 'youtube-xml'].includes(format) && /<!DOCTYPE|<!ENTITY/i.test(text)) return Number.NEGATIVE_INFINITY;
+  const formatCues = {
+    ttml: (text.match(/<(?:\w+:)?p\b/gi) || []).length,
+    'youtube-xml': (text.match(/<text\b[^>]*\bstart=/gi) || []).length,
+    sami: (text.match(/<sync\b[^>]*\bstart=/gi) || []).length,
+    microdvd: (text.match(/^\{\d+\}\{\d+\}/gm) || []).length,
+    mpl2: (text.match(/^\[\d+\]\[\d+\]/gm) || []).length,
+    subviewer: (text.match(/^\s*(?:\d{1,3}:)?\d{1,2}:\d{2}[.,]\d+\s*,\s*(?:\d{1,3}:)?\d{1,2}:\d{2}[.,]\d+/gm) || []).length,
+    lrc: (text.match(/^\[(?:\d{1,3}):\d{2}(?:[.:]\d{1,3})?\]/gm) || []).length,
+    realtext: (text.match(/<time\b[^>]*\bbegin=/gi) || []).length,
+  }[format] || 0;
+  const timestamps = (text.match(TIMESTAMP_RE) || []).length + (text.match(ASS_DIALOGUE_RE) || []).length + formatCues;
   if (!timestamps) return Number.NEGATIVE_INFINITY;
 
   const arabicCount = (text.match(ARABIC_RE) || []).length;
@@ -75,7 +90,10 @@ function scoreCandidate(candidate, sourceName = '') {
   const arabicRatio = arabicCount / Math.max(1, letters);
   const fileName = safeEntryName(candidate.name).toLowerCase();
   const source = safeEntryName(sourceName).toLowerCase();
-  const extensionScore = { srt: 55, vtt: 45, ass: 42, ssa: 40, txt: 15 }[extensionOf(fileName)] || 0;
+  const extensionScore = {
+    srt: 60, vtt: 54, ass: 50, ssa: 48, ttml: 46, dfxp: 46, xml: 38,
+    smi: 42, sami: 42, sub: 38, mpl: 36, mpl2: 36, sbv: 38, lrc: 30, rt: 32, txt: 15,
+  }[extensionOf(fileName)] || 0;
   const arabicName = /(?:^|[._\-\s])(ar|ara|arabic|arab)(?:[._\-\s]|$)|عرب|العرب/u.test(fileName);
   const englishName = /(?:^|[._\-\s])(en|eng|english)(?:[._\-\s]|$)/.test(fileName);
   const noiseName = /sample|readme|license|commentary|forced/.test(fileName);

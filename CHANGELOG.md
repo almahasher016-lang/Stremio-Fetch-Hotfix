@@ -1,5 +1,14 @@
 # Changelog
 
+## 3.6.0 - Safe Text Subtitle Compatibility Engine
+- Added content-based conversion for TTML/DFXP, YouTube transcript XML, SAMI, MicroDVD, MPL2, SubViewer/SBV, LRC, and RealText alongside the existing SRT, WebVTT, ASS, and SSA paths.
+- Added UTF-32 LE/BE handling and scored Arabic legacy decoding for Windows-1256, ISO-8859-6, DOS CP720, IBM CP864, and MacArabic while retaining UTF-8 and UTF-16 detection.
+- Normalized optional-hour timestamps and one-to-nine fractional digits, propagated trusted video FPS to MicroDVD, and refused to guess an absent frame rate.
+- Added safe named/numeric entity decoding, Arabic presentation-form normalization, broad text-tag cleanup, and rejection of XML DOCTYPE/ENTITY declarations.
+- Expanded safe ZIP candidate extensions and content scoring while retaining archive traversal, expansion-size, entry-count, GZIP, and XZ protections.
+- Retained the file-level legacy SRT repair gate and the established conservative punctuation policy, while preserving ASS/SSA headers, styles, tags, karaoke, positions, and drawing commands.
+- Added format, encoding, timing, archive, entity, and security regression coverage; bumped caches to `encoding:v11` and `styled:v3` and the public release identity to 3.6.0.
+
 ## 3.5.12 - Legacy Arabic SRT Bracket Repair
 - Added a subtitle-level detector for repeated legacy Arabic parenthesis layouts found in `Person of Interest S01E01` releases.
 - Repaired only deterministic two-parenthesis imbalances and relocated leading terminal punctuation only after the file-level legacy gate succeeds.

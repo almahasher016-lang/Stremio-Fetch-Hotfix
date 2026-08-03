@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import iconv from 'iconv-lite';
 import { strToU8, zipSync } from 'fflate';
 import {
   analyzeStyledSubtitle,
@@ -37,6 +38,17 @@ test('styled ASS normalization preserves styles, positions, and line breaks', ()
   assert.match(result.text, /\{\\an8\\c&H00FF00&}/);
   assert.match(result.text, /\\N/);
   assert.match(result.text, /Style: Arabic,Tahoma/);
+});
+
+test('styled ASS normalization decodes legacy Arabic before preserving the script', () => {
+  const result = normalizeStyledSubtitleBuffer(iconv.encode(ASS_FIXTURE, 'cp720'), {
+    sourceName: 'Movie.Arabic.ass',
+    expectedDurationMs: 7_000,
+    qualityGate: { enabled: true, minCues: 2, minArabicRatio: 0.18, minCoverageRatio: 0.55 },
+  });
+  assert.equal(result.encoding, 'cp720');
+  assert.match(result.text, /مرحبا بكم/);
+  assert.match(result.text, /\{\\an8\\c&H00FF00&}/);
 });
 
 test('styled subtitle validation rejects non-Arabic or malformed scripts', () => {

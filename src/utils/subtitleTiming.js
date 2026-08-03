@@ -1,11 +1,23 @@
-const SRT_TIME_RE = /(\d{2,3}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2,3}:\d{2}:\d{2}[,.]\d{3})/g;
+export const SUBTITLE_TIMESTAMP_PATTERN = '(?:\\d{1,3}:)?\\d{1,2}:\\d{2}(?:[,.]\\d{1,9})?';
+export const SRT_TIME_RE = new RegExp(`(${SUBTITLE_TIMESTAMP_PATTERN})\\s*-->\\s*(${SUBTITLE_TIMESTAMP_PATTERN})(?:\\s+[^\\r\\n]*)?`, 'g');
 
 export function timeToMs(value) {
   const normalized = String(value || '').replace(',', '.');
-  const match = normalized.match(/^(\d{2,3}):(\d{2}):(\d{2})\.(\d{3})$/);
+  const match = normalized.match(/^(?:(\d{1,3}):)?(\d{1,2}):(\d{2})(?:\.(\d{1,9}))?$/);
   if (!match) return null;
-  const [, hh, mm, ss, ms] = match;
-  return Number(hh) * 3600000 + Number(mm) * 60000 + Number(ss) * 1000 + Number(ms);
+  const [, hh = '0', mm, ss, fraction = '0'] = match;
+  if (Number(mm) > 59 || Number(ss) > 59) return null;
+  const ms = Number(fraction.padEnd(3, '0').slice(0, 3));
+  return Number(hh) * 3600000 + Number(mm) * 60000 + Number(ss) * 1000 + ms;
+}
+
+export function parseSrtTimingLine(value) {
+  const match = String(value || '').match(new RegExp(`^\\s*(${SUBTITLE_TIMESTAMP_PATTERN})\\s*-->\\s*(${SUBTITLE_TIMESTAMP_PATTERN})(?:\\s+.*)?$`));
+  if (!match) return null;
+  const startMs = timeToMs(match[1]);
+  const endMs = timeToMs(match[2]);
+  if (startMs === null || endMs === null || endMs <= startMs) return null;
+  return { startMs, endMs, start: msToTime(startMs), end: msToTime(endMs) };
 }
 
 export function msToTime(value) {

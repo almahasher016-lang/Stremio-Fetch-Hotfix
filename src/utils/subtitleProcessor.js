@@ -1,103 +1,11 @@
 import { stabilizeArabicCueLine, stripBidiControls } from './arabicBidi.js';
 import { repairLegacyArabicSrt } from './legacyArabicSrt.js';
+import { decodeSubtitleBuffer, normalizeArabicPresentationForms } from './subtitleEncoding.js';
+import { cleanSubtitleMarkup } from './subtitleMarkup.js';
+import { convertTextSubtitleToSrt, detectSubtitleFormat } from './subtitleFormats.js';
+import { msToTime, parseSrtTimingLine, timeToMs } from './subtitleTiming.js';
 
-const CP1256 = new Map(Object.entries({
-  128: '€', 129: 'پ', 130: '‚', 131: 'ƒ', 132: '„', 133: '…', 134: '†', 135: '‡',
-  136: 'ˆ', 137: '‰', 138: 'ٹ', 139: '‹', 140: 'Œ', 141: 'چ', 142: 'ژ', 143: 'ڈ',
-  144: 'گ', 145: '‘', 146: '’', 147: '“', 148: '”', 149: '•', 150: '–', 151: '—',
-  152: 'ک', 153: '™', 154: 'ڑ', 155: '›', 156: 'œ', 157: '‌', 158: '‍', 159: 'ں',
-  160: '\u00A0', 161: '،', 162: '¢', 163: '£', 164: '¤', 165: '¥', 166: '¦', 167: '§',
-  168: '¨', 169: '©', 170: 'ھ', 171: '«', 172: '¬', 173: '\u00AD', 174: '®', 175: '¯',
-  176: '°', 177: '±', 178: '²', 179: '³', 180: '´', 181: 'µ', 182: '¶', 183: '·',
-  184: '¸', 185: '¹', 186: '؛', 187: '»', 188: '¼', 189: '½', 190: '¾', 191: '؟',
-  192: 'ہ', 193: 'ء', 194: 'آ', 195: 'أ', 196: 'ؤ', 197: 'إ', 198: 'ئ', 199: 'ا',
-  200: 'ب', 201: 'ة', 202: 'ت', 203: 'ث', 204: 'ج', 205: 'ح', 206: 'خ', 207: 'د',
-  208: 'ذ', 209: 'ر', 210: 'ز', 211: 'س', 212: 'ش', 213: 'ص', 214: 'ض', 215: '×',
-  216: 'ط', 217: 'ظ', 218: 'ع', 219: 'غ', 220: 'ـ', 221: 'ف', 222: 'ق', 223: 'ك',
-  224: 'à', 225: 'ل', 226: 'â', 227: 'م', 228: 'ن', 229: 'ه', 230: 'و', 231: 'ç',
-  232: 'è', 233: 'é', 234: 'ê', 235: 'ë', 236: 'ى', 237: 'ي', 238: 'î', 239: 'ï',
-  240: 'ً', 241: 'ٌ', 242: 'ٍ', 243: 'َ', 244: 'ُ', 245: 'ِ', 246: '÷', 247: 'ّ',
-  248: 'ْ', 249: 'ù', 250: 'ú', 251: 'û', 252: 'ü', 253: 'ے', 254: '‍', 255: 'ی'
-}).map(([k, v]) => [Number(k), v]));
-
-function decodeCp1256(buffer) {
-  let output = '';
-  for (const byte of buffer) {
-    if (byte < 128) output += String.fromCharCode(byte);
-    else output += CP1256.get(byte) || String.fromCharCode(byte);
-  }
-  return output;
-}
-
-function replacementRatio(text) {
-  if (!text) return 1;
-  const count = (text.match(/�/g) || []).length;
-  return count / Math.max(1, text.length);
-}
-
-function decodeUtf16Be(bytes, offset = 0) {
-  const length = bytes.length - offset - ((bytes.length - offset) % 2);
-  const swapped = Buffer.alloc(length);
-  for (let index = 0; index < length; index += 2) {
-    swapped[index] = bytes[offset + index + 1];
-    swapped[index + 1] = bytes[offset + index];
-  }
-  return swapped.toString('utf16le');
-}
-
-function detectBomlessUtf16(bytes) {
-  const sampleLength = Math.min(bytes.length - (bytes.length % 2), 8_192);
-  if (sampleLength < 16) return null;
-  const pairs = sampleLength / 2;
-  let evenZeros = 0;
-  let oddZeros = 0;
-  for (let index = 0; index < sampleLength; index += 2) {
-    if (bytes[index] === 0) evenZeros += 1;
-    if (bytes[index + 1] === 0) oddZeros += 1;
-  }
-  const threshold = Math.max(4, Math.floor(pairs * 0.18));
-  if (oddZeros >= threshold && oddZeros >= Math.max(1, evenZeros) * 3) return 'utf-16le';
-  if (evenZeros >= threshold && evenZeros >= Math.max(1, oddZeros) * 3) return 'utf-16be';
-  return null;
-}
-
-export function decodeSubtitleBuffer(buffer) {
-  const bytes = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer || '');
-  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
-    return { text: bytes.slice(3).toString('utf8'), encoding: 'utf-8-bom' };
-  }
-  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
-    return { text: bytes.slice(2).toString('utf16le'), encoding: 'utf-16le' };
-  }
-  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
-    return { text: decodeUtf16Be(bytes, 2), encoding: 'utf-16be' };
-  }
-
-  const bomlessUtf16 = detectBomlessUtf16(bytes);
-  if (bomlessUtf16 === 'utf-16le') {
-    return { text: bytes.subarray(0, bytes.length - (bytes.length % 2)).toString('utf16le'), encoding: 'utf-16le' };
-  }
-  if (bomlessUtf16 === 'utf-16be') {
-    return { text: decodeUtf16Be(bytes), encoding: 'utf-16be' };
-  }
-
-  const utf8 = bytes.toString('utf8');
-  if (replacementRatio(utf8) < 0.005) return { text: utf8, encoding: 'utf-8' };
-
-  const cp = decodeCp1256(bytes);
-  return { text: cp, encoding: 'windows-1256' };
-}
-
-function stripTags(line) {
-  return line
-    .replace(/\{\\[^}]+}/g, '')
-    .replace(/<\/?(?:i|b|u|font|c|ruby|rt|v|lang)[^>]*>/gi, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/\s+$/g, '');
-}
+export { decodeSubtitleBuffer } from './subtitleEncoding.js';
 
 function stripSdhLines(text, options = {}) {
   const stripMusic = options.stripMusicNotes !== false;
@@ -123,10 +31,8 @@ export function vttToSrt(text) {
   let index = 1;
 
   function timestamp(value) {
-    const match = String(value || '').trim().match(/^(?:(\d{1,3}):)?(\d{2}):(\d{2})\.(\d{3})$/);
-    if (!match) return null;
-    const hours = match[1] === undefined ? '00' : match[1].padStart(2, '0');
-    return `${hours}:${match[2]}:${match[3]},${match[4]}`;
+    const milliseconds = timeToMs(value);
+    return milliseconds === null ? null : msToTime(milliseconds);
   }
 
   for (const block of blocks) {
@@ -165,6 +71,15 @@ function assTimestamp(value) {
   return `${match[1].padStart(2, '0')}:${match[2]}:${match[3]},${milliseconds}`;
 }
 
+function removeAssDrawingRuns(value) {
+  let drawing = false;
+  return String(value || '').split(/(\{[^}]*\})/g).map(token => {
+    if (!token.startsWith('{')) return drawing ? '' : token;
+    for (const match of token.matchAll(/\\p(-?\d+(?:\.\d+)?)/gi)) drawing = Number(match[1]) !== 0;
+    return token;
+  }).join('');
+}
+
 export function assToSrt(text) {
   const lines = String(text || '').replace(/\r/g, '').split('\n');
   const defaultFormat = ['layer', 'start', 'end', 'style', 'name', 'marginl', 'marginr', 'marginv', 'effect', 'text'];
@@ -196,8 +111,7 @@ export function assToSrt(text) {
     const end = assTimestamp(values[format.indexOf('end')]);
     let cueText = values[format.indexOf('text')] || '';
     if (!start || !end || !cueText.trim()) continue;
-    if (/\{\\p[1-9]\}/i.test(cueText) && !/\{\\p0\}/i.test(cueText)) continue;
-    cueText = cueText.replace(/\\[Nn]/g, '\n').replace(/\\h/g, ' ');
+    cueText = removeAssDrawingRuns(cueText).replace(/\\[Nn]/g, '\n').replace(/\\h/g, ' ');
     output.push(String(index++), `${start} --> ${end}`, cueText, '');
   }
   return output.join('\n');
@@ -209,10 +123,11 @@ export function normalizeSrtIndexes(text) {
   let index = 1;
   for (const block of blocks) {
     const lines = block.split('\n').map(l => l.trimEnd());
-    const timeIndex = lines.findIndex(line => /\d{2,3}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2,3}:\d{2}:\d{2}[,.]\d{3}/.test(line));
+    const timeIndex = lines.findIndex(line => parseSrtTimingLine(line));
     if (timeIndex === -1) continue;
+    const timing = parseSrtTimingLine(lines[timeIndex]);
     output.push(String(index++));
-    output.push(lines[timeIndex].replace(/(\d{2}:\d{2})\.(\d{3})/g, '$1,$2'));
+    output.push(`${timing.start} --> ${timing.end}`);
     output.push(...lines.slice(timeIndex + 1));
     output.push('');
   }
@@ -227,7 +142,7 @@ export function applyArabicSubtitleDirection(text) {
     .filter(Boolean);
   const output = blocks.map(block => {
     const lines = block.split('\n');
-    const timeIndex = lines.findIndex(line => /\d{2,3}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{2,3}:\d{2}:\d{2}[,.]\d{3}/.test(line));
+    const timeIndex = lines.findIndex(line => parseSrtTimingLine(line));
     if (timeIndex === -1) return block;
     return lines
       .map((line, index) => index > timeIndex ? stabilizeArabicCueLine(line) : line)
@@ -238,16 +153,17 @@ export function applyArabicSubtitleDirection(text) {
 }
 
 export function processSubtitleBuffer(buffer, options = {}) {
-  const decoded = decodeSubtitleBuffer(buffer);
+  const decoded = decodeSubtitleBuffer(buffer, options);
   let text = stripBidiControls(decoded.text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  const isAss = /^\s*\[(?:Script Info|Events)]/im.test(text) && /^\s*Dialogue\s*:/im.test(text);
-  const isVtt = !isAss && (/^\s*WEBVTT/i.test(text) || /(?:^|\n)(?:\d{1,3}:)?\d{2}:\d{2}\.\d{3}\s*-->/.test(text));
-  if (isAss) text = assToSrt(text);
-  else if (isVtt) text = vttToSrt(text);
-  text = text.split('\n').map(stripTags).join('\n');
+  const detectedFormat = detectSubtitleFormat(text);
+  const converted = convertTextSubtitleToSrt(text, options);
+  if (detectedFormat === 'ass') text = assToSrt(text);
+  else if (detectedFormat === 'vtt') text = vttToSrt(text);
+  else if (converted.handled) text = converted.text;
+  text = stripBidiControls(cleanSubtitleMarkup(normalizeArabicPresentationForms(text))).replace(/[ \t]{2,}/g, ' ');
   text = stripSdhLines(text, options);
   text = normalizeSrtIndexes(text);
   text = repairLegacyArabicSrt(text);
   text = applyArabicSubtitleDirection(text);
-  return { text, encoding: decoded.encoding, format: isAss ? 'ass' : isVtt ? 'vtt' : 'srt' };
+  return { text, encoding: decoded.encoding, format: detectedFormat === 'unknown' ? 'srt' : detectedFormat };
 }

@@ -7,14 +7,14 @@ import {
   verifyEncodingToken,
 } from './encodingProxy.js';
 import { extractSubtitlePayload } from './subtitleArchive.js';
-import { decodeSubtitleBuffer } from './subtitleProcessor.js';
+import { decodeSubtitleBuffer, normalizeArabicPresentationForms } from './subtitleEncoding.js';
 import { httpError } from './httpError.js';
 import { getVaultSubtitle } from '../services/vaultService.js';
 import { getOpenSubtitlesDownloadLink } from '../providers/openSubtitles.js';
 import { getSubsourceDownloadLink } from '../providers/subsource.js';
 
 const STYLED_FORMATS = new Set(['ass', 'ssa']);
-const ARABIC_RE = /[\u0600-\u06ff]/g;
+const ARABIC_RE = /\p{Script_Extensions=Arabic}/gu;
 const LETTER_RE = /\p{L}/gu;
 
 function lower(value) {
@@ -148,8 +148,13 @@ function assTimestampMs(value) {
 
 function visibleDialogueText(value) {
   const raw = String(value || '');
-  if (/\{\\p[1-9]\}/i.test(raw) && !/\{\\p0\}/i.test(raw)) return '';
-  return raw
+  let drawing = false;
+  const visible = raw.split(/(\{[^}]*\})/g).map(token => {
+    if (!token.startsWith('{')) return drawing ? '' : token;
+    for (const match of token.matchAll(/\\p(-?\d+(?:\.\d+)?)/gi)) drawing = Number(match[1]) !== 0;
+    return token;
+  }).join('');
+  return visible
     .replace(/\{\\[^}]+}/g, '')
     .replace(/\\[Nn]/g, '\n')
     .replace(/\\h/g, ' ')
@@ -236,11 +241,12 @@ export function analyzeStyledSubtitle(text, {
 export function normalizeStyledSubtitleBuffer(buffer, {
   sourceName = '',
   requestedFormat = null,
+  encodingHint = null,
   expectedDurationMs = null,
   qualityGate = config.qualityGate,
 } = {}) {
-  const decoded = decodeSubtitleBuffer(buffer);
-  const text = String(decoded.text || '')
+  const decoded = decodeSubtitleBuffer(buffer, { encodingHint });
+  const text = normalizeArabicPresentationForms(decoded.text)
     .replace(/^\uFEFF/, '')
     .replace(/\r\n/g, '\n')
     .replace(/\r/g, '\n')
@@ -264,7 +270,7 @@ export function normalizeStyledSubtitleBuffer(buffer, {
 }
 
 function styledCacheKey(token) {
-  return `styled:v2:${createHash('sha256').update(String(token)).digest('hex')}`;
+  return `styled:v3:${createHash('sha256').update(String(token)).digest('hex')}`;
 }
 
 export async function resolveStyledSubtitle(token, {
@@ -287,6 +293,7 @@ export async function resolveStyledSubtitle(token, {
   const normalized = normalizeStyledSubtitleBuffer(extracted.buffer, {
     sourceName: extracted.entryName || source.name || source.candidate?.fileName,
     requestedFormat: payload.options?.styledFormat,
+    encodingHint: payload.options?.encodingHint,
     expectedDurationMs: payload.context?.durationMs || null,
   });
   const result = {

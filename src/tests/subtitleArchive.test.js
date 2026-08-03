@@ -85,6 +85,22 @@ test('ZIP extraction recognizes ASS and SSA subtitle entries', async () => {
   }
 });
 
+test('ZIP extraction recognizes modern and legacy text subtitle extensions by content', async () => {
+  const ttml = '<tt><body><div><p begin="1s" end="3s">مرحبا بك</p></div></body></tt>';
+  const archive = zipSync({
+    'README.txt': strToU8('No timed cues here.'),
+    'Movie.English.srt': strToU8(ENGLISH_SRT),
+    'Movie.Arabic.dfxp': strToU8(ttml),
+  });
+  const result = await extractSubtitlePayload(Buffer.from(archive), {
+    sourceName: 'Movie.2026.zip',
+    maxDecompressedBytes: 100_000,
+    maxArchiveEntries: 10,
+  });
+  assert.equal(result.entryName, 'Movie.Arabic.dfxp');
+  assert.equal(result.buffer.toString('utf8'), ttml);
+});
+
 test('GZIP extraction returns the subtitle and enforces the expansion limit', async () => {
   const archive = Buffer.from(gzipSync(strToU8(ARABIC_SRT)));
   const result = await extractSubtitlePayload(archive, {

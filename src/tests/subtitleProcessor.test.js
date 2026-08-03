@@ -35,6 +35,17 @@ Dialogue: 0,0:00:01.25,0:00:03.50,Default,,0,0,0,,{\\an8}<i>مرحبا</i>\\Nب�
   assert.match(assToSrt(input), /00:00:01,250 --> 00:00:03,500/);
 });
 
+test('assToSrt removes vector drawing runs but keeps text after drawing mode ends', () => {
+  const input = `[Script Info]
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,{\\p1}m 0 0 l 10 10{\\p0}مرحبا بك
+`;
+  const result = processSubtitleBuffer(Buffer.from(input));
+  assert.match(result.text, /مرحبا بك/);
+  assert.doesNotMatch(result.text, /m 0 0 l 10 10/);
+});
+
 test('processSubtitleBuffer removes HTML tags and normalizes SRT', () => {
   const input = Buffer.from('1\n00:00:01,000 --> 00:00:02,000\n<i>مرحبا</i>\n', 'utf8');
   const result = processSubtitleBuffer(input);

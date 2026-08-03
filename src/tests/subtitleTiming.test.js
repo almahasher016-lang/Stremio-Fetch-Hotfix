@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applySyncPlan, detectSyncPlan, fpsRatio, msToTime, shiftSubtitleTiming, stretchSubtitleTiming, timeToMs } from '../utils/subtitleTiming.js';
+import { applySyncPlan, detectSyncPlan, fpsRatio, msToTime, parseSrtTimingLine, shiftSubtitleTiming, stretchSubtitleTiming, timeToMs } from '../utils/subtitleTiming.js';
 
 const SAMPLE = `1\n00:00:10,000 --> 00:00:12,000\nمرحبا\n`;
 
@@ -12,6 +12,18 @@ test('time conversion roundtrip', () => {
 test('time conversion supports long-form subtitles beyond 99 hours', () => {
   assert.equal(timeToMs('100:00:00,000'), 360_000_000);
   assert.equal(msToTime(360_000_000), '100:00:00,000');
+});
+
+test('time conversion accepts omitted hours and variable fractional precision', () => {
+  assert.equal(timeToMs('01:02.5'), 62_500);
+  assert.equal(timeToMs('0:01:02.123456'), 62_123);
+  assert.equal(timeToMs('00:61.000'), null);
+  assert.deepEqual(parseSrtTimingLine('01:02.5 --> 01:04.123456 align:start'), {
+    startMs: 62_500,
+    endMs: 64_123,
+    start: '00:01:02,500',
+    end: '00:01:04,123',
+  });
 });
 
 test('shiftSubtitleTiming shifts all cues', () => {

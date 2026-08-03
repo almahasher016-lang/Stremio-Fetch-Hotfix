@@ -21,6 +21,25 @@ test('encoding tokens retain a bounded ordered Arabic fallback chain', () => {
   assert.equal(payload.fallbacks[1].candidate.providerId, 'fallback-1');
 });
 
+test('encoding tokens retain trusted FPS and resolve MicroDVD through the real proxy path', async () => {
+  const url = `https://example.com/microdvd-${Date.now()}-${Math.random()}.sub`;
+  const source = Array.from({ length: 8 }, (_value, index) => {
+    const start = 25 + index * 75;
+    return `{${start}}{${start + 50}}هذه ترجمة عربية سليمة ${index + 1}`;
+  }).join('\n');
+  const token = createEncodingToken({
+    url,
+    provider: 'legacy',
+    candidate: { provider: 'legacy', providerId: 'microdvd' },
+    context: { type: 'series', id: 'tt0200276:1:1', fps: 25 },
+  });
+  assert.equal(verifyEncodingToken(token).context.fps, 25);
+  const result = await resolveProxiedSubtitle(token, { fetcher: async () => Buffer.from(source) });
+  assert.equal(result.format, 'microdvd');
+  assert.match(result.text, /00:00:01,000 --> 00:00:03,000/);
+  assert.equal(result.quality.valid, true);
+});
+
 test('the first Stremio result carries the next ranked candidate as fallback', () => {
   const results = [
     { id: 'first', provider: 'opensubtitles', providerId: 'one', lang: 'ara', download: 'https://example.com/first.srt' },

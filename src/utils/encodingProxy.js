@@ -140,6 +140,7 @@ export function createEncodingToken(payload) {
       season: payload.context.season || null,
       episode: payload.context.episode || null,
       durationMs: payload.context.durationMs || null,
+      fps: payload.context.fps || null,
     } : null,
     expiresAt,
   };
@@ -222,7 +223,7 @@ function destroyBody(body) {
 export function buildRemoteSubtitleHeaders(url, provider = '') {
   const headers = {
     'user-agent': config.app.userAgent,
-    accept: 'application/x-subrip,text/vtt,text/plain,application/zip,application/gzip,application/x-xz,*/*;q=0.8',
+    accept: 'application/x-subrip,text/vtt,text/plain,application/ttml+xml,application/xml,text/xml,application/zip,application/gzip,application/x-xz,*/*;q=0.8',
   };
   if (provider !== 'yify') return headers;
   try {
@@ -328,7 +329,7 @@ function cacheKeyFor(payload) {
     reference: payload.reference || null,
     context: payload.context || null,
   });
-  return `encoding:v10:${sign(normalized)}`;
+  return `encoding:v11:${sign(normalized)}`;
 }
 
 function analyzeProcessedSubtitle(text, context) {
@@ -367,7 +368,11 @@ async function loadProcessedSource(source, payload, fetcher, providerLinkResolve
     maxArchiveEntries: config.encodingProxy.maxArchiveEntries,
     sourceName: source.name,
   });
-  const processed = processSubtitleBuffer(extracted.buffer, payload.options || {});
+  const processed = processSubtitleBuffer(extracted.buffer, {
+    ...(payload.options || {}),
+    frameRate: payload.context?.fps,
+    sourceName: extracted.entryName || source.name,
+  });
   assertValidProcessedSubtitle(processed.text);
   const quality = analyzeProcessedSubtitle(processed.text, payload.context);
   if (quality && !quality.valid) {
@@ -413,7 +418,12 @@ async function finalizeProcessedSource(loaded, payload, fallbackIndex, fetcher, 
         maxArchiveEntries: config.encodingProxy.maxArchiveEntries,
         sourceName: reference.name,
       });
-      const referenceProcessed = processSubtitleBuffer(referenceExtracted.buffer, { ...payload.options, stripSdh: true });
+      const referenceProcessed = processSubtitleBuffer(referenceExtracted.buffer, {
+        ...payload.options,
+        stripSdh: true,
+        frameRate: payload.context?.fps,
+        sourceName: referenceExtracted.entryName || reference.name,
+      });
       const referencePlan = deriveReferenceSyncPlan(processed.text, referenceProcessed.text, config.referenceSync);
       if (referencePlan.enabled) {
         syncPlan = {
