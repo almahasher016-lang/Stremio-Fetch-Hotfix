@@ -76,7 +76,7 @@ function removeAssDrawingRuns(value) {
   return String(value || '').split(/(\{[^}]*\})/g).map(token => {
     if (!token.startsWith('{')) return drawing ? '' : token;
     for (const match of token.matchAll(/\\p(-?\d+(?:\.\d+)?)/gi)) drawing = Number(match[1]) !== 0;
-    return token;
+    return '';
   }).join('');
 }
 
@@ -156,10 +156,12 @@ export function processSubtitleBuffer(buffer, options = {}) {
   const decoded = decodeSubtitleBuffer(buffer, options);
   let text = stripBidiControls(decoded.text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const detectedFormat = detectSubtitleFormat(text);
-  const converted = convertTextSubtitleToSrt(text, options);
   if (detectedFormat === 'ass') text = assToSrt(text);
   else if (detectedFormat === 'vtt') text = vttToSrt(text);
-  else if (converted.handled) text = converted.text;
+  else {
+    const converted = convertTextSubtitleToSrt(text, options, detectedFormat);
+    if (converted.handled) text = converted.text;
+  }
   text = stripBidiControls(cleanSubtitleMarkup(normalizeArabicPresentationForms(text))).replace(/[ \t]{2,}/g, ' ');
   text = stripSdhLines(text, options);
   text = normalizeSrtIndexes(text);

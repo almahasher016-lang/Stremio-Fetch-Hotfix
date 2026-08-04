@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v3.6.1
+# m7md Arabic Resolver v3.6.2
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,15 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 3.6.2
+
+- قُيّد CORS الإداري في الإنتاج بـ`PUBLIC_BASE_URL` و`ADMIN_ALLOWED_ORIGINS`، ولم يعد `X-Forwarded-Host` القادم من الطلب يُضاف ضمنيًا إلى قائمة السماح.
+- أصبحت نتائج SubDL التي لا تملك رابط تنزيل تُرفض قبل احتساب حد نتائج المزود، مع الحفاظ على حروف Arabic Extended-A داخل استعلامات البحث.
+- أصبحت تحديثات الكاش الخلفية مهامًا متتبعة ينتظرها الإغلاق المنظم قبل تفريغ Vault وVersion Registry وإغلاق Redis.
+- مُنع حرف عربي وحيد في بداية سطر لاتيني غالب من فرض معالجة RTL على السطر كله، مع إبقاء الأسطر العربية المختلطة الصحيحة وسياسة الأقواس والترقيم كما هي.
+- أزيل الكشف والتحويل غير الضروريان لصيغ ASS/VTT، وأصبح محوّل ASS المستقل يحذف وسوم التجاوز ورسومات `\\p` من خرج SRT نفسه.
+- أصبح تنويع عائلات الإصدارات خطيًا باستخدام `Set`، ورُفع كاش SRT إلى `encoding:v12` وكاش Styled إلى `styled:v4`.
 
 ## ما الجديد في 3.6.1
 
@@ -145,7 +154,7 @@ npm run probe:podnapisi
 ## التحقق
 
 ```json
-{"status":"ok","version":"3.6.1","ai":false}
+{"status":"ok","version":"3.6.2","ai":false}
 ```
 
 بوابات الدمج المطلوبة: ESLint، TypeScript، الاختبارات والتغطية، `npm audit --omit=dev --audit-level=high`، CodeQL، بناء Docker، وTrivy.

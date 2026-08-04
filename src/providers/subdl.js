@@ -26,7 +26,7 @@ function sanitizeForSubdl(value, { maxLength = 180 } = {}) {
     .replace(/[\u{1F1E6}-\u{1F1FF}\u{1F300}-\u{1FAFF}]/gu, ' ')
     .replace(/\.[a-z0-9]{2,5}$/i, ' ')
     .replace(/[\[\](){},+&]/g, ' ')
-    .replace(/[^A-Za-z0-9\u0600-\u06FF ._:\-]/g, ' ')
+    .replace(/[^A-Za-z0-9\p{Script_Extensions=Arabic} ._:\-]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, maxLength)
@@ -49,6 +49,7 @@ export function normalizeSubdlItem(item, expectedLanguage = 'ar', configImpl = c
   const isExpected = expectedLanguage === 'en' ? isEnglishLanguage(language) : isArabicLanguage(language);
   if (!isExpected) return null;
   const download = normalizeUrl(item.url || item.download_link || item.file || item.path, configImpl);
+  if (!download) return null;
   const providerId = item.file_n_id || item.id || item.subtitle_id || null;
   return {
     provider: 'subdl',

@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.6.2 - Verified Reliability and Boundary Hardening
+- Restricted production administrative CORS to configured origins and stopped treating request-supplied `X-Forwarded-Host` as an implicit allow-list entry.
+- Rejected SubDL rows without a download target before provider result limits are consumed and preserved Arabic Extended-A query characters.
+- Tracked stale-cache refresh promises and drained them before flushing persistent services and closing Redis during graceful shutdown.
+- Kept one leading Arabic letter from forcing RTL handling on an otherwise Latin-dominant line while preserving the established Arabic punctuation and bracket policy.
+- Removed redundant subtitle-format work, made standalone ASS-to-SRT output discard override and drawing tags, and made release-family diversification linear.
+- Added regression coverage for forged forwarded origins, invalid SubDL rows, extended Arabic queries, mixed-direction cues, and direct ASS conversion; bumped caches to `encoding:v12` and `styled:v4`.
+
 ## 3.6.1 - Provider Contract and Episode Pack Hardening
 - Extracted testable OpenSubtitles request, normalization, and response parsing functions without changing the production result schema.
 - Filtered SubDL full-season unpack files to the requested season and episode using structured metadata first and exact release-name evidence only when metadata is absent.

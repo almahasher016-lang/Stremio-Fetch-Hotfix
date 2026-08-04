@@ -30,7 +30,7 @@ const providerLimiters = new Map(Object.keys(providerHandlers).map(name => [
     minIntervalMs: config.providers.minIntervalMsPerProvider,
   }),
 ]));
-const refreshingKeys = new Set();
+const refreshingTasks = new Map();
 
 function lower(value) {
   return String(value || '').toLowerCase();
@@ -294,12 +294,14 @@ async function buildFreshSubtitles(input) {
 }
 
 function refreshInBackground(key, search) {
-  if (refreshingKeys.has(key)) {
+  if (refreshingTasks.has(key)) {
     recordRefreshLock('local-skipped');
     return;
   }
-  refreshingKeys.add(key);
-  setImmediate(async () => {
+
+  const task = new Promise(resolve => {
+    setImmediate(resolve);
+  }).then(async () => {
     let lock = null;
     try {
       lock = await acquireRefreshLock(key, config.cache.refreshLockTtlSeconds);
@@ -312,10 +314,15 @@ function refreshInBackground(key, search) {
       try {
         await releaseRefreshLock(lock);
       } finally {
-        refreshingKeys.delete(key);
+        refreshingTasks.delete(key);
       }
     }
   });
+  refreshingTasks.set(key, task);
+}
+
+export async function flushBackgroundRefreshes() {
+  await Promise.allSettled([...refreshingTasks.values()]);
 }
 
 export async function searchSubtitles(search) {
