@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.6.1 - Provider Contract and Episode Pack Hardening
+- Extracted testable OpenSubtitles request, normalization, and response parsing functions without changing the production result schema.
+- Filtered SubDL full-season unpack files to the requested season and episode using structured metadata first and exact release-name evidence only when metadata is absent.
+- Added the `client=stremio` request identity and retained SubDL format, size, and MD5 metadata for safer validation and deduplication.
+- Added deterministic provider contract coverage, provider start-interval state coverage, and Heap/RSS administration metrics.
+- Added a bounded manual Podnapisi discovery probe that records response structure only and leaves the unverified provider outside the production registry.
+
 ## 3.6.0 - Safe Text Subtitle Compatibility Engine
 - Added content-based conversion for TTML/DFXP, YouTube transcript XML, SAMI, MicroDVD, MPL2, SubViewer/SBV, LRC, and RealText alongside the existing SRT, WebVTT, ASS, and SSA paths.
 - Added UTF-32 LE/BE handling and scored Arabic legacy decoding for Windows-1256, ISO-8859-6, DOS CP720, IBM CP864, and MacArabic while retaining UTF-8 and UTF-16 detection.

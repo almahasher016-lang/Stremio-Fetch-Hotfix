@@ -21,7 +21,7 @@ function addParam(params, key, value) {
   if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
 }
 
-function normalizeItem(item, expectedLanguage = 'ar', variant = {}) {
+export function normalizeOpenSubtitlesItem(item, expectedLanguage = 'ar', variant = {}) {
   const attr = item.attributes || item;
   const files = attr.files || item.files || [];
   const firstFile = files[0] || {};
@@ -59,9 +59,7 @@ function normalizeItem(item, expectedLanguage = 'ar', variant = {}) {
   };
 }
 
-export async function searchOpenSubtitles(variant) {
-  if (!config.openSubtitles.apiKey) return [];
-
+export function buildOpenSubtitlesRequest(variant) {
   const params = new URLSearchParams();
   const expectedLanguage = isEnglishLanguage(variant.language) ? 'en' : 'ar';
   addParam(params, 'languages', providerLanguageParam(expectedLanguage, 'opensubtitles'));
@@ -78,14 +76,30 @@ export async function searchOpenSubtitles(variant) {
   addParam(params, 'hearing_impaired', config.providers.excludeHearingImpaired ? 'exclude' : 'include');
   if (config.openSubtitles.trustedOnly) addParam(params, 'trusted_sources', 'only');
 
-  const url = `${config.openSubtitles.baseUrl}/subtitles?${params.toString()}`;
-  const json = await fetchJson(url, {
+  return {
+    url: `${config.openSubtitles.baseUrl}/subtitles?${params.toString()}`,
     headers: osHeaders(),
+    expectedLanguage,
+  };
+}
+
+export function parseOpenSubtitlesResponse(payload, expectedLanguage = 'ar', variant = {}) {
+  const data = Array.isArray(payload?.data) ? payload.data : [];
+  return data
+    .map(item => normalizeOpenSubtitlesItem(item, expectedLanguage, variant))
+    .filter(Boolean)
+    .slice(0, config.providers.maxProviderItems);
+}
+
+export async function searchOpenSubtitles(variant, { fetchJsonImpl = fetchJson } = {}) {
+  if (!config.openSubtitles.apiKey) return [];
+  const request = buildOpenSubtitlesRequest(variant);
+  const json = await fetchJsonImpl(request.url, {
+    headers: request.headers,
     signal: variant.signal,
     trustedOrigin: config.openSubtitles.baseUrl,
   });
-  const data = Array.isArray(json?.data) ? json.data : [];
-  return data.map(item => normalizeItem(item, expectedLanguage, variant)).filter(Boolean).slice(0, config.providers.maxProviderItems);
+  return parseOpenSubtitlesResponse(json, request.expectedLanguage, variant);
 }
 
 export function buildOpenSubtitlesDownloadBody(fileId, { subFormat = 'srt' } = {}) {

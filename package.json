@@ -1,6 +1,6 @@
 {
   "name": "m7md-arabic-stremio-subtitles",
-  "version": "3.6.0",
+  "version": "3.6.1",
   "type": "module",
   "private": true,
   "description": "Arabic-first Stremio subtitle resolver with broad provider search, conservative punctuation handling, Personal Vault, and opt-in experimental synchronization without AI.",
@@ -11,6 +11,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "companion:scan": "node src/companion/mediaCompanion.js scan",
+    "probe:podnapisi": "node scripts/probe-podnapisi-phase1.mjs",
     "test": "node --import ./src/tests/setup.js --test src/tests/*.test.js",
     "test:coverage": "node --import ./src/tests/setup.js --experimental-test-coverage --test-coverage-lines=75 --test-coverage-branches=65 --test-coverage-functions=75 --test src/tests/*.test.js",
     "test:contracts": "node --import ./src/tests/setup.js --test src/tests/liveProviders.test.js",

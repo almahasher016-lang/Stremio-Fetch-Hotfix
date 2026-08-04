@@ -49,7 +49,8 @@ export function adminPageHtml() {
           '<div class="card"><strong>الإصدار</strong><br>'+esc(data.version)+'</div>'+
           '<div class="card"><strong>زمن التشغيل</strong><br>'+Math.round(data.uptime)+' ثانية</div>'+
           '<div class="card"><strong>نسبة إصابة الكاش</strong><br>'+esc(cache.hitRatio??'لا بيانات')+'</div>'+
-          '<div class="card"><strong>L1 / Redis</strong><br>'+esc(cache.memoryHits||0)+' / '+esc(cache.redisHits||0)+'</div>';
+          '<div class="card"><strong>L1 / Redis</strong><br>'+esc(cache.memoryHits||0)+' / '+esc(cache.redisHits||0)+'</div>'+
+          '<div class="card"><strong>Heap / RSS</strong><br>'+esc(data.memory?.heapUsedMB??'—')+' / '+esc(data.memory?.rssMB??'—')+' MB</div>';
         const providerRows=Object.entries(data.providers||{}).map(([name,value])=>({name,...value,...(data.metrics?.[name]||{})}));
         document.getElementById('providers').innerHTML=table(providerRows,[['name','المزود',v=>esc(v)],['configured','مهيأ',v=>v?'<span class="ok">نعم</span>':'<span class="bad">لا</span>'],['successRate','النجاح',v=>esc(v??'—')],['p50Ms','P50 ms',v=>esc(v??0)],['p95Ms','P95 ms',v=>esc(v??0)],['lastError','آخر خطأ',v=>esc(v||'—')]]);
         const breakerRows=Object.entries(data.breakers||{}).map(([name,value])=>({name,...value}));

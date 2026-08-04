@@ -48,3 +48,26 @@ test('provider limiter removes an aborted queued request', async () => {
   release();
   await first;
 });
+
+test('provider limiter enforces the configured start interval', async () => {
+  const limiter = new ProviderLimiter('provider', {
+    maxConcurrent: 1,
+    minIntervalMs: 50,
+  });
+  const starts = [];
+  for (let index = 0; index < 3; index += 1) {
+    await limiter.run(async () => {
+      starts.push(Date.now());
+    });
+  }
+  for (let index = 1; index < starts.length; index += 1) {
+    assert.ok(starts[index] - starts[index - 1] >= 45);
+  }
+  assert.deepEqual(limiter.status(), {
+    name: 'provider',
+    active: 0,
+    queued: 0,
+    maxConcurrent: 1,
+    minIntervalMs: 50,
+  });
+});

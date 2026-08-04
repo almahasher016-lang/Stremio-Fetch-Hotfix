@@ -172,6 +172,10 @@ app.get('/api/admin/health', async (req, res, next) => {
       breakers: getBreakersStatus(),
       limiters: getProviderLimitersStatus(),
       metrics: getProviderMetricsStatus(),
+      memory: {
+        heapUsedMB: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+        rssMB: Math.round(process.memoryUsage().rss / 1024 / 1024),
+      },
     });
   } catch (error) {
     next(error);

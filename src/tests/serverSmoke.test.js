@@ -82,6 +82,8 @@ test('server exposes the release, administration dashboard, and maintenance acti
   assert.equal(admin.version, config.app.version);
   assert.equal(admin.limiters.yify.maxConcurrent, config.providers.maxConcurrentPerProvider);
   assert.equal(admin.breakers.yify.state, 'closed');
+  assert.ok(Number.isFinite(admin.memory.heapUsedMB));
+  assert.ok(Number.isFinite(admin.memory.rssMB));
 
   for (const page of ['/admin.html', '/vault.html']) {
     const response = await fetch(`${baseUrl}${page}`);

@@ -58,10 +58,14 @@ export class ProviderLimiter {
     this.nextStartAt = this.now() + this.minIntervalMs;
     Promise.resolve()
       .then(entry.task)
-      .then(entry.resolve, entry.reject)
-      .finally(() => {
+      .then(value => {
         this.active -= 1;
         this.drain();
+        entry.resolve(value);
+      }, error => {
+        this.active -= 1;
+        this.drain();
+        entry.reject(error);
       });
     if (this.active < this.maxConcurrent) this.drain();
   }
