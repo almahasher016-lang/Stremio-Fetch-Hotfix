@@ -57,7 +57,10 @@ function arabicDominatesLine(line) {
     else otherLetters += 1;
   }
 
-  return arabicLetters > 0 && (arabicLetters >= otherLetters || firstLetterIsArabic);
+  const strongArabicLead = firstLetterIsArabic
+    && arabicLetters >= 2
+    && arabicLetters * 4 >= otherLetters;
+  return arabicLetters > 0 && (arabicLetters >= otherLetters || strongArabicLead);
 }
 
 function hasArabicBracketPair(line) {

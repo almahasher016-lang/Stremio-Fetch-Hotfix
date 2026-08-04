@@ -76,6 +76,16 @@ test('server exposes the release, administration dashboard, and maintenance acti
   assert.equal(styledPreflight.headers.get('access-control-allow-origin'), '*');
   assert.match(styledPreflight.headers.get('access-control-expose-headers') || '', /X-Source-Archive-Entry/i);
 
+  const forgedAdminOrigin = await fetch(`${baseUrl}/metrics`, {
+    headers: {
+      origin: 'https://evil.example',
+      'x-forwarded-host': 'evil.example',
+      'x-forwarded-proto': 'https',
+    },
+  });
+  assert.equal(forgedAdminOrigin.status, 403);
+  assert.deepEqual(await forgedAdminOrigin.json(), { error: 'Origin is not allowed' });
+
   const adminResponse = await fetch(`${baseUrl}/api/admin/health`, { headers });
   assert.equal(adminResponse.status, 200);
   const admin = await adminResponse.json();

@@ -12,6 +12,7 @@ import {
   getProvidersStatus,
   getProviderMetricsStatus,
   resetProviderBreaker,
+  flushBackgroundRefreshes,
 } from './services/subtitleService.js';
 import { clearCache, closeRedis, getCacheStatus } from './cache/redis.js';
 import { createManifest, getBaseUrl } from './utils/stremio.js';
@@ -42,8 +43,14 @@ function publicStremioPath(pathname) {
 }
 
 function ownRequestOrigin(req) {
-  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
-  const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  if (config.app.publicBaseUrl) return new URL(config.app.publicBaseUrl).origin;
+  if (config.server.isProd) return '';
+
+  // Development and tests may not have a public origin configured. In that
+  // case accept only the actual request Host; never trust a caller-supplied
+  // X-Forwarded-Host as an implicit administrative CORS allow-list entry.
+  const proto = String(req.protocol || 'http').split(',')[0].trim();
+  const host = String(req.headers.host || '').split(',')[0].trim();
   try {
     return host ? new URL(`${proto}://${host}`).origin : '';
   } catch {
@@ -265,7 +272,9 @@ async function shutdown(signal) {
     clearTimeout(forceCloseTimer);
     clearTimeout(forceExitTimer);
     try {
-      await Promise.all([flushVaultWrites(), versionRegistry.flush(), closeRedis()]);
+      await flushBackgroundRefreshes();
+      await Promise.all([flushVaultWrites(), versionRegistry.flush()]);
+      await closeRedis();
       console.log('[Server] closed');
       process.exit(0);
     } catch (error) {

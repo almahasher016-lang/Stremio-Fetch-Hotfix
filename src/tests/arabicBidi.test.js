@@ -107,3 +107,9 @@ test('does not modify numeric dialogue or a Latin-dominant mixed line', () => {
   const source = `1\n00:00:01,000 --> 00:00:02,000\n1984\nWEB-DL release with مرحبا!\n`;
   assert.equal(stabilizeArabicSrt(source), source);
 });
+
+test('does not force RTL from one leading Arabic letter in a Latin-dominant line', () => {
+  const source = 'أ John went to the store.';
+  assert.equal(stabilizeArabicCueLine(source), source);
+  assert.equal(stabilizeArabicCueLine('الإصدار WEB-DL 3.4.0.'), 'الإصدار WEB-DL 3.4.0.\u200F');
+});

@@ -351,13 +351,15 @@ function diversifyPlausibleAlternatives(items, scoreWindow = 240) {
       cursor += 1;
     }
     const seenFamilies = new Set();
+    const selected = new Set();
     for (const item of band) {
       const family = releaseFamilyKey(item);
       if (seenFamilies.has(family)) continue;
       seenFamilies.add(family);
+      selected.add(item);
       output.push(item);
     }
-    for (const item of band) if (!output.includes(item)) output.push(item);
+    for (const item of band) if (!selected.has(item)) output.push(item);
   }
   return output;
 }
