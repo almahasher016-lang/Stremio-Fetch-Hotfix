@@ -43,21 +43,15 @@ function containsArabicLetter(value) {
 function arabicDominatesLine(line) {
   let arabicLetters = 0;
   let otherLetters = 0;
-  let firstLetterIsArabic = false;
-  let foundFirstLetter = false;
 
   for (const character of line) {
     if (!LETTER_RE.test(character)) continue;
     const isArabic = ARABIC_SCRIPT_RE.test(character);
-    if (!foundFirstLetter) {
-      firstLetterIsArabic = isArabic;
-      foundFirstLetter = true;
-    }
     if (isArabic) arabicLetters += 1;
     else otherLetters += 1;
   }
 
-  return arabicLetters > 0 && (arabicLetters >= otherLetters || firstLetterIsArabic);
+  return arabicLetters > 0 && arabicLetters >= otherLetters;
 }
 
 function hasArabicBracketPair(line) {

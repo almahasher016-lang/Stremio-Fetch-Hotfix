@@ -107,3 +107,9 @@ test('does not modify numeric dialogue or a Latin-dominant mixed line', () => {
   const source = `1\n00:00:01,000 --> 00:00:02,000\n1984\nWEB-DL release with مرحبا!\n`;
   assert.equal(stabilizeArabicSrt(source), source);
 });
+
+test('does not treat a Latin-dominant line as Arabic because its first letter is Arabic', () => {
+  const source = 'ا WEB-DL release title!';
+  assert.equal(stabilizeArabicCueLine(source), source);
+  assert.doesNotMatch(stabilizeArabicCueLine(source), /[\u200F\u2067\u2069]/u);
+});

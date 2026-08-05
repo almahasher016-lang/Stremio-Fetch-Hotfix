@@ -337,6 +337,7 @@ function releaseFamilyKey(item) {
 
 function diversifyPlausibleAlternatives(items, scoreWindow = 240) {
   const output = [];
+  const emitted = new Set();
   let cursor = 0;
   while (cursor < items.length) {
     const anchor = items[cursor];
@@ -356,8 +357,13 @@ function diversifyPlausibleAlternatives(items, scoreWindow = 240) {
       if (seenFamilies.has(family)) continue;
       seenFamilies.add(family);
       output.push(item);
+      emitted.add(item);
     }
-    for (const item of band) if (!output.includes(item)) output.push(item);
+    for (const item of band) {
+      if (emitted.has(item)) continue;
+      output.push(item);
+      emitted.add(item);
+    }
   }
   return output;
 }

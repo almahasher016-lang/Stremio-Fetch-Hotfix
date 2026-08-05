@@ -37,6 +37,8 @@ test('server exposes the release, administration dashboard, and maintenance acti
       ADMIN_RATE_LIMIT_WINDOW_MS: '60000',
       ADMIN_AUTH_RATE_LIMIT_MAX: '20',
       ADMIN_AUTH_RATE_LIMIT_WINDOW_MS: '60000',
+      PUBLIC_BASE_URL: 'https://addon.example',
+      ADMIN_ALLOWED_ORIGINS: 'https://admin.example',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -75,6 +77,20 @@ test('server exposes the release, administration dashboard, and maintenance acti
   assert.equal(styledPreflight.status, 204);
   assert.equal(styledPreflight.headers.get('access-control-allow-origin'), '*');
   assert.match(styledPreflight.headers.get('access-control-expose-headers') || '', /X-Source-Archive-Entry/i);
+
+  const blockedAdminOrigin = await fetch(`${baseUrl}/api/admin/health`, {
+    headers: { ...headers, origin: 'https://untrusted.example' },
+  });
+  assert.equal(blockedAdminOrigin.status, 403);
+  assert.match((await blockedAdminOrigin.json()).error, /origin is not allowed/i);
+
+  for (const origin of ['https://addon.example', 'https://admin.example']) {
+    const allowedAdminOrigin = await fetch(`${baseUrl}/api/admin/health`, {
+      headers: { ...headers, origin },
+    });
+    assert.equal(allowedAdminOrigin.status, 200);
+    assert.equal(allowedAdminOrigin.headers.get('access-control-allow-origin'), origin);
+  }
 
   const adminResponse = await fetch(`${baseUrl}/api/admin/health`, { headers });
   assert.equal(adminResponse.status, 200);

@@ -245,7 +245,7 @@ export function detectSubtitleFormat(text, options = {}) {
 }
 
 export function convertTextSubtitleToSrt(text, options = {}) {
-  const format = detectSubtitleFormat(text);
+  const format = options.detectedFormat || detectSubtitleFormat(text);
   const converters = {
     ttml: () => ttmlToSrt(text),
     'youtube-xml': () => youtubeXmlToSrt(text),

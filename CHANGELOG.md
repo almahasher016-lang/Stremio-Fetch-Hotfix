@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.6.2 - Provider Hygiene and Graceful Cache Refresh
+
+- Rejected SubDL rows without a usable download URL and preserved extended Arabic script characters in provider queries.
+- Tracked stale-while-revalidate tasks and drained them before Redis shutdown.
+- Added explicit administrative CORS allow/deny coverage for the public base URL and configured admin origins.
+- Preserved legitimate dialogue ending in a music note and prevented Latin-dominant lines from being direction-marked because of one leading Arabic letter.
+- Reused the detected subtitle format, replaced quadratic output membership checks with a `Set`, and bumped processed caches to `encoding:v12` and `styled:v4`.
+
 ## 3.6.1 - Provider Contract and Episode Pack Hardening
 - Extracted testable OpenSubtitles request, normalization, and response parsing functions without changing the production result schema.
 - Filtered SubDL full-season unpack files to the requested season and episode using structured metadata first and exact release-name evidence only when metadata is absent.

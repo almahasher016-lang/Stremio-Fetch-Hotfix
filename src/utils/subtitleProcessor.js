@@ -13,7 +13,7 @@ function stripSdhLines(text, options = {}) {
   return text.split('\n').filter(line => {
     const l = line.trim();
     if (!l) return true;
-    if (stripMusic && /^[♪♫]+|[♪♫]+$/.test(l)) return false;
+    if (stripMusic && /^[♪♫\s]+$/.test(l)) return false;
     if (stripSdh && /^\[[^\]]{1,80}]$/.test(l)) return false;
     if (stripSdh && /^\([^)]{1,80}\)$/.test(l)) return false;
     return true;
@@ -156,7 +156,7 @@ export function processSubtitleBuffer(buffer, options = {}) {
   const decoded = decodeSubtitleBuffer(buffer, options);
   let text = stripBidiControls(decoded.text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
   const detectedFormat = detectSubtitleFormat(text);
-  const converted = convertTextSubtitleToSrt(text, options);
+  const converted = convertTextSubtitleToSrt(text, { ...options, detectedFormat });
   if (detectedFormat === 'ass') text = assToSrt(text);
   else if (detectedFormat === 'vtt') text = vttToSrt(text);
   else if (converted.handled) text = converted.text;

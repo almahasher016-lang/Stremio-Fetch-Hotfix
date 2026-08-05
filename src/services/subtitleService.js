@@ -67,3 +67,4 @@ export const getBreakersStatus = core.getBreakersStatus;
 export const resetProviderBreaker = core.resetProviderBreaker;
 export const getProviderLimitersStatus = core.getProviderLimitersStatus;
 export const mergeResults = core.mergeResults;
+export const flushBackgroundRefreshes = core.flushBackgroundRefreshes;

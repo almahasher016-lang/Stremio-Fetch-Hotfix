@@ -11,6 +11,7 @@ import {
   getProviderLimitersStatus,
   getProvidersStatus,
   getProviderMetricsStatus,
+  flushBackgroundRefreshes,
   resetProviderBreaker,
 } from './services/subtitleService.js';
 import { clearCache, closeRedis, getCacheStatus } from './cache/redis.js';
@@ -263,12 +264,14 @@ async function shutdown(signal) {
 
   server.close(async () => {
     clearTimeout(forceCloseTimer);
-    clearTimeout(forceExitTimer);
     try {
+      await flushBackgroundRefreshes();
       await Promise.all([flushVaultWrites(), versionRegistry.flush(), closeRedis()]);
+      clearTimeout(forceExitTimer);
       console.log('[Server] closed');
       process.exit(0);
     } catch (error) {
+      clearTimeout(forceExitTimer);
       console.error('[Server] shutdown failed:', error.message);
       process.exit(1);
     }

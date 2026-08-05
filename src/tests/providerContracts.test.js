@@ -185,6 +185,34 @@ test('SubDL normalization accepts unpack-file language and robust boolean flags'
   assert.equal(numericFlags.machineTranslated, true);
 });
 
+test('SubDL rejects entries without a usable download link', () => {
+  assert.equal(normalizeSubdlItem({
+    id: 'missing-link',
+    language: 'ar',
+    release_name: 'Movie.2026.1080p.WEB-DL',
+  }, 'ar', subdlConfig), null);
+
+  const results = expandSubdlSubtitles([{
+    id: 'pack-without-parent-link',
+    language: 'ar',
+    unpack_files: [
+      { file_n_id: 'missing', name: 'Show.S01E01.1080p.srt', season: 1, episode: 1 },
+      { file_n_id: 'usable', name: 'Show.S01E01.720p.srt', season: 1, episode: 1, url: '/usable.srt' },
+    ],
+  }], 'ar', { type: 'series', season: 1, episode: 1 }, subdlConfig);
+
+  assert.deepEqual(results.map(item => item.providerId), ['usable']);
+});
+
+test('SubDL query sanitization preserves Arabic Extended characters', () => {
+  const params = buildSubdlParams({
+    type: 'movie',
+    query: 'ࢠلم عربي',
+  }, 'ar', 'query', subdlConfig);
+
+  assert.equal(params.get('film_name'), 'ࢠلم عربي');
+});
+
 test('SubDL search preserves fallback modes and injected transport', async () => {
   const calls = [];
   const fetchJsonImpl = async url => {

@@ -31,6 +31,7 @@ const providerLimiters = new Map(Object.keys(providerHandlers).map(name => [
   }),
 ]));
 const refreshingKeys = new Set();
+const backgroundRefreshTasks = new Set();
 
 function lower(value) {
   return String(value || '').toLowerCase();
@@ -299,7 +300,9 @@ function refreshInBackground(key, search) {
     return;
   }
   refreshingKeys.add(key);
-  setImmediate(async () => {
+  const task = new Promise(resolve => {
+    setImmediate(resolve);
+  }).then(async () => {
     let lock = null;
     try {
       lock = await acquireRefreshLock(key, config.cache.refreshLockTtlSeconds);
@@ -311,11 +314,22 @@ function refreshInBackground(key, search) {
     } finally {
       try {
         await releaseRefreshLock(lock);
+      } catch (error) {
+        console.warn('[cache:refresh:unlock]', error.message);
       } finally {
         refreshingKeys.delete(key);
       }
     }
   });
+  backgroundRefreshTasks.add(task);
+  void task.then(
+    () => backgroundRefreshTasks.delete(task),
+    () => backgroundRefreshTasks.delete(task),
+  );
+}
+
+export async function flushBackgroundRefreshes() {
+  await Promise.allSettled([...backgroundRefreshTasks]);
 }
 
 export async function searchSubtitles(search) {
