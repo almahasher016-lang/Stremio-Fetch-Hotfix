@@ -32,7 +32,7 @@ function singleflightKey(search) {
 }
 
 async function searchCore(search) {
-  return prioritizeAccurateSubtitles(await core.searchSubtitles(search));
+  return prioritizeAccurateSubtitles(await core.searchSubtitles(search), search);
 }
 
 async function runDistributed(search, key) {
