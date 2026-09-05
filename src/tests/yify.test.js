@@ -20,6 +20,23 @@ test('YIFY rows point to downloadable ZIP archives instead of detail pages', () 
   assert.equal(rows[0].download, `${config.yify.baseUrl}/subtitle/inception-2010-arabic-yify-392064.zip`);
 });
 
+test('YIFY rows ignore unrelated anchors before the subtitle detail link', () => {
+  const html = `<table><tbody>
+    <tr data-id="392064">
+      <td><a href="/movie/inception-2010"><img src="poster.jpg" alt="Inception"></a></td>
+      <td><span class="sub-lang">Arabic</span></td>
+      <td><a href="/subtitles/inception-2010-arabic-yify-392064">
+        <span class="text-muted">subtitle</span> Inception.2010.1080p.BrRip.x264.YIFY
+      </a></td>
+    </tr>
+  </tbody></table>`;
+  const rows = parseYifyRows(html, 'tt1375666');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].id, 'yify-tt1375666-392064');
+  assert.equal(rows[0].name, 'Inception.2010.1080p.BrRip.x264.YIFY');
+  assert.equal(rows[0].download, `${config.yify.baseUrl}/subtitle/inception-2010-arabic-yify-392064.zip`);
+});
+
 test('YIFY archive requests include the detail-page referrer required by its CDN', () => {
   const url = `${config.yify.baseUrl}/subtitle/inception-2010-arabic-yify-392064.zip`;
   const headers = buildRemoteSubtitleHeaders(url, 'yify');
