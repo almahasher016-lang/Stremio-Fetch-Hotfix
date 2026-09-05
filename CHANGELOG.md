@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.6.4 - Source-Family Ranking Fix
+
+- Prioritize the timing/source family (BluRay, WEB, HDTV, DVD, CAM) before resolution-only similarity.
+- Preserve exact hash and hard episode/edition/year/FPS conflicts as stronger evidence.
+- Add a regression based on the real House of the Dragon S01E07 BluRay Remux playback case.
+- Keep the Stremio add-on ID unchanged so clients recognize this as an update.
+
 ## 3.6.3 - Accuracy-First Subtitle Ordering
 
 - Preserved exact video-hash evidence as the strongest subtitle match.
