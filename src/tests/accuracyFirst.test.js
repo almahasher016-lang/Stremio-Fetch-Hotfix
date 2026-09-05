@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { prioritizeAccurateSubtitles } from '../utils/accuracyFirst.js';
 
-function releaseMatch({ tier, priority, criticalMismatches = 0, targetFields = 6 }) {
-  return { tier, priority, criticalMismatches, targetFields };
+function releaseMatch({ tier, priority, criticalMismatches = 0, targetFields = 6, mismatched = [] }) {
+  return { tier, priority, criticalMismatches, targetFields, mismatched };
 }
 
 test('accuracy-first keeps an exact video hash result first', () => {
@@ -88,4 +88,69 @@ test('accuracy-first uses verified subtitle quality after equal release accuracy
   ]);
 
   assert.equal(ranked[0].provider, 'subdl');
+});
+
+test('accuracy-first prefers the same BluRay timing family over a resolution-only WEB match', () => {
+  const target = 'House.of.the.Dragon.S01E07.MULTI.VFI.2160p.UHD.BluRay.Remux.DV.HDR.TrueHD.Atmos.7.1.HEVC-HYPERION.mkv';
+  const web2160 = 'House.of.the.Dragon.S01E07.2160p.WEB.H265-GLHF';
+  const bluray720 = 'House.of.the.Dragon.S01E07.720p.BluRay.x264-BLOODY';
+  const ranked = prioritizeAccurateSubtitles([
+    {
+      provider: 'opensubtitles',
+      releaseName: web2160,
+      score: 1500,
+      releaseMatch: releaseMatch({
+        tier: 1,
+        priority: 13000,
+        criticalMismatches: 2,
+        mismatched: ['source', 'releaseGroup'],
+      }),
+      scoreReasons: [],
+    },
+    {
+      provider: 'opensubtitles',
+      releaseName: bluray720,
+      score: 900,
+      releaseMatch: releaseMatch({
+        tier: 1,
+        priority: 9000,
+        criticalMismatches: 3,
+        mismatched: ['quality', 'releaseGroup', 'codecFamily'],
+      }),
+      scoreReasons: [],
+    },
+  ], { filename: target });
+
+  assert.equal(ranked[0].releaseName, bluray720);
+});
+
+test('accuracy-first never lets source-family similarity override a wrong episode', () => {
+  const ranked = prioritizeAccurateSubtitles([
+    {
+      provider: 'opensubtitles',
+      releaseName: 'Show.S01E08.1080p.BluRay-GRP',
+      score: 2000,
+      releaseMatch: releaseMatch({
+        tier: 1,
+        priority: 15000,
+        criticalMismatches: 1,
+        mismatched: ['episode'],
+      }),
+      scoreReasons: [],
+    },
+    {
+      provider: 'subdl',
+      releaseName: 'Show.S01E07.1080p.WEB-DL-GRP',
+      score: 800,
+      releaseMatch: releaseMatch({
+        tier: 2,
+        priority: 22000,
+        criticalMismatches: 0,
+        mismatched: [],
+      }),
+      scoreReasons: [],
+    },
+  ], { filename: 'Show.S01E07.2160p.BluRay.REMUX-GRP.mkv' });
+
+  assert.equal(ranked[0].releaseName, 'Show.S01E07.1080p.WEB-DL-GRP');
 });
