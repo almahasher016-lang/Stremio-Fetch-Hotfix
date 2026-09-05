@@ -1,0 +1,139 @@
+name: apply-source-family-hotfix
+on:
+  push:
+    branches: [fix/source-family-ranking]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: fix/source-family-ranking
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.18.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Apply source-family ranking fix
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f'{path}: expected one match, found {text.count(old)} for {old!r}')
+              p.write_text(text.replace(old, new, 1))
+
+          # Preserve the existing detailed source (including REMUX) while also deriving
+          # the timing-relevant source family used for compatibility ranking.
+          replace_once(
+              'src/utils/releaseParser.js',
+              "function parseSource(value) {\n  const text = String(value || '');\n  if (/\\bremux\\b/i.test(text)) return 'remux';\n  return normalizeSource(firstMatch(SOURCE_RE, text));\n}\n",
+              "function parseSource(value) {\n  const text = String(value || '');\n  if (/\\bremux\\b/i.test(text)) return 'remux';\n  return normalizeSource(firstMatch(SOURCE_RE, text));\n}\n\nfunction sourceFamily(source) {\n  const normalized = normalizeSource(source);\n  if (['bluray', 'bluray-rip', 'remux'].includes(normalized)) return 'bluray';\n  if (['web', 'web-dl', 'webrip'].includes(normalized)) return 'web';\n  return normalized;\n}\n"
+          )
+          replace_once(
+              'src/utils/releaseParser.js',
+              "  const codec = firstMatch(CODEC_RE, text);\n  const audio = firstMatch(AUDIO_RE, text);\n",
+              "  const codec = firstMatch(CODEC_RE, text);\n  const audio = firstMatch(AUDIO_RE, text);\n  const source = parseSource(text);\n"
+          )
+          replace_once(
+              'src/utils/releaseParser.js',
+              "    quality: normalizeQuality(firstMatch(QUALITY_RE, text)),\n    source: parseSource(text),\n",
+              "    quality: normalizeQuality(firstMatch(QUALITY_RE, text)),\n    source,\n    sourceFamily: sourceFamily(source),\n"
+          )
+
+          # Source family is the strongest release-name timing clue after episode/edition.
+          # Resolution is useful metadata, but a 720p and 2160p encode from the same BluRay
+          # master can share timings while WEB and BluRay commonly do not.
+          replace_once(
+              'src/utils/scoring.js',
+              "const RELEASE_FIELDS = [\n  { key: 'quality', weight: 7, critical: true },\n  { key: 'source', weight: 8, critical: true },\n",
+              "const RELEASE_FIELDS = [\n  { key: 'sourceFamily', weight: 16, critical: true },\n  { key: 'source', weight: 4, critical: false },\n  { key: 'quality', weight: 4, critical: false },\n"
+          )
+          text = Path('src/utils/scoring.js').read_text()
+          old = "has('source')"
+          if text.count(old) != 3:
+              raise SystemExit(f'src/utils/scoring.js: expected three tier source checks, found {text.count(old)}')
+          Path('src/utils/scoring.js').write_text(text.replace(old, "has('sourceFamily')"))
+          replace_once(
+              'src/utils/scoring.js',
+              "  if (target.source && release.source) {\n    if (target.source === release.source) add(25, 'source-match');\n    else add(-5, 'source-different');\n  }\n",
+              "  if (target.sourceFamily && release.sourceFamily) {\n    if (target.sourceFamily === release.sourceFamily) add(70, 'source-family-match');\n    else add(-180, 'source-family-mismatch');\n  }\n\n  if (target.source && release.source) {\n    if (target.source === release.source) add(25, 'source-match');\n    else add(-5, 'source-different');\n  }\n"
+          )
+
+          # Invalidate only the server-side subtitle search cache for this ranking revision.
+          replace_once(
+              'src/services/subtitleServiceCore.js',
+              "    resolver: config.app.version,\n",
+              "    resolver: `${config.app.version}:source-family-v2`,\n"
+          )
+
+          replace_once(
+              'src/tests/releaseParser.test.js',
+              "  assert.equal(parsed.source, 'remux');\n  assert.equal(parsed.audioCodec, 'truehd');\n",
+              "  assert.equal(parsed.source, 'remux');\n  assert.equal(parsed.sourceFamily, 'bluray');\n  assert.equal(parsed.audioCodec, 'truehd');\n"
+          )
+
+          scoring_test = Path('src/tests/scoring.test.js')
+          text = scoring_test.read_text()
+          marker = "\ntest('rankAndFilter surfaces plausible alternatives before repeated release families', () => {"
+          if marker not in text:
+              raise SystemExit('src/tests/scoring.test.js: insertion marker missing')
+          regression = r'''
+
+test('rankAndFilter prefers the same BluRay family over a resolution-only WEB match', () => {
+  const target = 'House.of.the.Dragon.S01E07.MULTI.VFI.2160p.UHD.BluRay.Remux.DV.HDR.TrueHD.Atmos.7.1.HEVC-HYPERION.mkv';
+  const web2160 = 'House.of.the.Dragon.S01E07.2160p.WEB.H265-GLHF';
+  const bluray720 = 'House.of.the.Dragon.S01E07.720p.BluRay.x264-BLOODY';
+  const ranked = rankAndFilter([
+    {
+      provider: 'opensubtitles',
+      lang: 'ara',
+      releaseName: web2160,
+      download: 'https://example.com/web.srt',
+    },
+    {
+      provider: 'opensubtitles',
+      lang: 'ara',
+      releaseName: bluray720,
+      download: 'https://example.com/bluray.srt',
+    },
+  ], {
+    type: 'series',
+    season: 1,
+    episode: 7,
+    filename: target,
+  }, {
+    outputArabicOnly: true,
+    minRankScore: -1000,
+    maxReturnedPerRelease: 1,
+  });
+
+  assert.equal(ranked[0].releaseName, bluray720);
+  assert.equal(ranked[0].parsedRelease.sourceFamily, 'bluray');
+  assert.equal(ranked[1].parsedRelease.sourceFamily, 'web');
+  assert.ok(ranked[0].releaseMatch.criticalMismatches < ranked[1].releaseMatch.criticalMismatches);
+});
+'''
+          scoring_test.write_text(text.replace(marker, regression + marker, 1))
+          PY
+      - name: Verify hotfix
+        run: npm run verify
+      - name: Commit verified hotfix
+        shell: bash
+        run: |
+          rm .github/workflows/apply-source-family-hotfix.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/utils/releaseParser.js src/utils/scoring.js src/services/subtitleServiceCore.js src/tests/releaseParser.test.js src/tests/scoring.test.js .github/workflows/apply-source-family-hotfix.yml
+          git commit -m 'Fix BluRay source-family subtitle ranking'
+          git push origin HEAD:fix/source-family-ranking
