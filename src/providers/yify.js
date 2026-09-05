@@ -42,17 +42,24 @@ function directDownloadUrl(value) {
   }
 }
 
+function findSubtitleAnchor(block) {
+  const anchors = String(block || '').matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi);
+  for (const anchor of anchors) {
+    const download = directDownloadUrl(anchor[1]);
+    if (download) return { html: anchor[2], download };
+  }
+  return null;
+}
+
 export function parseYifyRows(html, imdbId) {
   const rows = [];
   const blocks = String(html || '').split(/<tr\b/i).slice(1);
   for (const block of blocks) {
     if (!/Arabic|\bAR\b|العربية|arab/i.test(block)) continue;
-    const anchor = block.match(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
-    const href = anchor?.[1];
-    const download = directDownloadUrl(href);
-    if (!download) continue;
+    const anchor = findSubtitleAnchor(block);
+    if (!anchor) continue;
     const providerId = block.match(/\bdata-id=["']?(\d{1,20})/i)?.[1] || `${rows.length}`;
-    const name = decodeHtml(String(anchor?.[2] || '')
+    const name = decodeHtml(String(anchor.html || '')
       .replace(/<br\s*\/?>/gi, ' ')
       .replace(/<[^>]+>/g, ' ')
       .replace(/\bsubtitle\b/i, ' ')
@@ -72,7 +79,7 @@ export function parseYifyRows(html, imdbId) {
       trusted: false,
       hearingImpaired: /\b(sdh|hi|hearing impaired)\b/i.test(name),
       machineTranslated: null,
-      download,
+      download: anchor.download,
       sourceType: 'fallback',
     });
   }
