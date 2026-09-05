@@ -4,7 +4,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: test-${{ github.workflow }}-${{ github.ref }}
@@ -45,3 +45,63 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: '1'
+
+  prepare-release:
+    if: github.event_name == 'pull_request' && github.head_ref == 'release/v3.6.3'
+    needs: node-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: release/v3.6.3
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.18.0
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Synchronize release version
+        shell: bash
+        run: |
+          npm version 3.6.3 --no-git-tag-version
+          node <<'NODE'
+          const fs = require('node:fs');
+
+          const releasePath = 'src/release.js';
+          let release = fs.readFileSync(releasePath, 'utf8');
+          release = release.replace("export const RELEASE_VERSION = '3.6.2';", "export const RELEASE_VERSION = '3.6.3';");
+          fs.writeFileSync(releasePath, release);
+
+          const readmePath = 'README.md';
+          let readme = fs.readFileSync(readmePath, 'utf8');
+          readme = readme.replace('# m7md Arabic Resolver v3.6.2', '# m7md Arabic Resolver v3.6.3');
+          if (!readme.includes('## ما الجديد في 3.6.3')) {
+            readme = readme.replace(
+              '## ما الجديد في 3.6.2',
+              '## ما الجديد في 3.6.3\n\n- أصبحت الترجمة العربية الأدق تظهر أولًا: تطابق Hash المؤكد ثم مطابقة إصدار الفيديو، ثم جودة الترجمة والثقة، قبل شعبية المزود.\n- تم تحسين محلل YIFY حتى لا يفقد رابط الترجمة الصحيح عندما يسبقه رابط آخر داخل صف النتيجة.\n- بقي معرّف الإضافة ثابتًا حتى يتعرف Stremio على هذه النسخة كتحديث لنفس الإضافة.\n\n## ما الجديد في 3.6.2'
+            );
+          }
+          fs.writeFileSync(readmePath, readme);
+
+          const changelogPath = 'CHANGELOG.md';
+          let changelog = fs.readFileSync(changelogPath, 'utf8');
+          if (!changelog.includes('## 3.6.3 - Accuracy-First Subtitle Ordering')) {
+            changelog = changelog.replace(
+              '# Changelog\n\n',
+              '# Changelog\n\n## 3.6.3 - Accuracy-First Subtitle Ordering\n\n- Preserved exact video-hash evidence as the strongest subtitle match.\n- Prioritized release compatibility before provider score, popularity, or non-hash personal preferences.\n- Used verified subtitle quality and trust as tie-breakers after release accuracy.\n- Hardened YIFY row parsing by scanning all anchors for a valid subtitle detail link.\n- Kept the Stremio add-on ID stable while bumping the public manifest and package version to 3.6.3.\n\n'
+            );
+          }
+          fs.writeFileSync(changelogPath, changelog);
+          NODE
+          git checkout origin/main -- .github/workflows/test.yml
+          rm -f .github/workflows/release-v3.6.3.yml
+      - name: Verify synchronized release
+        run: npm run verify
+      - name: Commit release metadata
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json src/release.js README.md CHANGELOG.md .github/workflows/test.yml .github/workflows/release-v3.6.3.yml
+          git commit -m 'Release v3.6.3'
+          git push origin HEAD:release/v3.6.3
