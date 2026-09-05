@@ -2,6 +2,8 @@ function lower(value) {
   return String(value || '').toLowerCase();
 }
 
+const HARD_RELEASE_CONFLICTS = new Set(['season', 'episode', 'edition', 'year', 'fps']);
+
 function evidenceRank(item) {
   const reasons = item?.scoreReasons || [];
   if (item?.sourceType === 'personal-vault-exact-hash' || item?.sourceType === 'version-registry-exact-hash') return 3;
@@ -22,10 +24,45 @@ function verifiedQualityRank(item) {
   return validBonus + Math.max(0, Math.min(100, Number.isFinite(score) ? score : 0));
 }
 
-export function prioritizeAccurateSubtitles(results = []) {
+function releaseText(item) {
+  return item?.releaseName || item?.fileName || item?.name || item?.title || '';
+}
+
+function sourceFamily(value) {
+  const text = lower(value).replace(/[._-]+/g, ' ');
+  if (/\b(?:blu ray|brrip|bdrip|remux)\b/u.test(text)) return 'bluray';
+  if (/\b(?:web dl|web rip|web)\b/u.test(text)) return 'web';
+  if (/\bhdtv\b/u.test(text)) return 'hdtv';
+  if (/\b(?:dvd rip|dvdrip|dvd)\b/u.test(text)) return 'dvd';
+  if (/\b(?:hdcam|cam|telesync|telecine)\b/u.test(text)) return 'cam';
+  return '';
+}
+
+function hardConflictCount(item) {
+  const mismatched = item?.releaseMatch?.mismatched;
+  if (!Array.isArray(mismatched)) return 0;
+  return mismatched.reduce((count, field) => count + (HARD_RELEASE_CONFLICTS.has(field) ? 1 : 0), 0);
+}
+
+function sourceFamilyRank(item, targetFamily) {
+  if (!targetFamily) return 0;
+  const candidateFamily = sourceFamily(releaseText(item));
+  if (!candidateFamily) return 1;
+  return candidateFamily === targetFamily ? 2 : 0;
+}
+
+export function prioritizeAccurateSubtitles(results = [], search = {}) {
+  const targetFamily = sourceFamily(search?.filename || search?.extra?.filename || search?.query || search?.title || '');
+
   return [...results].sort((a, b) => {
     const evidenceDelta = evidenceRank(b) - evidenceRank(a);
     if (evidenceDelta) return evidenceDelta;
+
+    const hardConflictDelta = hardConflictCount(a) - hardConflictCount(b);
+    if (hardConflictDelta) return hardConflictDelta;
+
+    const familyDelta = sourceFamilyRank(b, targetFamily) - sourceFamilyRank(a, targetFamily);
+    if (familyDelta) return familyDelta;
 
     const aMatch = meaningfulReleaseMatch(a);
     const bMatch = meaningfulReleaseMatch(b);
