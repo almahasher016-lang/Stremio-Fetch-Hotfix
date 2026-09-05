@@ -1,0 +1,60 @@
+name: prepare-v364
+
+on:
+  push:
+    branches:
+      - release/v3.6.4
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.12.0'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Bump release metadata
+        shell: bash
+        run: |
+          npm version 3.6.4 --no-git-tag-version
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const releasePath = 'src/release.js';
+          let release = fs.readFileSync(releasePath, 'utf8');
+          release = release.replace("RELEASE_VERSION = '3.6.3'", "RELEASE_VERSION = '3.6.4'");
+          fs.writeFileSync(releasePath, release);
+
+          const readmePath = 'README.md';
+          let readme = fs.readFileSync(readmePath, 'utf8');
+          readme = readme.replace('# m7md Arabic Resolver v3.6.3', '# m7md Arabic Resolver v3.6.4');
+          if (!readme.includes('## ما الجديد في 3.6.4')) {
+            const marker = '## ما الجديد في 3.6.3';
+            const section = '## ما الجديد في 3.6.4\n\n- إصلاح ترتيب الترجمات بحيث تتقدم عائلة مصدر الفيديو المتوافقة زمنيًا (BluRay/Web/HDTV/DVD/CAM) على تطابق الدقة وحده.\n- الاحتفاظ بتطابق Hash والموسم والحلقة والإصدار كأقوى إشارات المطابقة.\n- إضافة اختبار واقعي لحالة House of the Dragon S01E07 لمنع رجوع المشكلة.\n\n';
+            readme = readme.replace(marker, section + marker);
+          }
+          fs.writeFileSync(readmePath, readme);
+
+          const changelogPath = 'CHANGELOG.md';
+          let changelog = fs.readFileSync(changelogPath, 'utf8');
+          if (!changelog.includes('## 3.6.4 - Source-Family Ranking Fix')) {
+            const section = '# Changelog\n\n## 3.6.4 - Source-Family Ranking Fix\n\n- Prioritize the timing/source family (BluRay, WEB, HDTV, DVD, CAM) before resolution-only similarity.\n- Preserve exact hash and hard episode/edition/year/FPS conflicts as stronger evidence.\n- Add a regression based on the real House of the Dragon S01E07 BluRay Remux playback case.\n- Keep the Stremio add-on ID unchanged so clients recognize this as an update.\n\n';
+            changelog = changelog.replace('# Changelog\n\n', section);
+          }
+          fs.writeFileSync(changelogPath, changelog);
+          NODE
+      - run: npm run verify
+      - name: Commit synchronized release
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.json package-lock.json src/release.js README.md CHANGELOG.md
+          git commit -m "Release v3.6.4"
+          git push
