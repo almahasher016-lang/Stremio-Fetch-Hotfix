@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { config } from '../config.js';
 import { acquireRefreshLock, releaseRefreshLock } from '../cache/redis.js';
+import { prioritizeAccurateSubtitles } from '../utils/accuracyFirst.js';
 import * as core from './subtitleServiceCore.js';
 
 const inFlight = new Map();
@@ -30,6 +31,10 @@ function singleflightKey(search) {
   return `cold-search:${createHash('sha256').update(identity).digest('hex')}`;
 }
 
+async function searchCore(search) {
+  return prioritizeAccurateSubtitles(await core.searchSubtitles(search));
+}
+
 async function runDistributed(search, key) {
   let lock = await acquireRefreshLock(key, config.cache.refreshLockTtlSeconds);
   if (!lock.acquired) {
@@ -40,9 +45,9 @@ async function runDistributed(search, key) {
       if (lock.acquired) break;
     }
   }
-  if (!lock.acquired) return core.searchSubtitles(search);
+  if (!lock.acquired) return searchCore(search);
   try {
-    return await core.searchSubtitles(search);
+    return await searchCore(search);
   } finally {
     await releaseRefreshLock(lock);
   }
