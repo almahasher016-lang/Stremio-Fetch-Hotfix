@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.6.3 - Accuracy-First Subtitle Ordering
+
+- Preserved exact video-hash evidence as the strongest subtitle match.
+- Prioritized release compatibility before provider score, popularity, or non-hash personal preferences.
+- Used verified subtitle quality and trust as tie-breakers after release accuracy.
+- Hardened YIFY row parsing by scanning all anchors for a valid subtitle detail link.
+- Kept the Stremio add-on ID stable while bumping the public manifest and package version to 3.6.3.
+
 ## 3.6.2 - Provider Hygiene and Graceful Cache Refresh
 
 - Rejected SubDL rows without a usable download URL and preserved extended Arabic script characters in provider queries.
