@@ -5,6 +5,7 @@ on:
     branches: [fix/final-arabic-lkg-v430]
     paths:
       - 'scripts/prepare-v430.py'
+      - 'scripts/fix-v430-prep.py'
       - '.github/workflows/prepare-v430.yml'
 
 permissions:
@@ -23,6 +24,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: python3 scripts/prepare-v430.py
+      - run: python3 scripts/fix-v430-prep.py
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run verify
       - name: Commit prepared changes
