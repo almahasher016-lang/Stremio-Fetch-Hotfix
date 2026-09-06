@@ -171,7 +171,7 @@ async function filterRejected(search, items) {
   return allowed.filter(Boolean);
 }
 
-const RECOVERY_HARD_CONFLICTS = new Set(['season', 'episode', 'year', 'edition']);
+const RECOVERY_HARD_CONFLICTS = new Set(['season', 'episode', 'year', 'edition', 'fps']);
 
 async function rankArabic(items, search, { relaxed = false } = {}) {
   const allowed = await filterRejected(search, items);
