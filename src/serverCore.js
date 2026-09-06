@@ -26,6 +26,7 @@ import { adminPageHtml } from './ui/adminHtml.js';
 import { homePageHtml } from './ui/homeHtml.js';
 import { securityMiddleware } from './securityBootstrap.js';
 import { getTelemetryStatus } from './telemetry.js';
+import { closePostgres, getDatabaseStatus, pingDatabase } from './storage/postgres.js';
 import { finalizedBodyCompressionFilter, sendHtmlResponse } from './utils/responseSenders.js';
 
 validateRuntimeConfig(config);
@@ -191,6 +192,7 @@ app.get('/api/admin/health', async (req, res, next) => {
       uptime: process.uptime(),
       ai: false,
       telemetry: getTelemetryStatus(),
+      database: { ...getDatabaseStatus(), live: await pingDatabase() },
       referenceSync: config.referenceSync,
       providers: await getProvidersStatus(),
       cache: getCacheStatus(),
@@ -290,7 +292,7 @@ async function shutdown(signal) {
     clearTimeout(forceCloseTimer);
     try {
       await flushBackgroundRefreshes();
-      await Promise.all([flushVaultWrites(), versionRegistry.flush(), closeRedis()]);
+      await Promise.all([flushVaultWrites(), versionRegistry.flush(), closeRedis(), closePostgres()]);
       clearTimeout(forceExitTimer);
       console.log('[Server] closed');
       process.exit(0);

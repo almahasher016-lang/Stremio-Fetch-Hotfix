@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.8.0 - Shared Durable State
+
+- Add private PostgreSQL-backed Personal Vault storage with local JSON migration fallback.
+- Move Version Registry shared state to PostgreSQL transactions with `SELECT ... FOR UPDATE` serialization.
+- Add PostgreSQL lifecycle and admin health visibility.
+- Keep local-file storage as a development fallback when `DATABASE_URL` is absent.
+
 ## 3.7.0 - Enterprise Edge Foundation
 
 - Emit deterministic signed `/assets/encoding/` URLs bound to the application version so identical subtitle recipes reuse a CDN cache key.
