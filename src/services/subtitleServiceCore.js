@@ -348,6 +348,15 @@ export function mergeResults(...groups) {
   return output;
 }
 
+
+export function preserveAccurateCandidates(search, ...groups) {
+  return prioritizeAndLimitAccurateSubtitles(
+    mergeResults(...groups),
+    search,
+    config.providers.topN,
+  );
+}
+
 async function buildFreshSubtitles(input) {
   const initial = await versionRegistry.hydrateIdentity(buildVideoIdentity(input));
   const [registryResults, vaultResults] = await Promise.all([
@@ -423,7 +432,11 @@ function refreshInBackground(key, search) {
       if (!lock.acquired) return;
       const fresh = await buildFreshSubtitles(search);
       if (Array.isArray(fresh) && fresh.length > 0) {
-        await cacheSet(key, fresh, config.cache.searchTtlSeconds, config.cache.staleSeconds);
+        const existing = await cacheGetEntry(key, { allowStale: true, preferShared: true });
+        const preserved = existing?.hit && hasUsableSubtitleResults(existing.value)
+          ? preserveAccurateCandidates(search, fresh, existing.value)
+          : preserveAccurateCandidates(search, fresh);
+        await cacheSet(key, preserved, config.cache.searchTtlSeconds, config.cache.staleSeconds);
       }
     } catch (error) {
       console.warn('[cache:refresh]', error.message);
@@ -469,8 +482,13 @@ export async function searchSubtitles(search) {
 
   const ranked = await buildFreshSubtitles(identity);
   if (hasUsableSubtitleResults(ranked)) {
-    await cacheSet(key, ranked, config.cache.searchTtlSeconds, config.cache.staleSeconds);
-    return ranked;
+    // A degraded provider cycle can return one usable candidate while several better candidates
+    // temporarily disappear. Preserve the prior non-empty pool, then re-rank with current rules.
+    const preserved = cachedGood
+      ? preserveAccurateCandidates(identity, ranked, cachedGood)
+      : preserveAccurateCandidates(identity, ranked);
+    await cacheSet(key, preserved, config.cache.searchTtlSeconds, config.cache.staleSeconds);
+    return preserved;
   }
 
   // Never poison Redis or replica memory with an empty search result. Provider 403/429,

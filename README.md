@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v4.4.0
+# m7md Arabic Resolver v4.4.1
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,12 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 4.4.1
+
+- منع `partial-result poisoning`: تعطل بعض المزودات لا يسمح لقائمة جزئية من نتيجة أو نتيجتين بمسح مجموعة مرشحين أفضل محفوظة سابقًا.
+- دمج نتائج البحث الجديدة مع آخر Candidate Pool صالح ثم إعادة ترتيبها بالقواعد الحالية قبل تحديث Redis.
+- تطبيق الحماية نفسها على background refresh وFinal Arabic LKG مع إبقاء Exact Hash أقوى دليل.
 
 ## ما الجديد في 4.4.0
 

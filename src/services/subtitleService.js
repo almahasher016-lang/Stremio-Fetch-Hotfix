@@ -51,25 +51,42 @@ function usable(results) {
 }
 
 async function readAvailabilityLkg(search) {
-  let broadFallback = null;
+  const specific = [];
+  const catalog = [];
+  let allStale = true;
   for (const spec of availabilityKeySpecs(search)) {
     const cached = await cacheGetEntry(spec.key, { allowStale: true, preferShared: true });
     if (!cached?.hit || !usable(cached.value)) continue;
-    const hit = { ...cached, kind: spec.kind };
-    if (spec.kind === 'catalog') broadFallback ||= hit;
-    else return hit;
+    allStale = allStale && Boolean(cached.stale);
+    if (spec.kind === 'catalog') catalog.push(cached.value);
+    else specific.push(cached.value);
   }
-  return broadFallback;
+  const groups = specific.length ? specific : catalog;
+  if (!groups.length) return null;
+  const value = core.preserveAccurateCandidates(search, ...groups);
+  return usable(value) ? {
+    hit: true,
+    stale: allStale,
+    kind: specific.length ? 'specific' : 'catalog',
+    value,
+  } : null;
 }
 
 async function writeAvailabilityLkg(search, results) {
   if (!usable(results)) return;
-  const writes = availabilityKeySpecs(search).map(spec => cacheSet(
-    spec.key,
-    results,
-    config.cache.availabilityTtlSeconds,
-    config.cache.availabilityStaleSeconds,
-  ));
+  const writes = availabilityKeySpecs(search).map(async spec => {
+    const current = await cacheGetEntry(spec.key, { allowStale: true, preferShared: true });
+    const preserved = current?.hit && usable(current.value)
+      ? core.preserveAccurateCandidates(search, results, current.value)
+      : core.preserveAccurateCandidates(search, results);
+    if (!usable(preserved)) return;
+    await cacheSet(
+      spec.key,
+      preserved,
+      config.cache.availabilityTtlSeconds,
+      config.cache.availabilityStaleSeconds,
+    );
+  });
   await Promise.allSettled(writes);
 }
 

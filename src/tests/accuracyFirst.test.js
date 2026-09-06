@@ -230,3 +230,47 @@ test('hard episode conflicts still beat exact-hash timing-reference similarity',
   ], { filename: 'Show.S01E07.1080p.BluRay-GRP.mkv' });
   assert.equal(ranked[0].id, 'right-episode');
 });
+
+
+test('partial provider results cannot erase a richer timing-compatible candidate pool', async () => {
+  const { preserveAccurateCandidates } = await import('../services/subtitleServiceCore.js');
+  const search = { filename: 'Show.S01E07.2160p.BluRay.REMUX-GRP.mkv' };
+  const previous = [
+    {
+      id: 'bluray-good', provider: 'opensubtitles', releaseName: 'Show.S01E07.720p.BluRay.x264-BLOODY', score: 850,
+      releaseMatch: releaseMatch({ tier: 2, priority: 19000, mismatched: ['quality', 'releaseGroup'] }), scoreReasons: [],
+    },
+    {
+      id: 'web-old', provider: 'opensubtitles', releaseName: 'Show.S01E07.2160p.WEB-DL-GRP', score: 1400,
+      releaseMatch: releaseMatch({ tier: 2, priority: 21000, mismatched: ['source'] }), scoreReasons: [],
+    },
+    {
+      id: 'web-alt', provider: 'subdl', releaseName: 'Show.S01E07.1080p.WEBRip-GRP2', score: 900,
+      releaseMatch: releaseMatch({ tier: 1, priority: 12000, mismatched: ['source', 'quality'] }), scoreReasons: [],
+    },
+  ];
+  const degradedFresh = [{
+    id: 'web-partial', provider: 'opensubtitles', releaseName: 'Show.S01E07.2160p.WEB-DL-PARTIAL', score: 1800,
+    releaseMatch: releaseMatch({ tier: 2, priority: 22000, mismatched: ['source'] }), scoreReasons: [],
+  }];
+  const preserved = preserveAccurateCandidates(search, degradedFresh, previous);
+  assert.ok(preserved.some(item => item.id === 'bluray-good'));
+  assert.equal(preserved[0].id, 'bluray-good');
+  assert.ok(preserved.length >= previous.length);
+});
+
+test('a newly discovered exact hash still outranks preserved older candidates', async () => {
+  const { preserveAccurateCandidates } = await import('../services/subtitleServiceCore.js');
+  const search = { filename: 'Movie.2026.2160p.BluRay.REMUX-GRP.mkv', videoHash: 'abcd1234' };
+  const previous = [{
+    id: 'old-family', provider: 'subdl', releaseName: 'Movie.2026.1080p.BluRay-GRP', score: 1500,
+    releaseMatch: releaseMatch({ tier: 4, priority: 43000 }), scoreReasons: [],
+  }];
+  const fresh = [{
+    id: 'new-hash', provider: 'opensubtitles', releaseName: 'Movie.2026.1080p.WEB-DL-OTHER', score: 400,
+    releaseMatch: releaseMatch({ tier: 1, priority: 9000, mismatched: ['source'] }),
+    scoreReasons: [{ reason: 'exact-video-hash-match', value: 1800 }],
+  }];
+  const preserved = preserveAccurateCandidates(search, fresh, previous);
+  assert.equal(preserved[0].id, 'new-hash');
+});
