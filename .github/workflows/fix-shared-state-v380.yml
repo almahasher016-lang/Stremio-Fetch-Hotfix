@@ -1,0 +1,34 @@
+name: fix-shared-state-v380
+
+on:
+  push:
+    branches: [feat/shared-durable-state-v380]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - name: Preserve IMDb input compatibility
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/services/vaultService.js')
+          text = p.read_text()
+          old = "imdbId: cleanImdb(input.imdbId || input.query) || null,"
+          new = "imdbId: cleanImdb(input.imdbId || (requireId ? null : input.id) || input.query) || null,"
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one vault IMDb anchor, found {text.count(old)}')
+          p.write_text(text.replace(old, new, 1))
+          PY
+      - name: Commit fix
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/services/vaultService.js
+          git commit -m "Preserve Vault IMDb input compatibility"
+          git push
