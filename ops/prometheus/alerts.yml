@@ -1,0 +1,28 @@
+groups:
+  - name: m7md-enterprise-slo
+    rules:
+      - alert: M7mdHttpP95High
+        expr: m7md_http_request_duration_ms_p95 > 5000
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "HTTP p95 exceeds 5s" }
+      - alert: M7mdHttpErrorBudgetBurn
+        expr: m7md_http_5xx_ratio > 0.02
+        for: 5m
+        labels: { severity: critical }
+        annotations: { summary: "HTTP 5xx ratio exceeds 2%" }
+      - alert: M7mdEventLoopDelayHigh
+        expr: m7md_event_loop_delay_ms_p99 > 150
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Node.js event-loop p99 exceeds 150ms" }
+      - alert: M7mdProviderFailureRateHigh
+        expr: rate(m7md_provider_fail_total[5m]) / clamp_min(rate(m7md_provider_success_total[5m]) + rate(m7md_provider_fail_total[5m]), 0.001) > 0.30
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Provider failure rate exceeds 30%" }
+      - alert: M7mdAccuracyPreflightUnavailable
+        expr: rate(m7md_accuracy_preflight_total{state="unavailable"}[10m]) / clamp_min(sum(rate(m7md_accuracy_preflight_total[10m])), 0.001) > 0.50
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Accuracy preflight unavailable for more than half of inspected candidates" }

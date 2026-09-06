@@ -399,6 +399,43 @@ function analyzeProcessedSubtitle(text, context) {
   });
 }
 
+function preflightSourceForItem(item = {}) {
+  const provider = item.originalProvider || item.provider || 'unknown';
+  const providerId = item.providerId || item.fileId || item.id;
+  if (provider === 'vault') {
+    return {
+      kind: 'vault',
+      vaultId: validVaultId(providerId),
+      provider: 'vault',
+      name: item.name || item.releaseName || item.fileName,
+      candidate: item,
+    };
+  }
+  if (provider === 'opensubtitles' || provider === 'subsource') {
+    const id = tokenText(providerId, 128);
+    const valid = provider === 'opensubtitles'
+      ? /^[1-9]\d{0,19}$/.test(id)
+      : /^[A-Za-z0-9_-]{1,128}$/.test(id);
+    if (!valid) throw httpError(400, 'Invalid provider candidate for preflight');
+    return {
+      kind: 'provider',
+      provider,
+      providerId: id,
+      name: item.name || item.releaseName || item.fileName,
+      candidate: item,
+    };
+  }
+  const url = item.download || item.url;
+  if (!url || String(url).startsWith('/')) throw httpError(400, 'Candidate has no directly resolvable subtitle source');
+  return {
+    kind: 'remote',
+    url: assertSafeUrl(url),
+    provider,
+    name: item.name || item.releaseName || item.fileName,
+    candidate: item,
+  };
+}
+
 async function defaultProviderLinkResolver(source) {
   return source.provider === 'opensubtitles'
     ? getOpenSubtitlesDownloadLink(source.providerId)
@@ -416,6 +453,36 @@ async function fetchSourceBuffer(source, fetcher, providerLinkResolver) {
     return fetcher(remoteUrl, { provider: source.provider });
   }
   return fetcher(source.url, { provider: source.provider });
+}
+
+export async function preflightSubtitleCandidate(item, context = {}, {
+  fetcher = fetchRemoteSubtitleBuffer,
+  providerLinkResolver = defaultProviderLinkResolver,
+  signal,
+} = {}) {
+  const source = preflightSourceForItem(item);
+  const boundFetcher = (url, options = {}) => fetcher(url, { ...options, signal });
+  const buffer = await fetchSourceBuffer(source, boundFetcher, providerLinkResolver);
+  const extracted = await extractSubtitlePayload(buffer, {
+    maxDecompressedBytes: config.encodingProxy.maxDecompressedBytes,
+    maxArchiveEntries: config.encodingProxy.maxArchiveEntries,
+    sourceName: source.name,
+  });
+  const processed = processSubtitleBuffer(extracted.buffer, {
+    stripSdh: config.encodingProxy.stripSdhDefault,
+    stripMusicNotes: config.encodingProxy.stripMusicNotes,
+    frameRate: context?.fps || context?.extra?.fps,
+    sourceName: extracted.entryName || source.name,
+  });
+  assertValidProcessedSubtitle(processed.text);
+  const quality = analyzeProcessedSubtitle(processed.text, context);
+  return {
+    quality,
+    encoding: processed.encoding,
+    format: processed.format,
+    archive: extracted.archive || null,
+    archiveEntry: extracted.entryName || null,
+  };
 }
 
 async function loadProcessedSource(source, payload, fetcher, providerLinkResolver) {

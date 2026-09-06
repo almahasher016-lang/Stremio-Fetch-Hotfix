@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.0.0 - Enterprise Accuracy & SRE
+
+- Add bounded, Redis-cached content preflight for top-ranked subtitle candidates.
+- Reject only definitive content failures before Stremio ordering; preserve deterministic hash/release precedence for soft quality issues.
+- Add structured ranking explainability to admin preview and `/api/explain`.
+- Add runtime SLO evaluation plus preflight/runtime Prometheus metrics.
+- Add deployable Prometheus alert rules and Grafana dashboard definitions.
+- Preserve shared PostgreSQL/Redis state and horizontal Railway scaling.
+
 ## 3.9.0 - Provider Resilience 2.0
 
 - Add Redis-backed YIFY Last-Known-Good parsed-result fallback for live scrape failures and anti-bot challenges.

@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v3.9.0
+# m7md Arabic Resolver v4.0.0
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,15 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 4.0.0
+
+- Accuracy Preflight يفحص محتوى أفضل 3 مرشحين فعليًا قبل العرض، مع مهلة قصيرة وكاش Redis مشترك.
+- الإقصاء الصلب مقتصر على فشل محتوى مؤكد مثل ملف غير عربي أو بلا cues صالحة؛ Hash/Release evidence لا يُهزم بمجرد درجة جودة أقل.
+- Explainability منظّم يوضح لماذا جاءت كل ترجمة في ترتيبها عبر `/api/explain` وواجهة preview.
+- SLO runtime evaluator عبر `/api/admin/slo` مع HTTP p95/p99، 5xx ratio، Event Loop، provider health، وpreflight availability.
+- Prometheus alert rules وGrafana dashboard جاهزان تحت `ops/`، مع metrics جديدة للـAccuracy Preflight.
+- يستمر التشغيل على PostgreSQL + Redis و2 Railway replicas مع نفس Addon ID.
 
 ## ما الجديد في 3.9.0
 

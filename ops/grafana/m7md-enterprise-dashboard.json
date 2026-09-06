@@ -1,0 +1,101 @@
+{
+  "title": "m7md Arabic Resolver Enterprise",
+  "uid": "m7md-enterprise",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "HTTP p95",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "m7md_http_request_duration_ms_p95",
+          "legendFormat": "p95 ms"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "HTTP p99",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "m7md_http_request_duration_ms_p99",
+          "legendFormat": "p99 ms"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "HTTP 5xx ratio",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "m7md_http_5xx_ratio",
+          "legendFormat": "5xx ratio"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Event loop p99",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "m7md_event_loop_delay_ms_p99",
+          "legendFormat": "event loop p99"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Cache hit ratio",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "m7md_cache_hit_ratio",
+          "legendFormat": "cache hit ratio"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Provider failures",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(m7md_provider_fail_total[5m])",
+          "legendFormat": "{{provider}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Accuracy preflight",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "rate(m7md_accuracy_preflight_total[5m])",
+          "legendFormat": "{{state}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Accuracy preflight p95",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "m7md_accuracy_preflight_duration_ms_p95",
+          "legendFormat": "p95 ms"
+        }
+      ]
+    }
+  ]
+}

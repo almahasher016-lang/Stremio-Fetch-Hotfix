@@ -21,6 +21,7 @@ import { resolverHtml } from '../../ui/resolverHtml.js';
 import { vaultPageHtml } from '../../ui/vaultHtml.js';
 import { assertAdminAuth, requireAdminAuth } from '../middleware/adminAuth.js';
 import { normalizeStremioSubtitleResponse } from '../../utils/stremioResponseCompat.js';
+import { explainSubtitleRanking } from '../../utils/explainRanking.js';
 import {
   sendHtmlResponse,
   sendSrtResponse,
@@ -57,6 +58,7 @@ function toPublicResults(results, baseUrl) {
 }
 
 export function toPublicPreview(results, baseUrl, search = {}) {
+  const explanations = explainSubtitleRanking(results, search);
   return results.slice(0, config.ui.previewMaxItems).map((item, index) => {
     const subtitle = toStremioSubtitles([item], baseUrl, search)[0];
     const url = subtitle?.url || null;
@@ -79,7 +81,9 @@ export function toPublicPreview(results, baseUrl, search = {}) {
       searchReason: item.searchReason,
       url,
       previewUrl,
-      quality: item.quality || null,
+      quality: item.accuracyPreflight?.quality || item.quality || null,
+      accuracyPreflight: item.accuracyPreflight || null,
+      explanation: explanations[index] || null,
       asset: {
         provider: item.originalProvider || item.provider,
         originalProvider: item.originalProvider || '',
@@ -246,6 +250,34 @@ router.get('/api/preview', async (req, res, next) => {
     res.json({ success: true, ms: Date.now() - started, count: results.length, results: toPublicPreview(results, getBaseUrl(req), search) });
   } catch (err) {
     next(err);
+  }
+});
+
+router.get('/api/explain', async (req, res, next) => {
+  try {
+    assertAdminAuth(req);
+    const query = String(req.query.q || '').trim();
+    validateQuery(query);
+    const extra = mergeExtras({}, req.query);
+    const search = {
+      query,
+      type: req.query.type || 'movie',
+      id: req.query.id || query,
+      imdbId: req.query.imdbId || req.query.imdb_id || null,
+      tmdbId: req.query.tmdbId || req.query.tmdb_id || null,
+      season: Number(req.query.season || 0) || null,
+      episode: Number(req.query.episode || 0) || null,
+      filename: req.query.filename || '',
+      videoHash: req.query.videoHash || req.query.hash || null,
+      videoSize: req.query.videoSize || req.query.size || null,
+      durationMs: req.query.durationMs || req.query.duration || null,
+      extra,
+    };
+    const results = await searchSubtitles(search);
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.json({ success: true, count: results.length, explanations: explainSubtitleRanking(results, search) });
+  } catch (err) {
+    return next(err);
   }
 });
 

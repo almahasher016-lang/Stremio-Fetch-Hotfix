@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { config } from '../config.js';
 import { acquireRefreshLock, releaseRefreshLock } from '../cache/redis.js';
-import { prioritizeAccurateSubtitles } from '../utils/accuracyFirst.js';
+import { applyAccuracyPreflight } from './accuracyPreflight.js';
 import * as core from './subtitleServiceCore.js';
 
 const inFlight = new Map();
@@ -32,7 +32,7 @@ function singleflightKey(search) {
 }
 
 async function searchCore(search) {
-  return prioritizeAccurateSubtitles(await core.searchSubtitles(search), search);
+  return applyAccuracyPreflight(await core.searchSubtitles(search), search);
 }
 
 async function runDistributed(search, key) {
