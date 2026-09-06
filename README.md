@@ -201,3 +201,8 @@ npm run probe:podnapisi
 ```
 
 بوابات الدمج المطلوبة: ESLint، TypeScript، الاختبارات والتغطية، `npm audit --omit=dev --audit-level=high`، CodeQL، بناء Docker، وTrivy.
+
+
+### v4.1.0
+
+Zero-result recovery now separates strong-ID and fallback searches, performs a safe Arabic relaxed tier only when strict search is empty, keeps machine translations excluded, rejects hard identity conflicts, and uses measured content quality from the top five preflight candidates in final ordering.

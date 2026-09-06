@@ -143,6 +143,9 @@ export function buildConfig(env = process.env) {
       maxProvidersPerStage: toInt(get('RESOLVER_MAX_PROVIDERS_PER_STAGE'), 4, 1, 10),
       maxReferenceProviders: toInt(get('RESOLVER_MAX_REFERENCE_PROVIDERS'), 2, 1, 10),
       upgradeMinDelta: toInt(get('RESOLVER_UPGRADE_MIN_DELTA'), 180, 1, 5000),
+      recoveryEnabled: toBool(get('RESOLVER_RECOVERY_ENABLED'), true),
+      recoveryMinRankScore: toInt(get('RESOLVER_RECOVERY_MIN_RANK_SCORE'), -250, -2000, 3000),
+      recoveryMaxAliases: toInt(get('RESOLVER_RECOVERY_MAX_ALIASES'), 2, 0, 5),
       metadata: {
         enabled: toBool(get('RESOLVER_METADATA_ENABLED'), true),
         baseUrl: cleanBaseUrl(get('RESOLVER_METADATA_BASE_URL', 'https://v3-cinemeta.strem.io/meta')),
@@ -161,7 +164,7 @@ export function buildConfig(env = process.env) {
     },
     accuracyPreflight: {
       enabled: toBool(get('ACCURACY_PREFLIGHT_ENABLED'), true),
-      topN: toInt(get('ACCURACY_PREFLIGHT_TOP_N'), 3, 0, 5),
+      topN: toInt(get('ACCURACY_PREFLIGHT_TOP_N'), 5, 0, 5),
       timeoutMs: toInt(get('ACCURACY_PREFLIGHT_TIMEOUT_MS'), 1800, 300, 8000),
       cacheTtlSeconds: toInt(get('ACCURACY_PREFLIGHT_CACHE_TTL'), 21600, 300, 604800),
     },

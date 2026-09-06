@@ -109,7 +109,15 @@ export async function applyAccuracyPreflight(results = [], search = {}, {
 
   const decorated = ranked.map(item => {
     const outcome = inspected.get(candidateKey(item, search));
-    return outcome ? { ...item, accuracyPreflight: outcome } : item;
+    if (!outcome) return item;
+    const measuredQuality = outcome.quality
+      ? { ...(item.quality || {}), ...outcome.quality }
+      : item.quality;
+    return {
+      ...item,
+      ...(measuredQuality ? { quality: measuredQuality, qualityScore: measuredQuality.score } : {}),
+      accuracyPreflight: outcome,
+    };
   });
 
   // Only hard content failures are removed. Slow/unavailable preflight never hides a subtitle.
