@@ -35,7 +35,6 @@ test('does not let an unconfigured SubSource consume the YIFY fallback slot', ()
   assert.deepEqual(metadataStage.providers, ['opensubtitles', 'subdl', 'yify']);
 });
 
-
 test('exact-hash stage uses hash identity without weaker filename or metadata constraints', () => {
   const plan = createSearchPlan({
     type: 'series',
@@ -54,4 +53,6 @@ test('exact-hash stage uses hash identity without weaker filename or metadata co
   assert.equal(item.filename, '');
   assert.equal(item.imdbId, null);
   assert.equal(item.tmdbId, null);
+  assert.equal(item.season, null);
+  assert.equal(item.episode, null);
 });
