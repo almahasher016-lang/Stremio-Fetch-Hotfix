@@ -19,7 +19,9 @@ jobs:
       - name: Bump package version
         run: npm version 4.0.0 --no-git-tag-version
       - name: Apply enterprise v4 changes
-        run: python3 scripts/prepare-enterprise-v400.py
+        run: |
+          sed -i "s#'src/config.js'#'src/configCore.js'#" scripts/prepare-enterprise-v400.py
+          python3 scripts/prepare-enterprise-v400.py
       - name: Install cleanly
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify
