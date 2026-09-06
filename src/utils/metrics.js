@@ -30,6 +30,14 @@ const refreshLockStats = {
   fallbackLocal: 0,
 };
 
+const accuracyPreflightStats = {
+  valid: 0,
+  degraded: 0,
+  rejected: 0,
+  unavailable: 0,
+  recentMs: [],
+};
+
 function providerState(name) {
   if (!providers.has(name)) {
     providers.set(name, {
@@ -114,7 +122,7 @@ export function recordHttpRequest(route, statusCode, ms) {
   const duration = Math.max(0, Number(ms) || 0);
   const key = `${safeRoute}|${statusClass}`;
   httpStats.byRouteStatus.set(key, (httpStats.byRouteStatus.get(key) || 0) + 1);
-  httpStats.recent.push(duration);
+  httpStats.recent.push({ ms: duration, statusCode: Number(statusCode || 0), route: safeRoute });
   while (httpStats.recent.length > Math.max(100, config.metrics.windowSize * 4)) httpStats.recent.shift();
 }
 
@@ -147,6 +155,51 @@ export function getCacheMetrics() {
     ...cacheStats,
     hitRatio: lookups ? Number(((cacheStats.hits + cacheStats.staleHits) / lookups).toFixed(4)) : null,
     refreshLocks: { ...refreshLockStats },
+  };
+}
+
+export function recordAccuracyPreflight(state, ms = 0) {
+  const normalized = ['valid', 'degraded', 'rejected', 'unavailable'].includes(state) ? state : 'unavailable';
+  accuracyPreflightStats[normalized] += 1;
+  accuracyPreflightStats.recentMs.push(Math.max(0, Number(ms) || 0));
+  while (accuracyPreflightStats.recentMs.length > config.metrics.windowSize) accuracyPreflightStats.recentMs.shift();
+}
+
+export function getAccuracyPreflightMetrics() {
+  const total = accuracyPreflightStats.valid
+    + accuracyPreflightStats.degraded
+    + accuracyPreflightStats.rejected
+    + accuracyPreflightStats.unavailable;
+  return {
+    valid: accuracyPreflightStats.valid,
+    degraded: accuracyPreflightStats.degraded,
+    rejected: accuracyPreflightStats.rejected,
+    unavailable: accuracyPreflightStats.unavailable,
+    total,
+    p95Ms: percentile(accuracyPreflightStats.recentMs, 0.95),
+  };
+}
+
+export function getRuntimeMetrics() {
+  const recent = httpStats.recent;
+  const durations = recent.map(item => item.ms);
+  const errors5xx = recent.filter(item => item.statusCode >= 500 && item.statusCode < 600).length;
+  const eventLoopMeanMs = Number.isFinite(eventLoopDelay.mean) ? eventLoopDelay.mean / 1e6 : 0;
+  const p95 = eventLoopDelay.percentile(95);
+  const p99 = eventLoopDelay.percentile(99);
+  return {
+    http: {
+      sampleCount: recent.length,
+      p50Ms: percentile(durations, 0.50),
+      p95Ms: percentile(durations, 0.95),
+      p99Ms: percentile(durations, 0.99),
+      error5xxRate: recent.length ? Number((errors5xx / recent.length).toFixed(4)) : 0,
+    },
+    eventLoop: {
+      meanMs: Number(eventLoopMeanMs.toFixed(3)),
+      p95Ms: Number.isFinite(p95) ? Number((p95 / 1e6).toFixed(3)) : 0,
+      p99Ms: Number.isFinite(p99) ? Number((p99 / 1e6).toFixed(3)) : 0,
+    },
   };
 }
 
@@ -187,14 +240,19 @@ export function prometheusMetrics() {
     const [route, status] = key.split('|');
     lines.push(`m7md_http_requests_total{route="${route}",status="${status}"} ${count}`);
   }
-  lines.push(`m7md_http_request_duration_ms_p50 ${percentile(httpStats.recent, 0.50)}`);
-  lines.push(`m7md_http_request_duration_ms_p95 ${percentile(httpStats.recent, 0.95)}`);
-  lines.push(`m7md_http_request_duration_ms_p99 ${percentile(httpStats.recent, 0.99)}`);
-  const eventLoopMeanMs = Number.isFinite(eventLoopDelay.mean) ? eventLoopDelay.mean / 1e6 : 0;
-  const p95 = eventLoopDelay.percentile(95);
-  const p99 = eventLoopDelay.percentile(99);
-  lines.push(`m7md_event_loop_delay_ms_mean ${eventLoopMeanMs}`);
-  lines.push(`m7md_event_loop_delay_ms_p95 ${Number.isFinite(p95) ? p95 / 1e6 : 0}`);
-  lines.push(`m7md_event_loop_delay_ms_p99 ${Number.isFinite(p99) ? p99 / 1e6 : 0}`);
+  const runtime = getRuntimeMetrics();
+  lines.push(`m7md_http_request_duration_ms_p50 ${runtime.http.p50Ms}`);
+  lines.push(`m7md_http_request_duration_ms_p95 ${runtime.http.p95Ms}`);
+  lines.push(`m7md_http_request_duration_ms_p99 ${runtime.http.p99Ms}`);
+  lines.push(`m7md_http_5xx_ratio ${runtime.http.error5xxRate}`);
+  lines.push(`m7md_event_loop_delay_ms_mean ${runtime.eventLoop.meanMs}`);
+  lines.push(`m7md_event_loop_delay_ms_p95 ${runtime.eventLoop.p95Ms}`);
+  lines.push(`m7md_event_loop_delay_ms_p99 ${runtime.eventLoop.p99Ms}`);
+  const preflight = getAccuracyPreflightMetrics();
+  lines.push(`m7md_accuracy_preflight_total{state="valid"} ${preflight.valid}`);
+  lines.push(`m7md_accuracy_preflight_total{state="degraded"} ${preflight.degraded}`);
+  lines.push(`m7md_accuracy_preflight_total{state="rejected"} ${preflight.rejected}`);
+  lines.push(`m7md_accuracy_preflight_total{state="unavailable"} ${preflight.unavailable}`);
+  lines.push(`m7md_accuracy_preflight_duration_ms_p95 ${preflight.p95Ms}`);
   return `${lines.join('\n')}\n`;
 }

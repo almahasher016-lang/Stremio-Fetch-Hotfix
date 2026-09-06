@@ -19,8 +19,9 @@ function meaningfulReleaseMatch(item) {
 }
 
 function verifiedQualityRank(item) {
-  const validBonus = item?.quality?.valid === true ? 1000 : 0;
-  const score = Number(item?.quality?.score ?? item?.qualityScore ?? 0);
+  const quality = item?.accuracyPreflight?.quality || item?.quality || null;
+  const validBonus = quality?.valid === true ? 1000 : 0;
+  const score = Number(quality?.score ?? item?.qualityScore ?? 0);
   return validBonus + Math.max(0, Math.min(100, Number.isFinite(score) ? score : 0));
 }
 

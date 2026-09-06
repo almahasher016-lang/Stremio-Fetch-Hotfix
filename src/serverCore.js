@@ -17,7 +17,8 @@ import {
 import { clearCache, closeRedis, getCacheStatus } from './cache/redis.js';
 import { createManifest, getBaseUrl } from './utils/stremio.js';
 import { config, validateRuntimeConfig } from './config.js';
-import { prometheusMetrics, recordHttpRequest } from './utils/metrics.js';
+import { getAccuracyPreflightMetrics, getRuntimeMetrics, prometheusMetrics, recordHttpRequest } from './utils/metrics.js';
+import { getSloStatus } from './utils/slo.js';
 import { redactRequestUrl } from './utils/logging.js';
 import { flushVaultWrites } from './services/vaultService.js';
 import { versionRegistry } from './services/versionRegistryService.js';
@@ -192,6 +193,7 @@ app.get('/api/admin/health', async (req, res, next) => {
       uptime: process.uptime(),
       ai: false,
       telemetry: getTelemetryStatus(),
+      slo: getSloStatus(),
       database: { ...getDatabaseStatus(), live: await pingDatabase() },
       referenceSync: config.referenceSync,
       providers: await getProvidersStatus(),
@@ -206,6 +208,16 @@ app.get('/api/admin/health', async (req, res, next) => {
     });
   } catch (error) {
     next(error);
+  }
+});
+
+app.get('/api/admin/slo', (req, res, next) => {
+  try {
+    assertAdminAuth(req);
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.json(getSloStatus());
+  } catch (error) {
+    return next(error);
   }
 });
 
@@ -253,6 +265,9 @@ app.get('/metrics', (req, res, next) => {
       cache: getCacheStatus(),
       breakers: getBreakersStatus(),
       limiters: getProviderLimitersStatus(),
+      runtime: getRuntimeMetrics(),
+      accuracyPreflight: getAccuracyPreflightMetrics(),
+      slo: getSloStatus(),
     });
   } catch (error) {
     return next(error);
