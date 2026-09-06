@@ -54,12 +54,9 @@ async function createSchema(target) {
 
 export async function ensureEnterpriseSchema(client = null) {
   if (!DATABASE_URL) return false;
-  if (client) {
-    await createSchema(client);
-    return true;
-  }
   if (!schemaPromise) {
-    schemaPromise = createSchema(getPool()).catch(error => {
+    const target = client || getPool();
+    schemaPromise = createSchema(target).catch(error => {
       schemaPromise = null;
       lastError = String(error?.message || error).slice(0, 240);
       throw error;
@@ -87,9 +84,9 @@ export async function queryDatabase(text, params = []) {
 export async function withDatabaseTransaction(callback) {
   const target = getPool();
   if (!target) throw new Error('DATABASE_URL is not configured');
+  await ensureEnterpriseSchema();
   const client = await target.connect();
   try {
-    await ensureEnterpriseSchema(client);
     await client.query('BEGIN');
     const result = await callback(client);
     await client.query('COMMIT');
