@@ -1,3 +1,11 @@
+## 4.1.0 - 2026-09-06
+
+- Eliminate avoidable empty subtitle lists with deterministic strict-to-relaxed Arabic recovery.
+- Stop over-constraining provider queries by separating ID-only, release-only, title-only, and alias search shapes.
+- Allow OpenSubtitles HI/SDH candidates only when strict search returns nothing; machine translations remain excluded.
+- Feed measured Accuracy Preflight content quality back into final ordering and inspect the top five candidates by default.
+- Preserve hard season, episode, year, and edition conflict rejection during recovery.
+
 # Changelog
 
 ## 4.0.0 - Enterprise Accuracy & SRE

@@ -73,7 +73,11 @@ export function buildOpenSubtitlesRequest(variant) {
   addParam(params, 'episode_number', variant.episode);
   addParam(params, 'moviehash', variant.videoHash || variant.hash);
   addParam(params, 'moviebytesize', variant.videoSize);
-  addParam(params, 'hearing_impaired', config.providers.excludeHearingImpaired ? 'exclude' : 'include');
+  addParam(
+    params,
+    'hearing_impaired',
+    variant.relaxedFallback ? 'include' : (config.providers.excludeHearingImpaired ? 'exclude' : 'include'),
+  );
   if (config.openSubtitles.trustedOnly) addParam(params, 'trusted_sources', 'only');
 
   return {

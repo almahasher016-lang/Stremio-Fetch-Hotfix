@@ -38,6 +38,8 @@ export function createSearchPlan(search = {}, providerDefinitions = {}, enabledN
   maxProvidersPerStage = 3,
   includeHash = true,
   references = false,
+  relaxed = false,
+  maxAliases = 2,
 } = {}) {
   const identity = buildVideoIdentity(search);
   const providerOptions = {
@@ -64,7 +66,13 @@ export function createSearchPlan(search = {}, providerDefinitions = {}, enabledN
       stages.push({
         name: 'exact-metadata',
         providers,
-        variants: [variant('exact-metadata', identity, { videoHash: null, videoSize: null })],
+        variants: [variant('exact-metadata', identity, {
+          query: '',
+          filename: '',
+          videoHash: null,
+          videoSize: null,
+          relaxedFallback: relaxed,
+        })],
       });
     }
   }
@@ -77,10 +85,11 @@ export function createSearchPlan(search = {}, providerDefinitions = {}, enabledN
         providers,
         variants: [variant('release-fallback', identity, {
           query: identity.filename,
-          imdbId: identity.imdbId,
-          tmdbId: identity.tmdbId,
+          imdbId: null,
+          tmdbId: null,
           videoHash: null,
           videoSize: null,
+          relaxedFallback: relaxed,
         })],
       });
     }
@@ -95,9 +104,38 @@ export function createSearchPlan(search = {}, providerDefinitions = {}, enabledN
         variants: [variant('title-fallback', identity, {
           query: identity.title || identity.query,
           filename: '',
+          imdbId: null,
+          tmdbId: null,
           videoHash: null,
           videoSize: null,
+          relaxedFallback: relaxed,
         })],
+      });
+    }
+  }
+
+  const canonical = String(identity.title || identity.query || '').trim().toLowerCase();
+  const aliases = [...new Set((identity.aliases || [])
+    .map(value => String(value || '').trim())
+    .filter(Boolean))]
+    .filter(value => value.toLowerCase() !== canonical)
+    .slice(0, Math.max(0, maxAliases));
+  if (aliases.length) {
+    const providers = configuredProviders(providerDefinitions, enabledNames, language, identity.type, providerOptions);
+    if (providers.length) {
+      stages.push({
+        name: 'alias-fallback',
+        providers,
+        variants: aliases.map(alias => variant('alias-fallback', identity, {
+          query: alias,
+          title: alias,
+          filename: '',
+          imdbId: null,
+          tmdbId: null,
+          videoHash: null,
+          videoSize: null,
+          relaxedFallback: relaxed,
+        })),
       });
     }
   }

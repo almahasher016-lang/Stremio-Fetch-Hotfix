@@ -171,20 +171,30 @@ async function filterRejected(search, items) {
   return allowed.filter(Boolean);
 }
 
-async function rankArabic(items, search) {
+const RECOVERY_HARD_CONFLICTS = new Set(['season', 'episode', 'year', 'edition']);
+
+async function rankArabic(items, search, { relaxed = false } = {}) {
   const allowed = await filterRejected(search, items);
-  return rankAndFilter(allowed, search, {
+  const ranked = rankAndFilter(allowed, search, {
     outputArabicOnly: config.providers.outputArabicOnly,
-    excludeHearingImpaired: config.providers.excludeHearingImpaired,
+    excludeHearingImpaired: relaxed ? false : config.providers.excludeHearingImpaired,
     excludeMachineTranslated: config.providers.excludeMachineTranslated,
-    strictQualityFilters: config.providers.strictQualityFilters,
+    strictQualityFilters: relaxed ? false : config.providers.strictQualityFilters,
     maxReturnedPerRelease: config.ranking.maxReturnedPerRelease,
-    minRankScore: config.ranking.minRankScore,
-  }).slice(0, config.providers.topN);
+    minRankScore: relaxed ? config.resolver.recoveryMinRankScore : config.ranking.minRankScore,
+  });
+  const safe = relaxed
+    ? ranked.filter(item => !(item.releaseMatch?.mismatched || []).some(field => RECOVERY_HARD_CONFLICTS.has(field)))
+    : ranked;
+  return safe.slice(0, config.providers.topN).map(item => (relaxed ? { ...item, recoveryTier: 'relaxed-arabic' } : item));
 }
 
 async function finalizeArabic(search, ...groups) {
   return rankArabic(mergeResults(...groups), search);
+}
+
+async function finalizeArabicRelaxed(search, ...groups) {
+  return rankArabic(mergeResults(...groups), search, { relaxed: true });
 }
 
 function referenceCompatibility(arabic, reference, search) {
@@ -278,6 +288,7 @@ async function buildFreshSubtitles(input) {
   const hashPlan = createSearchPlan(initial, providerDefinitions, config.providers.enabled, {
     language: 'ar',
     maxProvidersPerStage: config.resolver.maxProvidersPerStage,
+    maxAliases: config.resolver.recoveryMaxAliases,
   }).filter(stage => stage.name === 'exact-hash');
   const hashRaw = [];
   for (const stage of hashPlan) hashRaw.push(...await runStage(stage, initial, 'ar'));
@@ -292,15 +303,36 @@ async function buildFreshSubtitles(input) {
     language: 'ar',
     maxProvidersPerStage: config.resolver.maxProvidersPerStage,
     includeHash: false,
+    maxAliases: config.resolver.recoveryMaxAliases,
   });
   const raw = [...hashRaw];
   for (const stage of plan) {
     raw.push(...await runStage(stage, search, 'ar'));
   }
-  const ranked = await rankArabic(raw, search);
+  let ranked = await rankArabic(raw, search);
+  let recoveryRaw = [];
+  if (!ranked.length && config.resolver.recoveryEnabled) {
+    ranked = await rankArabic(raw, search, { relaxed: true });
+    if (!ranked.length && config.providers.enabled.includes('opensubtitles')) {
+      const recoveryPlan = createSearchPlan(search, providerDefinitions, ['opensubtitles'], {
+        language: 'ar',
+        maxProvidersPerStage: 1,
+        includeHash: false,
+        relaxed: true,
+        maxAliases: config.resolver.recoveryMaxAliases,
+      });
+      for (const stage of recoveryPlan) {
+        recoveryRaw.push(...await runStage(stage, search, 'ar'));
+      }
+      ranked = await rankArabic(mergeResults(raw, recoveryRaw), search, { relaxed: true });
+    }
+  }
   const withReferences = await attachReferenceCandidates(ranked, search);
   const suggestedCurrent = registryResults.some(item => item.searchReason === 'suggested-version');
   if (suggestedCurrent) await versionRegistry.suggestUpgrade(search, withReferences);
+  if (ranked.some(item => item.recoveryTier === 'relaxed-arabic')) {
+    return finalizeArabicRelaxed(search, registryResults, vaultResults, withReferences, recoveryRaw);
+  }
   return finalizeArabic(search, registryResults, vaultResults, withReferences);
 }
 
