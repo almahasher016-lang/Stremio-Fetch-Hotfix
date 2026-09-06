@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getProviderMetrics, prometheusMetrics, recordProviderCall } from '../utils/metrics.js';
+import { getProviderMetrics, prometheusMetrics, recordHttpRequest, recordProviderCall } from '../utils/metrics.js';
 
 test('circuit-breaker skips preserve the underlying provider failure', () => {
   const provider = 'metrics-preserve-root-cause';
@@ -31,4 +31,14 @@ test('provider metrics expose deterministic p50 and p95 latency', () => {
   const prometheus = prometheusMetrics();
   assert.match(prometheus, /m7md_provider_duration_ms_p95\{provider="metrics-percentiles"} 900/);
   assert.match(prometheus, /m7md_provider_duration_ms_bucket\{provider="metrics-percentiles",le="\+Inf"} 4/);
+});
+
+
+test('runtime metrics expose low-cardinality HTTP latency and event-loop gauges', () => {
+  recordHttpRequest('subtitle_asset', 200, 12);
+  recordHttpRequest('subtitle_asset', 200, 24);
+  const prometheus = prometheusMetrics();
+  assert.match(prometheus, /m7md_http_requests_total\{route="subtitle_asset",status="2xx"} 2/);
+  assert.match(prometheus, /m7md_http_request_duration_ms_p95 24/);
+  assert.match(prometheus, /m7md_event_loop_delay_ms_p95 /);
 });

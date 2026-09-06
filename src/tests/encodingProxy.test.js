@@ -46,11 +46,31 @@ test('the first Stremio result carries the next ranked candidate as fallback', (
     { id: 'second', provider: 'subdl', providerId: 'two', lang: 'ara', download: 'https://example.com/second.srt' },
   ];
   const subtitles = toStremioSubtitles(results, 'https://addon.example', { type: 'movie', id: 'tt1375666' });
-  const match = new URL(subtitles[0].url).pathname.match(/^\/proxy\/encoding\/(.+)\.srt$/);
+  const match = new URL(subtitles[0].url).pathname.match(/^\/assets\/encoding\/(.+)\.srt$/);
   assert.ok(match);
   const payload = verifyEncodingToken(match[1]);
   assert.equal(payload.candidate.providerId, 'one');
   assert.equal(payload.fallbacks[0].candidate.providerId, 'two');
+});
+
+
+test('Stremio emits a stable version-bound asset URL for the same subtitle recipe', () => {
+  const results = [{
+    id: 'stable-one',
+    provider: 'subdl',
+    providerId: 'stable-one',
+    lang: 'ara',
+    download: 'https://example.com/stable-one.srt',
+  }];
+  const search = { type: 'movie', id: 'tt1375666', filename: 'Movie.1080p.BluRay.x264' };
+  const first = toStremioSubtitles(results, 'https://addon.example', search)[0].url;
+  const second = toStremioSubtitles(results, 'https://addon.example', search)[0].url;
+  assert.equal(first, second);
+  const match = new URL(first).pathname.match(/^\/assets\/encoding\/(.+)\.srt$/);
+  assert.ok(match);
+  const payload = verifyEncodingToken(match[1]);
+  assert.equal(payload.assetVersion, config.app.version);
+  assert.equal(payload.expiresAt, undefined);
 });
 
 function timedSrt(text, cueCount = 8) {
@@ -196,7 +216,7 @@ test('provider-backed downloads are internal token sources and original provider
     lang: 'ara',
     download: '/downloads/opensubtitles/123456.srt',
   }], 'https://addon.example', { type: 'movie', id: 'tt1375666' })[0].url;
-  const openSubtitlesToken = new URL(openSubtitlesUrl).pathname.match(/^\/proxy\/encoding\/(.+)\.srt$/)[1];
+  const openSubtitlesToken = new URL(openSubtitlesUrl).pathname.match(/^\/assets\/encoding\/(.+)\.srt$/)[1];
   const openSubtitlesPayload = verifyEncodingToken(openSubtitlesToken);
   assert.equal(openSubtitlesPayload.source.kind, 'provider');
   assert.equal(openSubtitlesPayload.source.provider, 'opensubtitles');
@@ -211,7 +231,7 @@ test('provider-backed downloads are internal token sources and original provider
     lang: 'ara',
     download: 'https://yifysubtitles.ch/subtitle/example.zip',
   }], 'https://addon.example', { type: 'movie', id: 'tt1375666' })[0].url;
-  const registryToken = new URL(registryUrl).pathname.match(/^\/proxy\/encoding\/(.+)\.srt$/)[1];
+  const registryToken = new URL(registryUrl).pathname.match(/^\/assets\/encoding\/(.+)\.srt$/)[1];
   assert.equal(verifyEncodingToken(registryToken).source.provider, 'yify');
 });
 
@@ -233,7 +253,7 @@ test('provider-backed reference sync never calls a protected self-download route
     }], 'https://addon.example', { type: 'movie', id: 'tt1375666' });
     const referenceSubtitle = referenceOptions.find(item => item.id.includes('-experimental-refsync-v'));
     assert.ok(referenceSubtitle);
-    const token = new URL(referenceSubtitle.url).pathname.match(/^\/proxy\/encoding\/(.+)\.srt$/)[1];
+    const token = new URL(referenceSubtitle.url).pathname.match(/^\/assets\/encoding\/(.+)\.srt$/)[1];
   const payload = verifyEncodingToken(token);
   assert.equal(payload.source.kind, 'provider');
   assert.equal(payload.reference.kind, 'provider');
@@ -282,7 +302,7 @@ test('reference fallback selection scans past incompatible higher-ranked candida
   ], 'https://addon.example', { type: 'movie', id: 'tt1375666' });
     const reference = subtitles.find(item => item.id.includes('-experimental-refsync-v'));
     assert.ok(reference);
-    const token = new URL(reference.url).pathname.match(/^\/proxy\/encoding\/(.+)\.srt$/)[1];
+    const token = new URL(reference.url).pathname.match(/^\/assets\/encoding\/(.+)\.srt$/)[1];
   const payload = verifyEncodingToken(token);
   assert.equal(payload.fallbacks[0].candidate.providerId, 'fourth');
     assert.ok(payload.fallbacks[0].reference?.url);

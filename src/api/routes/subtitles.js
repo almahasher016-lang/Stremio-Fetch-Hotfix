@@ -60,9 +60,11 @@ export function toPublicPreview(results, baseUrl, search = {}) {
   return results.slice(0, config.ui.previewMaxItems).map((item, index) => {
     const subtitle = toStremioSubtitles([item], baseUrl, search)[0];
     const url = subtitle?.url || null;
-    const previewUrl = url?.includes('/proxy/encoding/') && url.endsWith('.srt')
-      ? url.replace('/proxy/encoding/', '/preview/encoding/').replace(/\.srt$/, '.json')
-      : null;
+    const previewUrl = url?.includes('/assets/encoding/') && url.endsWith('.srt')
+      ? url.replace('/assets/encoding/', '/preview/encoding/').replace(/\.srt$/, '.json')
+      : url?.includes('/proxy/encoding/') && url.endsWith('.srt')
+        ? url.replace('/proxy/encoding/', '/preview/encoding/').replace(/\.srt$/, '.json')
+        : null;
     return {
       id: item.id || item.providerId || index,
       name: subtitle?.name || subtitleDisplayName(item, 'original'),
@@ -272,6 +274,32 @@ router.get('/subtitles/:type/:id.json', stremioHandler);
 router.get('/subtitles/:type/:id/:extra.json', stremioHandler);
 router.get('/subtitle/:type/:id.json', stremioHandler);
 router.get('/subtitle/:type/:id/:extra.json', stremioHandler);
+
+
+export async function encodingAssetHandler(req, res, next) {
+  try {
+    const result = await resolveProxiedSubtitle(req.params.token);
+    res.setHeader('X-Source-Encoding', result.encoding || 'utf-8');
+    res.setHeader('X-Source-Format', result.format || 'srt');
+    if (result.archive) res.setHeader('X-Source-Archive', result.archive);
+    if (result.sync) res.setHeader('X-Sync-Confidence', String(result.sync.confidence));
+    if (result.fallbackIndex > 0) res.setHeader('X-Subtitle-Fallback', String(result.fallbackIndex));
+
+    const primaryResolved = Number(result.fallbackIndex || 0) == 0;
+    const cacheControl = primaryResolved
+      ? 'public, max-age=31536000, s-maxage=31536000, immutable'
+      : 'public, max-age=300, s-maxage=300, stale-while-revalidate=60';
+    res.setHeader('CDN-Cache-Control', cacheControl);
+    res.setHeader('Cloudflare-CDN-Cache-Control', cacheControl);
+    res.setHeader('Surrogate-Control', primaryResolved
+      ? 'max-age=31536000, stale-while-revalidate=86400'
+      : 'max-age=300, stale-while-revalidate=60');
+    res.setHeader('Vary', 'Accept-Encoding');
+    return sendSrtResponse(res, result.text, { cacheControl });
+  } catch (err) {
+    return next(err);
+  }
+}
 
 router.get('/proxy/encoding/:token.srt', async (req, res, next) => {
   try {
