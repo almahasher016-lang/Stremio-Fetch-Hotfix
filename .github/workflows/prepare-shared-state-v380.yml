@@ -1,0 +1,35 @@
+name: prepare-shared-state-v380
+
+on:
+  push:
+    branches:
+      - feat/shared-durable-state-v380
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.12.0'
+          cache: npm
+      - name: Apply release changes
+        run: python3 scripts/prepare-shared-state-v380.py
+      - name: Refresh lockfile
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Install dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify
+        run: npm run verify
+      - name: Commit prepared release
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.json package-lock.json src/release.js src/serverCore.js .env.example README.md CHANGELOG.md
+          git commit -m "Prepare shared durable state v3.8.0"
+          git push
