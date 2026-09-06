@@ -1,0 +1,43 @@
+name: live-v440-timing-probe
+
+on:
+  push:
+    branches:
+      - test/live-v440-timing-probe
+    paths:
+      - .github/workflows/live-v440-timing-probe.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe House of the Dragon timing order
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE='https://pleasing-gentleness-production.up.railway.app'
+          PATH_Q='/subtitles/series/tt11198330%3A1%3A7/filename=House.of.the.Dragon.S01E07.Eng.Fre.Ger.Ita.Spa.Cze.Hun.Pol.Jpn.2160p.BluRay.Remux.DV.HDR.HEVC.Atmos-SGF.mkv&videoSize=27228198074&videoHash=f6bdfb5e54ea25bf.json'
+          for i in 1 2 3 4 5 6; do
+            body="$(mktemp)"
+            headers="$(mktemp)"
+            meta="$(curl --path-as-is --fail-with-body --silent --show-error -D "$headers" -o "$body" -w '%{http_code} %{size_download}' "$BASE$PATH_Q")"
+            python3 - "$i" "$meta" "$body" "$headers" <<'PY'
+          import json, sys
+          run, meta, body_path, header_path = sys.argv[1:]
+          data = json.load(open(body_path, encoding='utf-8'))
+          subs = data.get('subtitles', [])
+          headers = {}
+          for line in open(header_path, encoding='iso-8859-1'):
+              if ':' in line:
+                  k, v = line.split(':', 1)
+                  headers[k.strip().lower()] = v.strip()
+          print(f"RUN={run} HTTP_SIZE={meta} COUNT={len(subs)} CACHE={headers.get('cache-control')}")
+          for idx, sub in enumerate(subs[:6], 1):
+              print(f"RUN={run} RANK={idx} NAME={sub.get('name','')}")
+          PY
+            rm -f "$body" "$headers"
+            sleep 1
+          done
