@@ -223,7 +223,7 @@ function buildVaultItem(input, { requireId = false } = {}) {
   const item = {
     id,
     name: String(input.name || input.releaseName || input.filename || 'Personal Arabic Subtitle').slice(0, 180),
-    imdbId: cleanImdb(input.imdbId || input.query) || null,
+    imdbId: cleanImdb(input.imdbId || (requireId ? null : input.id) || input.query) || null,
     tmdbId: input.tmdbId || null,
     season: normalizeEpisode(input.season),
     episode: normalizeEpisode(input.episode),
