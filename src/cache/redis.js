@@ -58,35 +58,49 @@ function pruneMemory() {
 
 export async function cacheGetEntry(key, options = {}) {
   const fullKey = normalizeKey(key);
-  const cached = unwrap(memory.get(fullKey), options);
-  if (cached) {
-    recordCache(cached.stale ? 'memory-stale' : 'memory-hit');
-    return { ...cached, source: 'memory' };
+  const preferShared = Boolean(options.preferShared);
+
+  const memoryEntry = () => {
+    const cached = unwrap(memory.get(fullKey), options);
+    if (!cached && memory.has(fullKey)) memory.delete(fullKey);
+    return cached;
+  };
+
+  if (!preferShared) {
+    const cached = memoryEntry();
+    if (cached) {
+      recordCache(cached.stale ? 'memory-stale' : 'memory-hit');
+      return { ...cached, source: 'memory' };
+    }
   }
-  if (memory.has(fullKey)) memory.delete(fullKey);
 
   const client = await getSharedRedisClient();
-  if (!client) {
-    recordCache('miss');
-    return null;
-  }
-  try {
-    const raw = await client.get(fullKey);
-    const parsed = raw ? JSON.parse(raw) : null;
-    const fromRedis = unwrap(parsed, options);
-    if (!fromRedis) {
-      recordCache('miss');
-      return null;
+  if (client) {
+    try {
+      const raw = await client.get(fullKey);
+      const parsed = raw ? JSON.parse(raw) : null;
+      const fromRedis = unwrap(parsed, options);
+      if (fromRedis) {
+        memory.set(fullKey, fromRedis.entry);
+        pruneMemory();
+        recordCache(fromRedis.stale ? 'redis-stale' : 'redis-hit');
+        return { ...fromRedis, source: 'redis' };
+      }
+    } catch (err) {
+      recordCache('error');
+      console.warn('[cache:get]', err.message);
     }
-    memory.set(fullKey, fromRedis.entry);
-    pruneMemory();
-    recordCache(fromRedis.stale ? 'redis-stale' : 'redis-hit');
-    return { ...fromRedis, source: 'redis' };
-  } catch (err) {
-    recordCache('error');
-    console.warn('[cache:get]', err.message);
-    return null;
   }
+
+  // Redis is unavailable or has no usable entry. A local entry is only a fallback,
+  // never the first authority for shared search results across replicas.
+  const cached = memoryEntry();
+  if (cached) {
+    recordCache(cached.stale ? 'memory-fallback-stale' : 'memory-fallback');
+    return { ...cached, source: 'memory-fallback' };
+  }
+  recordCache('miss');
+  return null;
 }
 
 export async function cacheGet(key) {

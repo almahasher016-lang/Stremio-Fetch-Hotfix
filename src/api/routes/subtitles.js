@@ -281,13 +281,22 @@ router.get('/api/explain', async (req, res, next) => {
   }
 });
 
+export function setStremioSearchNoStoreHeaders(res) {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  res.setHeader('CDN-Cache-Control', 'no-store');
+  res.setHeader('Cloudflare-CDN-Cache-Control', 'no-store');
+  res.setHeader('Surrogate-Control', 'no-store');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+}
+
 async function stremioHandler(req, res, next) {
   try {
     const routeExtra = parseExtra(req.params.extra);
     const extra = mergeExtras(routeExtra, req.query);
     const search = buildStremioSubtitleSearch({ type: req.params.type, id: req.params.id, extra });
     const results = await searchSubtitles(search);
-    res.setHeader('Cache-Control', 'public, max-age=1800, stale-while-revalidate=300');
+    setStremioSearchNoStoreHeaders(res);
     const body = normalizeStremioSubtitleResponse({
       subtitles: toStremioSubtitles(results, getBaseUrl(req), search),
     }, config.app.version);

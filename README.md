@@ -206,3 +206,8 @@ npm run probe:podnapisi
 ### v4.1.0
 
 Zero-result recovery now separates strong-ID and fallback searches, performs a safe Arabic relaxed tier only when strict search is empty, keeps machine translations excluded, rejects hard identity conflicts, and uses measured content quality from the top five preflight candidates in final ordering.
+
+### v4.2.0 Arabic availability guarantee
+
+Subtitle-list responses are now client `no-store`, while positive Arabic search results remain cached in shared Redis. Empty searches are never persisted, replica-local memory cannot override shared Redis for subtitle searches, and a stale non-empty Last-Known-Good list is retained when a fresh provider attempt temporarily returns nothing. This prevents transient provider 403/429/timeouts from poisoning Stremio with an empty Arabic list.
+

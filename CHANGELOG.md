@@ -1,3 +1,12 @@
+## 4.2.0 - 2026-09-06
+
+- Make Arabic subtitle availability resilient to transient provider failures.
+- Never persist empty subtitle search results into Redis or replica-local memory.
+- Prefer shared Redis before per-replica memory for subtitle-search cache reads.
+- Preserve stale non-empty Last-Known-Good results when a fresh provider search returns empty.
+- Prevent Stremio, CDN, and intermediary caches from caching subtitle-list responses; positive lists remain server-side cached.
+- Prevent background refresh from overwriting a good cached subtitle list with an empty result.
+
 ## 4.1.0 - 2026-09-06
 
 - Eliminate avoidable empty subtitle lists with deterministic strict-to-relaxed Arabic recovery.
