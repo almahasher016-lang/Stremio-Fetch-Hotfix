@@ -2,7 +2,7 @@ import { config } from '../config.js';
 import { acquireRefreshLock, cacheGetEntry, cacheSet, releaseRefreshLock } from '../cache/redis.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { ProviderLimiter } from '../utils/providerLimiter.js';
-import { withRetry } from '../utils/retry.js';
+import { parseRetryAfter, withRetry } from '../utils/retry.js';
 import { parseRelease, tokenOverlapScore } from '../utils/releaseParser.js';
 import { rankAndFilter, scoreSubtitle } from '../utils/scoring.js';
 import { isEnglishLanguage } from '../utils/language.js';
@@ -28,6 +28,7 @@ const providerLimiters = new Map(Object.keys(providerHandlers).map(name => [
   new ProviderLimiter(name, {
     maxConcurrent: config.providers.maxConcurrentPerProvider,
     minIntervalMs: config.providers.minIntervalMsPerProvider,
+    latencyThresholdMs: Math.max(750, Math.floor(config.providers.timeoutMs * 0.6)),
   }),
 ]));
 const refreshingKeys = new Set();
@@ -86,8 +87,10 @@ async function runProvider(providerName, variant) {
             && (!error.statusCode || error.statusCode >= 500 || error.statusCode === 429),
         });
         variant.signal?.throwIfAborted();
+        const elapsedMs = Date.now() - started;
+        limiter?.recordOutcome({ ok: true, ms: elapsedMs });
         breaker?.recordSuccess();
-        recordProviderCall(providerName, { ok: true, count: results.length, ms: Date.now() - started });
+        recordProviderCall(providerName, { ok: true, count: results.length, ms: elapsedMs });
         return results.map(item => ({
           ...item,
           searchReason: variant.reason,
@@ -99,8 +102,15 @@ async function runProvider(providerName, variant) {
           recordProviderCall(providerName, { ok: false, count: 0, ms: Date.now() - started, error: 'stage-deadline' });
           return [];
         }
+        const elapsedMs = Date.now() - started;
+        limiter?.recordOutcome({
+          ok: false,
+          ms: elapsedMs,
+          statusCode: error?.statusCode || error?.status || 0,
+          retryAfterMs: parseRetryAfter(error?.retryAfter) || 0,
+        });
         breaker?.recordFailure();
-        recordProviderCall(providerName, { ok: false, count: 0, ms: Date.now() - started, error: error.message });
+        recordProviderCall(providerName, { ok: false, count: 0, ms: elapsedMs, error: error.message });
         console.warn(`[provider:${providerName}]`, error.message);
         return [];
       }

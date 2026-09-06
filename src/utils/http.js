@@ -279,6 +279,7 @@ export async function fetchText(url, {
       err.statusCode = response.statusCode;
       err.body = text.slice(0, 1000);
       err.url = currentUrl;
+      err.retryAfter = response.headers['retry-after'] || null;
       throw err;
     }
     return text;

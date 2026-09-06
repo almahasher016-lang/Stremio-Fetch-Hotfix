@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v3.8.0
+# m7md Arabic Resolver v3.9.0
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,13 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 3.9.0
+
+- YIFY Last-Known-Good parsed results are retained in Redis and used during anti-bot/layout/upstream outages.
+- Text/HTML provider requests now propagate `Retry-After` just like JSON providers.
+- Provider concurrency and start intervals adapt deterministically to 429/5xx/high-latency pressure, then recover after healthy calls.
+- Existing Circuit Breaker and retry pipeline remains authoritative; no duplicate resilience stack was added.
 
 ## ما الجديد في 3.8.0
 

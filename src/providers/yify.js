@@ -1,6 +1,10 @@
 import { config } from '../config.js';
+import { cacheGetEntry, cacheSet } from '../cache/redis.js';
 import { fetchText } from '../utils/http.js';
 import { isArabicLanguage, normalizeStremioLanguage } from '../utils/language.js';
+
+const YIFY_LKG_TTL_SECONDS = 60 * 60;
+const YIFY_LKG_STALE_SECONDS = 7 * 24 * 60 * 60;
 
 function cleanImdb(value) {
   const match = String(value || '').match(/tt\d{5,12}/i);
@@ -86,7 +90,42 @@ export function parseYifyRows(html, imdbId) {
   return rows;
 }
 
-export async function searchYify(variant, { fetchTextImpl = fetchText } = {}) {
+function lkgKey(imdbId) {
+  return `provider:yify:last-good:${imdbId}`;
+}
+
+async function readLastKnownGood(imdbId, cacheGetEntryImpl) {
+  try {
+    const cached = await cacheGetEntryImpl(lkgKey(imdbId), { allowStale: true });
+    const rows = cached?.value;
+    if (!Array.isArray(rows) || !rows.length) return [];
+    return rows.slice(0, config.yify.maxItems).map(row => ({
+      ...row,
+      provider: 'yify',
+      sourceType: 'fallback-cache',
+      searchReason: 'yify-last-known-good',
+      lastKnownGood: true,
+    }));
+  } catch (error) {
+    console.warn('[provider:yify:lkg-read]', error.message);
+    return [];
+  }
+}
+
+async function storeLastKnownGood(imdbId, rows, cacheSetImpl) {
+  if (!rows.length) return;
+  try {
+    await cacheSetImpl(lkgKey(imdbId), rows, YIFY_LKG_TTL_SECONDS, YIFY_LKG_STALE_SECONDS);
+  } catch (error) {
+    console.warn('[provider:yify:lkg-write]', error.message);
+  }
+}
+
+export async function searchYify(variant, {
+  fetchTextImpl = fetchText,
+  cacheGetEntryImpl = cacheGetEntry,
+  cacheSetImpl = cacheSet,
+} = {}) {
   if (!config.yify.enabled || variant.type === 'series') return [];
   const expectedArabic = !variant.language || isArabicLanguage(variant.language);
   if (!expectedArabic) return [];
@@ -107,19 +146,31 @@ export async function searchYify(variant, { fetchTextImpl = fetchText } = {}) {
         trustedOrigin: config.yify.baseUrl,
       });
       if (/<title[^>]*>\s*Just a moment|id=["']challenge-form["']|class=["'][^"']*cf-chl-/i.test(html)) {
-        throw new Error('YIFY returned an anti-bot challenge');
+        const error = new Error('YIFY returned an anti-bot challenge');
+        error.code = 'YIFY_ANTI_BOT';
+        throw error;
       }
       const rows = parseYifyRows(html, imdbId).slice(0, config.yify.maxItems);
       if (!rows.length && /sub-lang[^>]*>\s*Arabic|>\s*Arabic\s*</i.test(html)) {
-        throw new Error('YIFY Arabic page layout is no longer supported');
+        const error = new Error('YIFY Arabic page layout is no longer supported');
+        error.code = 'YIFY_LAYOUT_CHANGED';
+        throw error;
       }
       anySuccessfulFetch = true;
-      if (rows.length) return rows;
+      if (rows.length) {
+        await storeLastKnownGood(imdbId, rows, cacheSetImpl);
+        return rows;
+      }
     } catch (error) {
       if (variant.signal?.aborted || error?.name === 'AbortError') throw error;
       lastError = error;
     }
   }
-  if (!anySuccessfulFetch && lastError) throw lastError;
+
+  if (!anySuccessfulFetch && lastError) {
+    const lastKnownGood = await readLastKnownGood(imdbId, cacheGetEntryImpl);
+    if (lastKnownGood.length) return lastKnownGood;
+    throw lastError;
+  }
   return [];
 }
