@@ -61,6 +61,8 @@ export function createSearchPlan(search = {}, providerDefinitions = {}, enabledN
           filename: '',
           imdbId: null,
           tmdbId: null,
+          season: null,
+          episode: null,
           year: null,
         })],
       });
