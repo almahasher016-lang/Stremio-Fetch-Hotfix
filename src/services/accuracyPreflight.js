@@ -16,6 +16,7 @@ function candidateKey(item = {}, search = {}) {
     release: item.releaseName || item.fileName || item.name || '',
     durationMs: search.durationMs || null,
     fps: search.fps || search.extra?.fps || null,
+    policyVersion: config.app.version,
   });
   return `accuracy-preflight:${createHash('sha256').update(payload).digest('hex')}`;
 }
@@ -79,11 +80,12 @@ async function inspectOne(item, search, {
 
   recordAccuracyPreflight(outcome.state, outcome.elapsedMs);
   if (outcome.state !== 'unavailable') {
+    const hardRejected = outcome.state === 'rejected';
     await cacheSetImpl(
       key,
       outcome,
-      config.accuracyPreflight.cacheTtlSeconds,
-      config.cache.staleSeconds,
+      hardRejected ? config.accuracyPreflight.rejectCacheTtlSeconds : config.accuracyPreflight.cacheTtlSeconds,
+      hardRejected ? 0 : config.cache.staleSeconds,
     );
   }
   return { ...outcome, source: 'live-preflight' };
@@ -122,9 +124,14 @@ export async function applyAccuracyPreflight(results = [], search = {}, {
 
   // Only hard content failures are removed. Slow/unavailable preflight never hides a subtitle.
   const survivors = decorated.filter(item => item.accuracyPreflight?.state !== 'rejected');
-  return prioritizeAccurateSubtitles(survivors, search);
-}
+  if (survivors.length > 0) return prioritizeAccurateSubtitles(survivors, search);
 
-export function __candidatePreflightKeyForTests(item, search) {
-  return candidateKey(item, search);
+  // Availability invariant: content preflight may demote the last candidates, but it may
+  // not erase an otherwise non-empty Arabic provider result. Delivery-time quality gates
+  // still validate the selected source and can fall through to its fallback chain.
+  const failOpen = (decorated.length ? decorated : ranked).map(item => ({
+    ...item,
+    accuracyPreflightFallback: 'all-candidates-rejected',
+  }));
+  return failOpen;
 }

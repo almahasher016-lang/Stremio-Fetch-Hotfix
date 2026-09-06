@@ -211,3 +211,7 @@ Zero-result recovery now separates strong-ID and fallback searches, performs a s
 
 Subtitle-list responses are now client `no-store`, while positive Arabic search results remain cached in shared Redis. Empty searches are never persisted, replica-local memory cannot override shared Redis for subtitle searches, and a stale non-empty Last-Known-Good list is retained when a fresh provider attempt temporarily returns nothing. This prevents transient provider 403/429/timeouts from poisoning Stremio with an empty Arabic list.
 
+### v4.3.0 Final Arabic availability
+
+A post-preflight, version-independent Redis Last-Known-Good layer now protects the final Arabic list. Accuracy Preflight can still remove a bad candidate when another candidate survives, but it cannot turn a non-empty Arabic provider result into an empty Stremio list. Hard-rejection decisions are release-versioned and expire quickly, preventing stale false rejections from surviving deploys.
+

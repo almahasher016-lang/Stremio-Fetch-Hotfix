@@ -1,3 +1,11 @@
+## 4.3.0 - 2026-09-06
+
+- Add a version-independent final Arabic Last-Known-Good cache after Accuracy Preflight.
+- Prevent Accuracy Preflight from erasing the entire Arabic list when all inspected candidates hard-reject.
+- Version Accuracy Preflight decision keys with the application release to invalidate stale false rejections on deploy.
+- Reduce hard-rejection cache TTL to three minutes with no stale extension; valid quality decisions retain the normal cache TTL.
+- Serve fresh exact/release LKG immediately, while catalog-level LKG remains fallback-only to avoid forcing a mismatched release.
+
 ## 4.2.0 - 2026-09-06
 
 - Make Arabic subtitle availability resilient to transient provider failures.

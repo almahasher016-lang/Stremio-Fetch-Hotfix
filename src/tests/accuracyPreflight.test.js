@@ -61,3 +61,14 @@ test('unavailable preflight preserves deterministic ranking', async () => {
   assert.deepEqual(inspected.map(item => item.id), ['first', 'second']);
   assert.equal(inspected[0].accuracyPreflight.state, 'unavailable');
 });
+
+test('accuracy preflight fails open when every Arabic candidate is hard-rejected', async () => {
+  const results = [candidate('first'), candidate('second', { score: 490 })];
+  const inspected = await applyAccuracyPreflight(results, { filename: 'Movie.2026.BluRay.mkv' }, {
+    ...noCache,
+    preflightImpl: async () => ({ quality: { valid: false, score: 10, reasons: ['low-arabic-ratio'] } }),
+  });
+  assert.equal(inspected.length, 2);
+  assert.equal(inspected[0].accuracyPreflightFallback, 'all-candidates-rejected');
+});
+
