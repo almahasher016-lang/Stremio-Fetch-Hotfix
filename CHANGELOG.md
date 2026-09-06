@@ -1,5 +1,13 @@
 # Changelog
 
+## 3.7.0 - Enterprise Edge Foundation
+
+- Emit deterministic signed `/assets/encoding/` URLs bound to the application version so identical subtitle recipes reuse a CDN cache key.
+- Add an asset delivery fast path with immutable edge-cache headers for primary resolutions and conservative caching when a fallback source wins.
+- Add HTTP p50/p95/p99 and event-loop delay Prometheus metrics.
+- Enable shared Railway Redis as the distributed cache and refresh-lock layer.
+- Preserve legacy `/proxy/encoding/` resolution for already-issued URLs.
+
 ## 3.6.4 - Source-Family Ranking Fix
 
 - Prioritize the timing/source family (BluRay, WEB, HDTV, DVD, CAM) before resolution-only similarity.

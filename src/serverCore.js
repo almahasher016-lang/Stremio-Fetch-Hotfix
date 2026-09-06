@@ -2,7 +2,7 @@ import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
-import subtitlesRoute from './api/routes/subtitles.js';
+import subtitlesRoute, { encodingAssetHandler } from './api/routes/subtitles.js';
 import { errorHandler } from './api/middleware/errorHandler.js';
 import { adminAuthLimiter, adminWriteLimiter, apiLimiter } from './api/middleware/rateLimit.js';
 import { requestId } from './api/middleware/requestId.js';
@@ -17,7 +17,7 @@ import {
 import { clearCache, closeRedis, getCacheStatus } from './cache/redis.js';
 import { createManifest, getBaseUrl } from './utils/stremio.js';
 import { config, validateRuntimeConfig } from './config.js';
-import { prometheusMetrics } from './utils/metrics.js';
+import { prometheusMetrics, recordHttpRequest } from './utils/metrics.js';
 import { redactRequestUrl } from './utils/logging.js';
 import { flushVaultWrites } from './services/vaultService.js';
 import { versionRegistry } from './services/versionRegistryService.js';
@@ -39,7 +39,7 @@ app.disable('etag');
 
 function publicStremioPath(pathname) {
   return /^\/(?:manifest(?:\.json)?|Manifest(?:\.json)?)$/.test(pathname)
-    || /^\/(?:subtitles?|proxy\/(?:encoding|styled))\//.test(pathname);
+    || /^\/(?:subtitles?|proxy\/(?:encoding|styled)|assets\/encoding)\//.test(pathname);
 }
 
 function ownRequestOrigin(req) {
@@ -82,11 +82,35 @@ app.use((req, res, next) => {
 });
 
 app.use(requestId);
+
+function metricRoute(pathname) {
+  if (pathname.startsWith('/assets/encoding/')) return 'subtitle_asset';
+  if (pathname.startsWith('/proxy/')) return 'subtitle_proxy';
+  if (pathname.startsWith('/subtitles/') || pathname.startsWith('/subtitle/')) return 'subtitle_search';
+  if (pathname === '/manifest.json' || pathname === '/manifest') return 'manifest';
+  if (pathname === '/health') return 'health';
+  if (pathname.startsWith('/api/')) return 'api';
+  return 'other';
+}
+
+app.use((req, res, next) => {
+  const started = process.hrtime.bigint();
+  res.once('finish', () => {
+    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+    recordHttpRequest(metricRoute(req.path), res.statusCode, elapsedMs);
+  });
+  next();
+});
+
 app.use(compression({
   threshold: 1024,
   level: 1,
   filter: (req, res) => finalizedBodyCompressionFilter(req, res, compression.filter),
 }));
+
+// Stable subtitle assets bypass logging and rate-limit middleware on successful delivery.
+app.get('/assets/encoding/:token.srt', encodingAssetHandler);
+
 app.use(helmet({
   contentSecurityPolicy: false,
   crossOriginResourcePolicy: false,

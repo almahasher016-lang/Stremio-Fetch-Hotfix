@@ -167,6 +167,62 @@ export function createEncodingToken(payload) {
   return encodedToken.token;
 }
 
+
+export function createStableEncodingToken(payload) {
+  const primarySource = compactTokenSource(payload.source || payload);
+  const safePayload = {
+    assetVersion: config.app.version,
+    source: primarySource,
+    options: {
+      stripSdh: config.encodingProxy.stripSdhDefault,
+      stripMusicNotes: config.encodingProxy.stripMusicNotes,
+      ...(payload.options || {}),
+    },
+    syncPlan: payload.syncPlan || null,
+    reference: payload.reference ? compactTokenSource(payload.reference) : null,
+    candidate: primarySource.candidate,
+    fallbacks: Array.isArray(payload.fallbacks)
+      ? payload.fallbacks.slice(0, config.encodingProxy.maxFallbacks).map(compactTokenFallback)
+      : [],
+    context: payload.context ? {
+      type: tokenText(payload.context.type || 'movie', 16),
+      id: tokenText(payload.context.id, 128),
+      videoId: tokenText(payload.context.videoId, 128),
+      videoHash: tokenText(payload.context.videoHash, 128),
+      videoSize: payload.context.videoSize || null,
+      filename: tokenText(payload.context.filename, 320),
+      title: tokenText(payload.context.title),
+      imdbId: tokenText(payload.context.imdbId, 32),
+      tmdbId: tokenText(payload.context.tmdbId, 32),
+      season: payload.context.season || null,
+      episode: payload.context.episode || null,
+      durationMs: payload.context.durationMs || null,
+      fps: payload.context.fps || null,
+    } : null,
+  };
+
+  function encode() {
+    const raw = Buffer.from(JSON.stringify(safePayload));
+    const compressed = deflateRawSync(raw, { level: 9 });
+    const encoded = b64url(compressed);
+    const signed = `z1.${encoded}`;
+    return { token: `${signed}.${sign(signed)}`, rawBytes: raw.byteLength };
+  }
+
+  let encodedToken = encode();
+  while (
+    (encodedToken.token.length > TARGET_TOKEN_LENGTH || encodedToken.rawBytes > MAX_TOKEN_PAYLOAD_BYTES)
+    && safePayload.fallbacks.length
+  ) {
+    safePayload.fallbacks.pop();
+    encodedToken = encode();
+  }
+  if (encodedToken.rawBytes > MAX_TOKEN_PAYLOAD_BYTES || encodedToken.token.length > MAX_TOKEN_LENGTH) {
+    throw httpError(413, 'Subtitle asset token payload is too large');
+  }
+  return encodedToken.token;
+}
+
 export function verifyEncodingToken(token) {
   const raw = String(token || '');
   if (!raw || raw.length > MAX_TOKEN_LENGTH) throw httpError(400, 'Invalid subtitle token');
@@ -322,6 +378,7 @@ function assertValidProcessedSubtitle(text) {
 
 function cacheKeyFor(payload) {
   const normalized = JSON.stringify({
+    assetVersion: payload.assetVersion || null,
     source: payload.source,
     fallbacks: payload.fallbacks || [],
     options: payload.options || {},
@@ -329,7 +386,7 @@ function cacheKeyFor(payload) {
     reference: payload.reference || null,
     context: payload.context || null,
   });
-  return `encoding:v12:${sign(normalized)}`;
+  return `encoding:v13:${sign(normalized)}`;
 }
 
 function analyzeProcessedSubtitle(text, context) {
@@ -587,7 +644,7 @@ export function proxiedSubtitleUrl(baseUrl, item, syncPlan = null, reference = n
     })
     .filter(Boolean)
     .slice(0, config.encodingProxy.maxFallbacks);
-  const token = createEncodingToken({
+  const token = createStableEncodingToken({
     source: tokenSourceForItem(baseUrl, item),
     syncPlan,
     reference: tokenReferenceFor(baseUrl, reference),
@@ -595,7 +652,7 @@ export function proxiedSubtitleUrl(baseUrl, item, syncPlan = null, reference = n
     context,
     fallbacks,
   });
-  return `${baseUrl}/proxy/encoding/${token}.srt`;
+  return `${baseUrl}/assets/encoding/${token}.srt`;
 }
 
 

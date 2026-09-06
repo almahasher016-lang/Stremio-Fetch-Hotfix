@@ -30,7 +30,7 @@ test('a signed Stremio proxy resolves vault content internally', async () => {
       id: 'tt6666666',
       videoHash,
     });
-    const match = new URL(subtitle.url).pathname.match(/^\/proxy\/encoding\/(.+)\.srt$/);
+    const match = new URL(subtitle.url).pathname.match(/^\/assets\/encoding\/(.+)\.srt$/);
     assert.ok(match);
     const payload = verifyEncodingToken(match[1]);
     assert.equal(payload.source.kind, 'vault');

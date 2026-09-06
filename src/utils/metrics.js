@@ -1,6 +1,14 @@
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import { config } from '../config.js';
 
 const DURATION_BUCKETS = [100, 250, 500, 1000, 2500, 5000, 10000, 20000];
+const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
+eventLoopDelay.enable();
+const httpStats = {
+  recent: [],
+  byRouteStatus: new Map(),
+};
+
 const providers = new Map();
 const cacheStats = {
   hits: 0,
@@ -99,6 +107,17 @@ export function recordRefreshLock(event) {
   else if (event === 'fallback-local') refreshLockStats.fallbackLocal += 1;
 }
 
+export function recordHttpRequest(route, statusCode, ms) {
+  if (!config.metrics.enabled) return;
+  const safeRoute = String(route || 'other').replace(/[^a-z0-9_-]/gi, '_').slice(0, 40) || 'other';
+  const statusClass = `${Math.floor(Number(statusCode || 0) / 100) || 0}xx`;
+  const duration = Math.max(0, Number(ms) || 0);
+  const key = `${safeRoute}|${statusClass}`;
+  httpStats.byRouteStatus.set(key, (httpStats.byRouteStatus.get(key) || 0) + 1);
+  httpStats.recent.push(duration);
+  while (httpStats.recent.length > Math.max(100, config.metrics.windowSize * 4)) httpStats.recent.shift();
+}
+
 function percentile(values, ratio) {
   if (!values.length) return 0;
   const sorted = [...values].sort((left, right) => left - right);
@@ -164,5 +183,18 @@ export function prometheusMetrics() {
   lines.push(`m7md_cache_refresh_lock_redis_release_skipped_total ${refreshLockStats.redisReleaseSkipped}`);
   lines.push(`m7md_cache_refresh_lock_redis_errors_total ${refreshLockStats.redisErrors}`);
   lines.push(`m7md_cache_refresh_lock_fallback_local_total ${refreshLockStats.fallbackLocal}`);
+  for (const [key, count] of httpStats.byRouteStatus) {
+    const [route, status] = key.split('|');
+    lines.push(`m7md_http_requests_total{route="${route}",status="${status}"} ${count}`);
+  }
+  lines.push(`m7md_http_request_duration_ms_p50 ${percentile(httpStats.recent, 0.50)}`);
+  lines.push(`m7md_http_request_duration_ms_p95 ${percentile(httpStats.recent, 0.95)}`);
+  lines.push(`m7md_http_request_duration_ms_p99 ${percentile(httpStats.recent, 0.99)}`);
+  const eventLoopMeanMs = Number.isFinite(eventLoopDelay.mean) ? eventLoopDelay.mean / 1e6 : 0;
+  const p95 = eventLoopDelay.percentile(95);
+  const p99 = eventLoopDelay.percentile(99);
+  lines.push(`m7md_event_loop_delay_ms_mean ${eventLoopMeanMs}`);
+  lines.push(`m7md_event_loop_delay_ms_p95 ${Number.isFinite(p95) ? p95 / 1e6 : 0}`);
+  lines.push(`m7md_event_loop_delay_ms_p99 ${Number.isFinite(p99) ? p99 / 1e6 : 0}`);
   return `${lines.join('\n')}\n`;
 }

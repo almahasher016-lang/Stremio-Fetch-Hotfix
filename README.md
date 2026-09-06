@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v3.6.4
+# m7md Arabic Resolver v3.7.0
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,14 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 3.7.0
+
+- Enterprise Edge foundation: stable version-bound subtitle asset URLs for effective CDN caching.
+- Dedicated fast path for subtitle assets before logging and rate-limit middleware.
+- CDN/Cloudflare cache headers with long immutable caching for successfully resolved primary assets and short TTL for fallback assets.
+- Shared Railway Redis enabled for cross-instance cache and distributed refresh locks.
+- Prometheus HTTP latency and event-loop delay metrics for baseline/p95/p99 observability.
 
 ## ما الجديد في 3.6.4
 
