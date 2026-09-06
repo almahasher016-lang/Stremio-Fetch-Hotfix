@@ -154,3 +154,79 @@ test('accuracy-first never lets source-family similarity override a wrong episod
 
   assert.equal(ranked[0].releaseName, 'Show.S01E07.1080p.WEB-DL-GRP');
 });
+
+
+test('accuracy-first keeps a low raw-score same-family candidate when limiting a large pool', async () => {
+  const { prioritizeAndLimitAccurateSubtitles } = await import('../utils/accuracyFirst.js');
+  const web = Array.from({ length: 11 }, (_, index) => ({
+    provider: 'opensubtitles',
+    id: `web-${index}`,
+    releaseName: `Show.S01E07.2160p.WEB-DL-GRP${index}`,
+    score: 2000 - index,
+    releaseMatch: releaseMatch({ tier: 2, priority: 20000, mismatched: ['source'] }),
+    scoreReasons: [],
+  }));
+  const bluray = {
+    provider: 'subdl',
+    id: 'bluray-correct',
+    releaseName: 'Show.S01E07.720p.BluRay.x264-BLOODY',
+    score: 300,
+    releaseMatch: releaseMatch({ tier: 1, priority: 9000, mismatched: ['quality', 'releaseGroup'] }),
+    scoreReasons: [],
+  };
+  const ranked = prioritizeAndLimitAccurateSubtitles(
+    [...web, bluray],
+    { filename: 'Show.S01E07.2160p.BluRay.REMUX-GRP.mkv' },
+    10,
+  );
+  assert.equal(ranked.length, 10);
+  assert.equal(ranked[0].id, 'bluray-correct');
+});
+
+test('exact-hash timing reference outranks filename family when there are no hard conflicts', () => {
+  const ranked = prioritizeAccurateSubtitles([
+    {
+      id: 'filename-family',
+      provider: 'subdl',
+      releaseName: 'Movie.2026.1080p.BluRay-GRP',
+      score: 1200,
+      releaseMatch: releaseMatch({ tier: 3, priority: 30000 }),
+      timingReferenceEvidence: { exactVideoHash: true, matchScore: 700 },
+      scoreReasons: [],
+    },
+    {
+      id: 'hash-reference-family',
+      provider: 'opensubtitles',
+      releaseName: 'Movie.2026.1080p.WEB-DL-GRP',
+      score: 800,
+      releaseMatch: releaseMatch({ tier: 2, priority: 22000 }),
+      timingReferenceEvidence: { exactVideoHash: true, matchScore: 1500 },
+      scoreReasons: [],
+    },
+  ], { filename: 'Movie.2026.2160p.BluRay.REMUX-GRP.mkv' });
+  assert.equal(ranked[0].id, 'hash-reference-family');
+});
+
+test('hard episode conflicts still beat exact-hash timing-reference similarity', () => {
+  const ranked = prioritizeAccurateSubtitles([
+    {
+      id: 'wrong-episode',
+      provider: 'opensubtitles',
+      releaseName: 'Show.S01E08.1080p.WEB-DL-GRP',
+      score: 2000,
+      releaseMatch: releaseMatch({ tier: 1, priority: 10000, criticalMismatches: 1, mismatched: ['episode'] }),
+      timingReferenceEvidence: { exactVideoHash: true, matchScore: 3000 },
+      scoreReasons: [],
+    },
+    {
+      id: 'right-episode',
+      provider: 'subdl',
+      releaseName: 'Show.S01E07.1080p.BluRay-GRP',
+      score: 500,
+      releaseMatch: releaseMatch({ tier: 2, priority: 20000, mismatched: [] }),
+      timingReferenceEvidence: { exactVideoHash: true, matchScore: 500 },
+      scoreReasons: [],
+    },
+  ], { filename: 'Show.S01E07.1080p.BluRay-GRP.mkv' });
+  assert.equal(ranked[0].id, 'right-episode');
+});

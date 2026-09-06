@@ -34,3 +34,24 @@ test('does not let an unconfigured SubSource consume the YIFY fallback slot', ()
   assert.ok(metadataStage);
   assert.deepEqual(metadataStage.providers, ['opensubtitles', 'subdl', 'yify']);
 });
+
+
+test('exact-hash stage uses hash identity without weaker filename or metadata constraints', () => {
+  const plan = createSearchPlan({
+    type: 'series',
+    id: 'tt11198330:1:7',
+    imdbId: 'tt11198330',
+    season: 1,
+    episode: 7,
+    videoHash: 'f6bdfb5e54ea25bf',
+    videoSize: 27228198074,
+    filename: 'House.of.the.Dragon.S01E07.2160p.BluRay.Remux.mkv',
+  }, providers, Object.keys(providers));
+  const item = plan.find(stage => stage.name === 'exact-hash').variants[0];
+  assert.equal(item.videoHash, 'f6bdfb5e54ea25bf');
+  assert.equal(item.videoSize, 27228198074);
+  assert.equal(item.query, '');
+  assert.equal(item.filename, '');
+  assert.equal(item.imdbId, null);
+  assert.equal(item.tmdbId, null);
+});

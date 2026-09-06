@@ -114,9 +114,9 @@ async function runDistributed(search, key) {
 
 export async function searchSubtitles(search) {
   const lkg = await readAvailabilityLkg(search);
-  // Exact hash/release LKG is safe to serve while fresh. A catalog-only LKG is fallback-only
-  // because a different release of the same movie/episode may need better timing alignment.
-  if (lkg?.kind !== 'catalog' && lkg?.hit && !lkg.stale) return lkg.value;
+  // Final LKG exists to preserve Arabic availability when providers fail. It must not short-circuit
+  // normal ranking, otherwise an older merely-acceptable list can hide a newly available exact or
+  // timing-compatible subtitle. The version-scoped search cache remains the normal fast path.
 
   const key = singleflightKey(search);
   const existing = inFlight.get(key);

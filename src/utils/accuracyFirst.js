@@ -1,3 +1,5 @@
+import { sourceFamily } from './timingCompatibility.js';
+
 function lower(value) {
   return String(value || '').toLowerCase();
 }
@@ -29,16 +31,6 @@ function releaseText(item) {
   return item?.releaseName || item?.fileName || item?.name || item?.title || '';
 }
 
-function sourceFamily(value) {
-  const text = lower(value).replace(/[._-]+/g, ' ');
-  if (/\b(?:blu ray|brrip|bdrip|remux)\b/u.test(text)) return 'bluray';
-  if (/\b(?:web dl|web rip|web)\b/u.test(text)) return 'web';
-  if (/\bhdtv\b/u.test(text)) return 'hdtv';
-  if (/\b(?:dvd rip|dvdrip|dvd)\b/u.test(text)) return 'dvd';
-  if (/\b(?:hdcam|cam|telesync|telecine)\b/u.test(text)) return 'cam';
-  return '';
-}
-
 function hardConflictCount(item) {
   const mismatched = item?.releaseMatch?.mismatched;
   if (!Array.isArray(mismatched)) return 0;
@@ -52,6 +44,13 @@ function sourceFamilyRank(item, targetFamily) {
   return candidateFamily === targetFamily ? 2 : 0;
 }
 
+function timingReferenceRank(item) {
+  const evidence = item?.timingReferenceEvidence;
+  if (!evidence?.exactVideoHash) return 0;
+  const score = Number(evidence.matchScore || 0);
+  return Math.max(0, Math.min(10_000, Number.isFinite(score) ? score : 0));
+}
+
 export function prioritizeAccurateSubtitles(results = [], search = {}) {
   const targetFamily = sourceFamily(search?.filename || search?.extra?.filename || search?.query || search?.title || '');
 
@@ -61,6 +60,11 @@ export function prioritizeAccurateSubtitles(results = [], search = {}) {
 
     const hardConflictDelta = hardConflictCount(a) - hardConflictCount(b);
     if (hardConflictDelta) return hardConflictDelta;
+
+    // An English subtitle returned for the exact video hash describes the actual playback
+    // timeline more reliably than a filename-derived source-family guess.
+    const referenceDelta = timingReferenceRank(b) - timingReferenceRank(a);
+    if (referenceDelta) return referenceDelta;
 
     const familyDelta = sourceFamilyRank(b, targetFamily) - sourceFamilyRank(a, targetFamily);
     if (familyDelta) return familyDelta;
@@ -95,4 +99,12 @@ export function prioritizeAccurateSubtitles(results = [], search = {}) {
     return `${lower(a?.provider)}:${a?.id || a?.providerId || ''}`
       .localeCompare(`${lower(b?.provider)}:${b?.id || b?.providerId || ''}`);
   });
+}
+
+
+export function prioritizeAndLimitAccurateSubtitles(results = [], search = {}, limit = Infinity) {
+  const ranked = prioritizeAccurateSubtitles(results, search);
+  const safeLimit = Number(limit);
+  if (!Number.isFinite(safeLimit)) return ranked;
+  return ranked.slice(0, Math.max(0, Math.floor(safeLimit)));
 }

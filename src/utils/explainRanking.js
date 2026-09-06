@@ -5,6 +5,7 @@ function reasonLabels(item = {}) {
   if (item.sourceType === 'personal-vault-exact-hash') labels.push('personal-vault-exact-hash');
   if (scoreReasons.some(reason => reason.reason === 'exact-video-hash-match')) labels.push('exact-video-hash');
   if (scoreReasons.some(reason => reason.reason === 'provider-confirmed-hash-match')) labels.push('provider-confirmed-hash');
+  if (item.timingReferenceEvidence?.exactVideoHash) labels.push('exact-hash-timing-reference');
   if (item.releaseMatch?.tier) labels.push(`release-tier-${item.releaseMatch.tier}`);
   if (item.releaseMatch?.criticalMismatches === 0) labels.push('no-critical-release-conflicts');
   if (item.accuracyPreflight?.state === 'valid') labels.push('content-preflight-valid');
@@ -45,6 +46,7 @@ export function explainSubtitleRanking(results = [], search = {}) {
         hardConflicts,
         trusted: Boolean(item.trusted),
         contentPreflight: item.accuracyPreflight || null,
+        timingReference: item.timingReferenceEvidence || null,
         quality,
       },
       scoreReasons: compactScoreReasons(item),

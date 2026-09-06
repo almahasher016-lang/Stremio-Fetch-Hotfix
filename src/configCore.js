@@ -258,7 +258,7 @@ export function buildConfig(env = process.env) {
     cache: {
       ttlSeconds: toInt(get('CACHE_TTL'), 3600, 30, 86400),
       staleSeconds: toInt(get('CACHE_STALE_SECONDS'), 21600, 60, 604800),
-      searchTtlSeconds: toInt(get('SEARCH_CACHE_TTL'), 3600, 30, 86400),
+      searchTtlSeconds: toInt(get('SEARCH_CACHE_TTL'), 900, 30, 86400),
       subtitleTtlSeconds: toInt(get('SUBTITLE_CACHE_TTL'), 86400, 300, 2592000),
       failureTtlSeconds: toInt(get('FAILURE_CACHE_TTL'), 120, 0, 3600),
       refreshLockTtlSeconds: toInt(get('CACHE_REFRESH_LOCK_TTL'), 60, 5, 300),
