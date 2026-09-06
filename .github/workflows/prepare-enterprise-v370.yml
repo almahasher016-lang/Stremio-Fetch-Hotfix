@@ -21,6 +21,18 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm version 3.7.0 --no-git-tag-version
       - run: python3 scripts/prepare-enterprise-v370.py
+      - name: Update vault proxy regression path
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('src/tests/vaultProxySecurity.test.js')
+          text = p.read_text()
+          old = r"/^\/proxy\/encoding\/(.+)\.srt$/"
+          new = r"/^\/assets\/encoding\/(.+)\.srt$/"
+          if text.count(old) != 1:
+              raise SystemExit(f'vault proxy regex expected once, found {text.count(old)}')
+          p.write_text(text.replace(old, new))
+          PY
       - run: npm run verify
       - name: Commit prepared release
         shell: bash
