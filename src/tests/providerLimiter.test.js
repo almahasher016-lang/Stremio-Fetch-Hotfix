@@ -69,5 +69,45 @@ test('provider limiter enforces the configured start interval', async () => {
     queued: 0,
     maxConcurrent: 1,
     minIntervalMs: 50,
+    effectiveMaxConcurrent: 1,
+    effectiveMinIntervalMs: 50,
+    adaptivePenalty: 0,
+    blockedUntil: null,
   });
+});
+
+test('provider limiter backs off deterministically after overload and recovers on success', () => {
+  let clock = 1_000;
+  const limiter = new ProviderLimiter('provider', {
+    maxConcurrent: 3,
+    minIntervalMs: 100,
+    now: () => clock,
+  });
+  limiter.recordOutcome({ ok: false, ms: 500, statusCode: 429, retryAfterMs: 2_000 });
+  let status = limiter.status();
+  assert.equal(status.adaptivePenalty, 2);
+  assert.equal(status.effectiveMaxConcurrent, 1);
+  assert.ok(status.effectiveMinIntervalMs > 100);
+  assert.equal(status.blockedUntil, 3_000);
+
+  clock = 3_100;
+  limiter.recordOutcome({ ok: true, ms: 100 });
+  limiter.recordOutcome({ ok: true, ms: 100 });
+  status = limiter.status();
+  assert.equal(status.adaptivePenalty, 0);
+  assert.equal(status.effectiveMaxConcurrent, 3);
+  assert.equal(status.effectiveMinIntervalMs, 100);
+});
+
+test('provider limiter reduces concurrency after sustained high latency without a failure', () => {
+  const limiter = new ProviderLimiter('provider', {
+    maxConcurrent: 4,
+    minIntervalMs: 0,
+    latencyThresholdMs: 500,
+  });
+  limiter.recordOutcome({ ok: true, ms: 900 });
+  limiter.recordOutcome({ ok: true, ms: 900 });
+  const status = limiter.status();
+  assert.equal(status.adaptivePenalty, 2);
+  assert.equal(status.effectiveMaxConcurrent, 1);
 });

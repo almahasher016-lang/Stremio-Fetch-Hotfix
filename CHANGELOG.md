@@ -1,5 +1,12 @@
 # Changelog
 
+## 3.9.0 - Provider Resilience 2.0
+
+- Add Redis-backed YIFY Last-Known-Good parsed-result fallback for live scrape failures and anti-bot challenges.
+- Propagate `Retry-After` from text/HTML upstream responses.
+- Add deterministic adaptive provider limiting driven by overload and latency outcomes.
+- Add regression coverage for YIFY fallback and adaptive limiter recovery.
+
 ## 3.8.0 - Shared Durable State
 
 - Add private PostgreSQL-backed Personal Vault storage with local JSON migration fallback.
