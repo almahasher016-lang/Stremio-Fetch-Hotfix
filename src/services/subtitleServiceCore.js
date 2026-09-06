@@ -350,7 +350,9 @@ function refreshInBackground(key, search) {
       lock = await acquireRefreshLock(key, config.cache.refreshLockTtlSeconds);
       if (!lock.acquired) return;
       const fresh = await buildFreshSubtitles(search);
-      await cacheSet(key, fresh, config.cache.searchTtlSeconds, config.cache.staleSeconds);
+      if (Array.isArray(fresh) && fresh.length > 0) {
+        await cacheSet(key, fresh, config.cache.searchTtlSeconds, config.cache.staleSeconds);
+      }
     } catch (error) {
       console.warn('[cache:refresh]', error.message);
     } finally {
@@ -374,18 +376,37 @@ export async function flushBackgroundRefreshes() {
   await Promise.allSettled([...backgroundRefreshTasks]);
 }
 
+export function hasUsableSubtitleResults(value) {
+  return Array.isArray(value) && value.length > 0;
+}
+
 export async function searchSubtitles(search) {
   const identity = await versionRegistry.hydrateIdentity(buildVideoIdentity(search));
   const key = cacheKey(identity);
-  const cached = await cacheGetEntry(key, { allowStale: config.cache.staleWhileRevalidate });
-  if (cached?.hit && !cached.stale) return cached.value;
-  if (cached?.hit && cached.stale) {
+
+  // Search availability is shared-state critical. Prefer Redis over replica-local memory
+  // and always retain a stale non-empty result as Last-Known-Good fallback.
+  const cached = await cacheGetEntry(key, { allowStale: true, preferShared: true });
+  const cachedGood = cached?.hit && hasUsableSubtitleResults(cached.value) ? cached.value : null;
+
+  if (cachedGood && !cached.stale) return cachedGood;
+  if (cachedGood && cached.stale && config.cache.staleWhileRevalidate) {
     refreshInBackground(key, identity);
-    return cached.value;
+    return cachedGood;
   }
+
   const ranked = await buildFreshSubtitles(identity);
-  await cacheSet(key, ranked, config.cache.searchTtlSeconds, config.cache.staleSeconds);
-  return ranked;
+  if (hasUsableSubtitleResults(ranked)) {
+    await cacheSet(key, ranked, config.cache.searchTtlSeconds, config.cache.staleSeconds);
+    return ranked;
+  }
+
+  // Never poison Redis or replica memory with an empty search result. Provider 403/429,
+  // timeouts, circuit-breaker opens and transient metadata failures are intentionally
+  // indistinguishable from a legitimate empty provider response at this layer.
+  // Keeping empties uncached makes the next Stremio probe retry immediately.
+  if (cachedGood) return cachedGood;
+  return [];
 }
 
 export async function getProvidersStatus() {
