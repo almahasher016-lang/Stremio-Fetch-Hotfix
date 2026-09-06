@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v4.0.0
+# m7md Arabic Resolver v4.3.0
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -197,7 +197,7 @@ npm run probe:podnapisi
 ## التحقق
 
 ```json
-{"status":"ok","version":"3.6.2","ai":false}
+{"status":"ok","version":"4.3.0","ai":false}
 ```
 
 بوابات الدمج المطلوبة: ESLint، TypeScript، الاختبارات والتغطية، `npm audit --omit=dev --audit-level=high`، CodeQL، بناء Docker، وTrivy.
