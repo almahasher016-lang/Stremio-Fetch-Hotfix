@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { config } from '../config.js';
-import { acquireRefreshLock, releaseRefreshLock } from '../cache/redis.js';
+import { acquireRefreshLock, cacheGetEntry, cacheSet, releaseRefreshLock } from '../cache/redis.js';
 import { applyAccuracyPreflight } from './accuracyPreflight.js';
 import * as core from './subtitleServiceCore.js';
 
@@ -12,6 +12,65 @@ function sleep(ms) {
   return new Promise(resolve => {
     setTimeout(resolve, ms);
   });
+}
+
+function digest(value) {
+  return createHash('sha256').update(String(value)).digest('hex');
+}
+
+function normalizedFilename(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 500);
+}
+
+function availabilityKeySpecs(search = {}) {
+  const type = String(search.type || 'movie').toLowerCase();
+  const id = String(search.id || search.imdbId || search.tmdbId || search.query || search.title || '').trim().toLowerCase();
+  const season = Number(search.season || 0) || 0;
+  const episode = Number(search.episode || 0) || 0;
+  const videoHash = String(search.videoHash || search.hash || '').trim().toLowerCase();
+  const videoSize = String(search.videoSize || search.size || '').trim();
+  const filename = normalizedFilename(search.filename);
+  const raw = [];
+  if (videoHash) raw.push({ kind: 'exact', raw: `hash|${type}|${videoHash}|${videoSize}` });
+  if (filename) raw.push({ kind: 'release', raw: `release|${type}|${id}|${season}|${episode}|${filename}|${videoSize}` });
+  if (id) raw.push({ kind: 'catalog', raw: `catalog|${type}|${id}|${season}|${episode}` });
+  const seen = new Set();
+  return raw.filter(item => {
+    if (seen.has(item.raw)) return false;
+    seen.add(item.raw);
+    return true;
+  }).map(item => ({ ...item, key: `arabic-lkg:${digest(item.raw)}` }));
+}
+
+export function __availabilityKeySpecsForTests(search = {}) {
+  return availabilityKeySpecs(search);
+}
+
+function usable(results) {
+  return Array.isArray(results) && results.length > 0;
+}
+
+async function readAvailabilityLkg(search) {
+  let broadFallback = null;
+  for (const spec of availabilityKeySpecs(search)) {
+    const cached = await cacheGetEntry(spec.key, { allowStale: true, preferShared: true });
+    if (!cached?.hit || !usable(cached.value)) continue;
+    const hit = { ...cached, kind: spec.kind };
+    if (spec.kind === 'catalog') broadFallback ||= hit;
+    else return hit;
+  }
+  return broadFallback;
+}
+
+async function writeAvailabilityLkg(search, results) {
+  if (!usable(results)) return;
+  const writes = availabilityKeySpecs(search).map(spec => cacheSet(
+    spec.key,
+    results,
+    config.cache.availabilityTtlSeconds,
+    config.cache.availabilityStaleSeconds,
+  ));
+  await Promise.allSettled(writes);
 }
 
 function singleflightKey(search) {
@@ -28,7 +87,7 @@ function singleflightKey(search) {
     query: search?.query || search?.title || '',
     release: config.app.version,
   });
-  return `cold-search:${createHash('sha256').update(identity).digest('hex')}`;
+  return `cold-search:${digest(identity)}`;
 }
 
 async function searchCore(search) {
@@ -54,10 +113,23 @@ async function runDistributed(search, key) {
 }
 
 export async function searchSubtitles(search) {
+  const lkg = await readAvailabilityLkg(search);
+  // Exact hash/release LKG is safe to serve while fresh. A catalog-only LKG is fallback-only
+  // because a different release of the same movie/episode may need better timing alignment.
+  if (lkg?.kind !== 'catalog' && lkg?.hit && !lkg.stale) return lkg.value;
+
   const key = singleflightKey(search);
   const existing = inFlight.get(key);
   if (existing) return existing;
-  const pending = runDistributed(search, key);
+  const pending = (async () => {
+    const fresh = await runDistributed(search, key);
+    if (usable(fresh)) {
+      await writeAvailabilityLkg(search, fresh);
+      return fresh;
+    }
+    if (lkg?.hit && usable(lkg.value)) return lkg.value;
+    return fresh;
+  })();
   inFlight.set(key, pending);
   try {
     return await pending;

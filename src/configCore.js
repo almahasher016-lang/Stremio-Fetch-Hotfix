@@ -167,6 +167,7 @@ export function buildConfig(env = process.env) {
       topN: toInt(get('ACCURACY_PREFLIGHT_TOP_N'), 5, 0, 5),
       timeoutMs: toInt(get('ACCURACY_PREFLIGHT_TIMEOUT_MS'), 1800, 300, 8000),
       cacheTtlSeconds: toInt(get('ACCURACY_PREFLIGHT_CACHE_TTL'), 21600, 300, 604800),
+      rejectCacheTtlSeconds: toInt(get('ACCURACY_PREFLIGHT_REJECT_CACHE_TTL'), 180, 30, 3600),
     },
     slo: {
       minHttpSamples: toInt(get('SLO_MIN_HTTP_SAMPLES'), 20, 1, 10000),
@@ -265,6 +266,8 @@ export function buildConfig(env = process.env) {
       memoryMaxItems: toInt(get('MEMORY_CACHE_MAX_ITEMS'), 750, 50, 10000),
       keyPrefix: cachePrefix(get('CACHE_KEY_PREFIX', 'subtitles')),
       staleWhileRevalidate: toBool(get('CACHE_STALE_WHILE_REVALIDATE'), false),
+      availabilityTtlSeconds: toInt(get('ARABIC_LKG_TTL'), 900, 60, 86400),
+      availabilityStaleSeconds: toInt(get('ARABIC_LKG_STALE_SECONDS'), 604800, 600, 2592000),
     },
     rateLimit: {
       windowMs: toInt(get('RATE_LIMIT_WINDOW_MS'), 60000, 1000, 3600000),
