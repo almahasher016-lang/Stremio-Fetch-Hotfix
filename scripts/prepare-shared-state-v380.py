@@ -62,3 +62,5 @@ section = '''## 3.8.0 - Shared Durable State\n\n- Add private PostgreSQL-backed 
 if not text.startswith(marker):
     raise SystemExit('CHANGELOG header mismatch')
 changelog.write_text(marker + section + text[len(marker):])
+
+# This script is intentionally idempotent only for the pre-release 3.7.0 tree.
