@@ -6,13 +6,14 @@ import { isArabicLanguage, normalizeStremioLanguage } from '../utils/language.js
 import { parseRelease, stableFingerprint } from '../utils/releaseParser.js';
 import { processSubtitleBuffer } from '../utils/subtitleProcessor.js';
 import { httpError } from '../utils/httpError.js';
+import { isPostgresConfigured, queryDatabase, withDatabaseTransaction } from '../storage/postgres.js';
 
 const TIMED_CUE_RE = /\d{2,3}:\d{2}:\d{2},\d{3}\s*-->\s*\d{2,3}:\d{2}:\d{2},\d{3}/;
-
 const vaultItems = new Map();
-let loaded = false;
-let loadPromise = null;
+let localLoaded = false;
+let localLoadPromise = null;
 let writeQueue = Promise.resolve();
+let migrationPromise = null;
 
 function sha(value) {
   return createHash('sha256').update(String(value || '')).digest('hex');
@@ -41,10 +42,7 @@ function normalizeText(input) {
   const buffer = encoded ? decodeBase64(encoded) : Buffer.from(String(raw || ''), 'utf8');
   if (buffer.byteLength < 12) throw httpError(400, 'Subtitle text is required');
   if (buffer.byteLength > config.vault.maxSubtitleBytes) throw httpError(413, 'Subtitle is too large');
-  const processed = processSubtitleBuffer(buffer, {
-    stripSdh: false,
-    stripMusicNotes: false,
-  });
+  const processed = processSubtitleBuffer(buffer, { stripSdh: false, stripMusicNotes: false });
   if (!TIMED_CUE_RE.test(processed.text)) throw httpError(422, 'Subtitle text does not contain valid timed cues');
   return processed.text;
 }
@@ -82,30 +80,28 @@ function itemKeys(item = {}) {
   return keys;
 }
 
-async function ensureLoaded() {
-  if (loaded || !config.vault.enabled) return;
-  if (!loadPromise) {
-    loadPromise = (async () => {
+async function ensureLocalLoaded() {
+  if (localLoaded || !config.vault.enabled) return;
+  if (!localLoadPromise) {
+    localLoadPromise = (async () => {
       try {
         const raw = await fs.readFile(config.vault.storagePath, 'utf8');
         const parsed = JSON.parse(raw);
-        const items = Array.isArray(parsed?.items) ? parsed.items : [];
-        for (const item of items) {
+        for (const item of Array.isArray(parsed?.items) ? parsed.items : []) {
           if (item?.id && item?.text) vaultItems.set(item.id, item);
         }
-      } catch (err) {
-        if (err.code !== 'ENOENT') console.warn('[vault:load]', err.message);
+      } catch (error) {
+        if (error.code !== 'ENOENT') console.warn('[vault:load]', error.message);
       } finally {
-        loaded = true;
-        loadPromise = null;
+        localLoaded = true;
+        localLoadPromise = null;
       }
     })();
   }
-  await loadPromise;
+  await localLoadPromise;
 }
 
-async function persistVault() {
-  if (!config.vault.enabled) return;
+async function persistLocalVault() {
   const items = [...vaultItems.values()].slice(-config.vault.maxItems);
   const snapshot = JSON.stringify({ version: 1, items }, null, 2);
   const temporaryPath = `${config.vault.storagePath}.${process.pid}.${randomUUID()}.tmp`;
@@ -119,17 +115,75 @@ async function persistVault() {
       throw error;
     }
   });
-  writeQueue = operation.catch(error => {
-    console.warn('[vault:save]', error.message);
-  });
+  writeQueue = operation.catch(error => console.warn('[vault:save]', error.message));
   return operation;
+}
+
+async function migrateLocalVaultIfNeeded() {
+  if (!isPostgresConfigured() || !config.vault.enabled) return;
+  if (!migrationPromise) {
+    migrationPromise = (async () => {
+      const countResult = await queryDatabase('SELECT COUNT(*)::int AS count FROM m7md_vault_subtitles');
+      if (Number(countResult.rows[0]?.count || 0) > 0) return;
+      let items = [];
+      try {
+        const raw = await fs.readFile(config.vault.storagePath, 'utf8');
+        const parsed = JSON.parse(raw);
+        items = (Array.isArray(parsed?.items) ? parsed.items : []).filter(item => item?.id && item?.text);
+      } catch (error) {
+        if (error.code !== 'ENOENT') console.warn('[vault:migrate-read]', error.message);
+      }
+      if (!items.length) return;
+      await withDatabaseTransaction(async client => {
+        for (const item of items.slice(-config.vault.maxItems)) {
+          await client.query(
+            'INSERT INTO m7md_vault_subtitles (id, payload, updated_at) VALUES ($1, $2::jsonb, COALESCE($3::timestamptz, NOW())) ON CONFLICT (id) DO NOTHING',
+            [item.id, JSON.stringify(item), item.updatedAt || item.createdAt || null],
+          );
+        }
+      });
+      console.log(`[vault:migrate] imported ${items.length} local item(s) into PostgreSQL`);
+    })().catch(error => {
+      migrationPromise = null;
+      throw error;
+    });
+  }
+  await migrationPromise;
+}
+
+async function sharedItems(limit = config.vault.maxItems) {
+  await migrateLocalVaultIfNeeded();
+  const result = await queryDatabase(
+    'SELECT payload FROM m7md_vault_subtitles ORDER BY updated_at DESC LIMIT $1',
+    [Math.max(1, Math.min(Number(limit) || config.vault.maxItems, config.vault.maxItems))],
+  );
+  return result.rows.map(row => row.payload).filter(Boolean);
+}
+
+async function upsertSharedItem(item, client = null) {
+  const params = [item.id, JSON.stringify(item), item.updatedAt || new Date().toISOString()];
+  const sql = 'INSERT INTO m7md_vault_subtitles (id, payload, updated_at) VALUES ($1, $2::jsonb, $3::timestamptz) ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload, updated_at = EXCLUDED.updated_at';
+  if (client) await client.query(sql, params);
+  else await queryDatabase(sql, params);
+}
+
+async function trimSharedVault(client = null) {
+  const sql = 'DELETE FROM m7md_vault_subtitles WHERE id IN (SELECT id FROM m7md_vault_subtitles ORDER BY updated_at DESC OFFSET $1)';
+  if (client) await client.query(sql, [config.vault.maxItems]);
+  else await queryDatabase(sql, [config.vault.maxItems]);
+}
+
+async function ensureReady() {
+  if (!config.vault.enabled) return;
+  if (isPostgresConfigured()) await migrateLocalVaultIfNeeded();
+  else await ensureLocalLoaded();
 }
 
 function toProviderItem(item, search = {}) {
   const release = parseRelease(item.releaseName || item.filename || item.name || '');
   const matchKeys = new Set(searchKeys(search));
   const keys = item.keys || itemKeys(item);
-  const exactHash = keys.some(k => k.startsWith('hash:') && matchKeys.has(k));
+  const exactHash = keys.some(key => key.startsWith('hash:') && matchKeys.has(key));
   return {
     provider: 'vault',
     id: `vault-${item.id}`,
@@ -157,35 +211,19 @@ function toProviderItem(item, search = {}) {
   };
 }
 
-export async function searchVault(search = {}) {
-  if (!config.vault.enabled) return [];
-  await ensureLoaded();
-  const wanted = new Set(searchKeys(search));
-  if (!wanted.size) return [];
-  const out = [];
-  for (const item of vaultItems.values()) {
-    if (!isArabicLanguage(item.lang || 'ar')) continue;
-    const keys = item.keys || itemKeys(item);
-    if (keys.some(k => wanted.has(k))) out.push(toProviderItem({ ...item, keys }, search));
-  }
-  out.sort((a, b) => (b.score || 0) - (a.score || 0));
-  return out.slice(0, Math.min(config.providers.topN, 10));
-}
-
-export async function addVaultSubtitle(input = {}) {
-  if (!config.vault.enabled) throw new Error('Personal Vault is disabled');
-  await ensureLoaded();
+function buildVaultItem(input, { requireId = false } = {}) {
   const text = normalizeText(input);
-  const byteLength = Buffer.byteLength(text, 'utf8');
   const requestedId = String(input.id || '').trim();
+  if (requireId && !requestedId) throw httpError(400, 'Vault subtitle ID is required');
   if (requestedId && !/^[A-Za-z0-9_-]{1,64}$/.test(requestedId)) throw httpError(400, 'Invalid vault subtitle ID');
   const videoHash = String(input.videoHash || '').trim().toLowerCase();
   if (videoHash.length > 128 || /[^a-z0-9_-]/i.test(videoHash)) throw httpError(400, 'Invalid video hash');
   const id = requestedId || sha(`${input.imdbId || ''}:${input.season || ''}:${input.episode || ''}:${videoHash}:${input.releaseName || input.filename || ''}:${text}`).slice(0, 32) || randomUUID();
+  const createdAt = Number.isFinite(Date.parse(input.createdAt)) ? new Date(input.createdAt).toISOString() : new Date().toISOString();
   const item = {
     id,
     name: String(input.name || input.releaseName || input.filename || 'Personal Arabic Subtitle').slice(0, 180),
-    imdbId: cleanImdb(input.imdbId || input.id || input.query) || null,
+    imdbId: cleanImdb(input.imdbId || (requireId ? null : input.id) || input.query) || null,
     tmdbId: input.tmdbId || null,
     season: normalizeEpisode(input.season),
     episode: normalizeEpisode(input.episode),
@@ -195,109 +233,116 @@ export async function addVaultSubtitle(input = {}) {
     lang: normalizeStremioLanguage(input.lang || 'ar'),
     hearingImpaired: Boolean(input.hearingImpaired),
     text,
-    bytes: byteLength,
+    bytes: Buffer.byteLength(text, 'utf8'),
     keys: [],
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt,
+    updatedAt: Number.isFinite(Date.parse(input.updatedAt)) ? new Date(input.updatedAt).toISOString() : new Date().toISOString(),
   };
   item.keys = itemKeys(item);
   if (!item.keys.length) throw httpError(400, 'Add imdbId or videoHash to index this subtitle');
-  vaultItems.set(item.id, item);
-  while (vaultItems.size > config.vault.maxItems) vaultItems.delete(vaultItems.keys().next().value);
-  await persistVault();
+  return item;
+}
+
+export async function searchVault(search = {}) {
+  if (!config.vault.enabled) return [];
+  await ensureReady();
+  const wanted = new Set(searchKeys(search));
+  if (!wanted.size) return [];
+  const sourceItems = isPostgresConfigured() ? await sharedItems() : [...vaultItems.values()];
+  const out = [];
+  for (const item of sourceItems) {
+    if (!isArabicLanguage(item.lang || 'ar')) continue;
+    const keys = item.keys || itemKeys(item);
+    if (keys.some(key => wanted.has(key))) out.push(toProviderItem({ ...item, keys }, search));
+  }
+  out.sort((a, b) => (b.score || 0) - (a.score || 0));
+  return out.slice(0, Math.min(config.providers.topN, 10));
+}
+
+export async function addVaultSubtitle(input = {}) {
+  if (!config.vault.enabled) throw new Error('Personal Vault is disabled');
+  await ensureReady();
+  const item = buildVaultItem(input);
+  if (isPostgresConfigured()) {
+    await upsertSharedItem(item);
+    await trimSharedVault();
+  } else {
+    vaultItems.set(item.id, item);
+    while (vaultItems.size > config.vault.maxItems) vaultItems.delete(vaultItems.keys().next().value);
+    await persistLocalVault();
+  }
   return { ...item, text: undefined };
 }
 
 export async function getVaultSubtitle(id) {
   if (!config.vault.enabled) return null;
-  await ensureLoaded();
-  return vaultItems.get(String(id)) || null;
+  await ensureReady();
+  if (!isPostgresConfigured()) return vaultItems.get(String(id)) || null;
+  const result = await queryDatabase('SELECT payload FROM m7md_vault_subtitles WHERE id = $1', [String(id)]);
+  return result.rows[0]?.payload || null;
 }
 
 export async function listVaultSubtitles() {
   if (!config.vault.enabled) return [];
-  await ensureLoaded();
-  return [...vaultItems.values()].map(item => ({ ...item, text: undefined })).sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));
+  await ensureReady();
+  const items = isPostgresConfigured() ? await sharedItems() : [...vaultItems.values()];
+  return items.map(item => ({ ...item, text: undefined })).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
 
 export async function exportVaultSnapshot() {
   if (!config.vault.enabled) throw httpError(403, 'Personal Vault is disabled');
-  await ensureLoaded();
-  const items = [...vaultItems.values()];
-  return {
-    version: 2,
-    appVersion: config.app.version,
-    exportedAt: new Date().toISOString(),
-    count: items.length,
-    items,
-  };
+  await ensureReady();
+  const items = isPostgresConfigured() ? await sharedItems() : [...vaultItems.values()];
+  return { version: 3, appVersion: config.app.version, storage: isPostgresConfigured() ? 'postgres' : 'local-file', exportedAt: new Date().toISOString(), count: items.length, items };
 }
 
 export async function importVaultSnapshot(snapshot, { mode = 'merge' } = {}) {
   if (!config.vault.enabled) throw httpError(403, 'Personal Vault is disabled');
-  await ensureLoaded();
+  await ensureReady();
   const normalizedMode = String(mode || 'merge').toLowerCase();
   if (!['merge', 'replace'].includes(normalizedMode)) throw httpError(400, 'Vault import mode must be merge or replace');
   if (!snapshot || !Array.isArray(snapshot.items)) throw httpError(400, 'Invalid Vault backup');
   if (snapshot.items.length > config.vault.maxItems) throw httpError(413, 'Vault backup contains too many items');
+  const imported = snapshot.items.map(raw => buildVaultItem(raw, { requireId: true }));
 
-  const imported = [];
-  for (const raw of snapshot.items) {
-    if (!raw || typeof raw !== 'object') throw httpError(400, 'Invalid Vault backup item');
-    const text = normalizeText(raw);
-    const requestedId = String(raw.id || '').trim();
-    if (!/^[A-Za-z0-9_-]{1,64}$/.test(requestedId)) throw httpError(400, 'Invalid vault subtitle ID');
-    const videoHash = String(raw.videoHash || '').trim().toLowerCase();
-    if (videoHash.length > 128 || /[^a-z0-9_-]/i.test(videoHash)) throw httpError(400, 'Invalid video hash');
-    const item = {
-      id: requestedId,
-      name: String(raw.name || raw.releaseName || raw.filename || 'Personal Arabic Subtitle').slice(0, 180),
-      imdbId: cleanImdb(raw.imdbId || raw.query) || null,
-      tmdbId: raw.tmdbId || null,
-      season: normalizeEpisode(raw.season),
-      episode: normalizeEpisode(raw.episode),
-      videoHash: videoHash || null,
-      filename: String(raw.filename || '').slice(0, 260),
-      releaseName: String(raw.releaseName || raw.filename || '').slice(0, 260),
-      lang: normalizeStremioLanguage(raw.lang || 'ar'),
-      hearingImpaired: Boolean(raw.hearingImpaired),
-      text,
-      bytes: Buffer.byteLength(text, 'utf8'),
-      keys: [],
-      createdAt: Number.isFinite(Date.parse(raw.createdAt)) ? new Date(raw.createdAt).toISOString() : new Date().toISOString(),
-      updatedAt: Number.isFinite(Date.parse(raw.updatedAt)) ? new Date(raw.updatedAt).toISOString() : new Date().toISOString(),
-    };
-    item.keys = itemKeys(item);
-    if (!item.keys.length) throw httpError(400, `Vault item ${item.id} has no imdbId or videoHash`);
-    imported.push(item);
+  if (isPostgresConfigured()) {
+    await withDatabaseTransaction(async client => {
+      if (normalizedMode === 'replace') await client.query('DELETE FROM m7md_vault_subtitles');
+      for (const item of imported) await upsertSharedItem(item, client);
+      await trimSharedVault(client);
+    });
+    const count = await queryDatabase('SELECT COUNT(*)::int AS count FROM m7md_vault_subtitles');
+    return { mode: normalizedMode, imported: imported.length, total: Number(count.rows[0]?.count || 0), storage: 'postgres' };
   }
 
   if (normalizedMode === 'replace') vaultItems.clear();
   for (const item of imported) vaultItems.set(item.id, item);
   while (vaultItems.size > config.vault.maxItems) vaultItems.delete(vaultItems.keys().next().value);
-  await persistVault();
-  return { mode: normalizedMode, imported: imported.length, total: vaultItems.size };
+  await persistLocalVault();
+  return { mode: normalizedMode, imported: imported.length, total: vaultItems.size, storage: 'local-file' };
 }
 
 export async function deleteVaultSubtitle(id) {
   if (!config.vault.enabled) return false;
-  await ensureLoaded();
+  await ensureReady();
+  if (isPostgresConfigured()) {
+    const result = await queryDatabase('DELETE FROM m7md_vault_subtitles WHERE id = $1', [String(id)]);
+    return result.rowCount > 0;
+  }
   const ok = vaultItems.delete(String(id));
-  if (ok) await persistVault();
+  if (ok) await persistLocalVault();
   return ok;
 }
 
 export async function flushVaultWrites() {
-  await writeQueue;
+  if (!isPostgresConfigured()) await writeQueue;
 }
 
 export async function getVaultStatus() {
-  await ensureLoaded();
-  return {
-    enabled: config.vault.enabled,
-    uploadEnabled: config.vault.uploadEnabled,
-    items: vaultItems.size,
-    backupVersion: 2,
-    storagePath: config.vault.storagePath,
-  };
+  await ensureReady();
+  if (isPostgresConfigured()) {
+    const count = await queryDatabase('SELECT COUNT(*)::int AS count FROM m7md_vault_subtitles');
+    return { enabled: config.vault.enabled, uploadEnabled: config.vault.uploadEnabled, items: Number(count.rows[0]?.count || 0), backupVersion: 3, storage: 'postgres', shared: true };
+  }
+  return { enabled: config.vault.enabled, uploadEnabled: config.vault.uploadEnabled, items: vaultItems.size, backupVersion: 3, storage: 'local-file', shared: false, storagePath: config.vault.storagePath };
 }

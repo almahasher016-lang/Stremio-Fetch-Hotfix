@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v3.7.0
+# m7md Arabic Resolver v3.8.0
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,13 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 3.8.0
+
+- Shared durable state: Personal Vault uses PostgreSQL when `DATABASE_URL` is configured.
+- Version Registry writes are serialized with PostgreSQL row locks for safe multi-replica operation.
+- Existing JSON files remain a local-development fallback and one-time migration source.
+- Admin health now reports PostgreSQL pool/connectivity status without exposing credentials.
 
 ## ما الجديد في 3.7.0
 
