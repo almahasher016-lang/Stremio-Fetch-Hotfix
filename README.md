@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v4.3.0
+# m7md Arabic Resolver v4.4.0
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,15 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 4.4.0
+
+- تطبيق Accuracy-First على كامل مجموعة المرشحين قبل قص `TOP_N` حتى لا تختفي ترجمة متوافقة زمنيًا بسبب Score أولي أقل.
+- جعل مرحلة exact-hash تعتمد على `videoHash + videoSize` دون خلطها مع filename/IMDb/TMDB الأضعف.
+- إضافة Exact-Hash English Timing Reference كدليل ترتيب سلبي/آمن عند توفره، دون تشغيل مزامنة زمنية تلقائية عامة.
+- إزالة الانحياز الدائري من Reference lookup: المرجع يُبحث بهوية ملف الفيديو الحقيقي لا باسم ترجمة عربية مرشحة.
+- توسيع Source Family لتمييز `WEB.Remux/WEBMux` عن `BDRemux/BDMV/BluRay REMUX`.
+- تحويل Final Arabic LKG إلى fallback للتوافر فقط بدل أن يجمد ترتيبًا أقدم، وخفض Search cache الافتراضي إلى 15 دقيقة لاكتشاف ترجمات أفضل أسرع.
 
 ## ما الجديد في 4.0.0
 

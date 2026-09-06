@@ -1,3 +1,12 @@
+## 4.4.0 - 2026-09-06
+
+- Apply timing accuracy ordering to the full plausible candidate pool before TOP_N truncation.
+- Make exact-hash provider searches hash/size authoritative instead of ANDing weaker filename and metadata constraints.
+- Add passive exact-video-hash English timing-reference evidence for ranking without enabling generic auto-sync.
+- Anchor reference lookup to the actual video identity and remove candidate-seeded circular confirmation bias.
+- Harden source-family parsing for WEB Remux/WEBMux and BDRemux/BDMV/BluRay aliases.
+- Keep final Arabic LKG as availability fallback rather than a fresh-ranking authority and shorten the default search-cache TTL.
+
 ## 4.3.0 - 2026-09-06
 
 - Add a version-independent final Arabic Last-Known-Good cache after Accuracy Preflight.

@@ -55,7 +55,16 @@ export function createSearchPlan(search = {}, providerDefinitions = {}, enabledN
         name: 'exact-hash',
         providers,
         stopOnExactHash: true,
-        variants: [variant('exact-hash', identity, { query: identity.filename || identity.title || identity.query })],
+        variants: [variant('exact-hash', identity, {
+          query: '',
+          title: '',
+          filename: '',
+          imdbId: null,
+          tmdbId: null,
+          season: null,
+          episode: null,
+          year: null,
+        })],
       });
     }
   }

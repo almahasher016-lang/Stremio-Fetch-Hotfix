@@ -4,6 +4,8 @@ import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { ProviderLimiter } from '../utils/providerLimiter.js';
 import { parseRetryAfter, withRetry } from '../utils/retry.js';
 import { parseRelease, tokenOverlapScore } from '../utils/releaseParser.js';
+import { prioritizeAndLimitAccurateSubtitles } from '../utils/accuracyFirst.js';
+import { sourceFamily } from '../utils/timingCompatibility.js';
 import { rankAndFilter, scoreSubtitle } from '../utils/scoring.js';
 import { isEnglishLanguage } from '../utils/language.js';
 import { buildVideoIdentity } from '../utils/videoIdentity.js';
@@ -173,7 +175,7 @@ async function filterRejected(search, items) {
 
 const RECOVERY_HARD_CONFLICTS = new Set(['season', 'episode', 'year', 'edition', 'fps']);
 
-async function rankArabic(items, search, { relaxed = false } = {}) {
+async function rankArabic(items, search, { relaxed = false, limit = true } = {}) {
   const allowed = await filterRejected(search, items);
   const ranked = rankAndFilter(allowed, search, {
     outputArabicOnly: config.providers.outputArabicOnly,
@@ -186,7 +188,15 @@ async function rankArabic(items, search, { relaxed = false } = {}) {
   const safe = relaxed
     ? ranked.filter(item => !(item.releaseMatch?.mismatched || []).some(field => RECOVERY_HARD_CONFLICTS.has(field)))
     : ranked;
-  return safe.slice(0, config.providers.topN).map(item => (relaxed ? { ...item, recoveryTier: 'relaxed-arabic' } : item));
+
+  // Accuracy-first must see the entire plausible pool before TOP_N is applied. Cutting on
+  // raw score first can permanently discard the subtitle whose timing family is correct.
+  const prioritized = prioritizeAndLimitAccurateSubtitles(
+    safe,
+    search,
+    limit ? config.providers.topN : Infinity,
+  );
+  return prioritized.map(item => (relaxed ? { ...item, recoveryTier: 'relaxed-arabic' } : item));
 }
 
 async function finalizeArabic(search, ...groups) {
@@ -201,16 +211,35 @@ function referenceCompatibility(arabic, reference, search) {
   const arabicRelease = arabic.parsedRelease || parseRelease(arabic.releaseName || arabic.fileName || arabic.name || '');
   const referenceRelease = reference.parsedRelease || parseRelease(reference.releaseName || reference.fileName || reference.name || '');
   let score = 0;
-  if (search.videoHash && lower(arabic.movieHash) === lower(search.videoHash) && lower(reference.movieHash) === lower(search.videoHash)) score += 1600;
-  if (arabic.imdbId && reference.imdbId && lower(arabic.imdbId) === lower(reference.imdbId)) score += 280;
-  if (arabic.tmdbId && reference.tmdbId && String(arabic.tmdbId) === String(reference.tmdbId)) score += 180;
-  if (arabic.season && reference.season && Number(arabic.season) === Number(reference.season)) score += 180;
-  if (arabic.episode && reference.episode && Number(arabic.episode) === Number(reference.episode)) score += 220;
+
+  if (search.videoHash && exactHashMatch(reference, search)) score += 900;
+  if (arabic.imdbId && reference.imdbId && lower(arabic.imdbId) === lower(reference.imdbId)) score += 220;
+  if (arabic.tmdbId && reference.tmdbId && String(arabic.tmdbId) === String(reference.tmdbId)) score += 140;
+  if (arabic.season && reference.season && Number(arabic.season) === Number(reference.season)) score += 220;
+  if (arabic.episode && reference.episode && Number(arabic.episode) === Number(reference.episode)) score += 280;
+
   const overlap = tokenOverlapScore(arabicRelease.tokens, referenceRelease.tokens);
-  score += Math.round(overlap * 360);
-  if (arabicRelease.quality && referenceRelease.quality && arabicRelease.quality === referenceRelease.quality) score += 150;
-  if (arabicRelease.source && referenceRelease.source && arabicRelease.source === referenceRelease.source) score += 180;
-  if (arabicRelease.releaseGroup && referenceRelease.releaseGroup && arabicRelease.releaseGroup === referenceRelease.releaseGroup) score += 220;
+  score += Math.round(overlap * 260);
+
+  const arabicFamily = sourceFamily(arabicRelease.raw);
+  const referenceFamily = sourceFamily(referenceRelease.raw);
+  if (arabicFamily && referenceFamily) score += arabicFamily === referenceFamily ? 420 : -360;
+
+  if (arabicRelease.source && referenceRelease.source && arabicRelease.source === referenceRelease.source) score += 80;
+  if (arabicRelease.releaseGroup && referenceRelease.releaseGroup) {
+    score += arabicRelease.releaseGroup === referenceRelease.releaseGroup ? 180 : 0;
+  }
+  if (arabicRelease.quality && referenceRelease.quality && arabicRelease.quality === referenceRelease.quality) score += 45;
+
+  if (arabicRelease.service && referenceRelease.service) {
+    score += arabicRelease.service === referenceRelease.service ? 140 : -90;
+  }
+  if (arabicRelease.edition && referenceRelease.edition) {
+    score += arabicRelease.edition === referenceRelease.edition ? 220 : -480;
+  }
+  if (arabicRelease.fps && referenceRelease.fps) {
+    score += Math.abs(arabicRelease.fps - referenceRelease.fps) <= 0.02 ? 220 : -480;
+  }
   return score;
 }
 
@@ -225,12 +254,17 @@ function rankReferenceResults(results, search) {
 }
 
 async function attachReferenceCandidates(arabicResults, search) {
-  if (!config.ranking.enableReferenceAutoSync || !config.referenceSync.enabled || !arabicResults.length) return arabicResults;
-  const seed = arabicResults.find(item => item.provider !== 'registry' && item.provider !== 'vault');
-  if (!seed) return arabicResults;
+  const autoSyncEnabled = Boolean(config.ranking.enableReferenceAutoSync && config.referenceSync.enabled);
+  const exactHashEvidenceEnabled = Boolean(
+    search.videoHash && providerAvailable('opensubtitles', 'en', search.type),
+  );
+  if ((!autoSyncEnabled && !exactHashEvidenceEnabled) || !arabicResults.length) return arabicResults;
+
+  // Reference lookup must always be anchored to the actual video identity. Using an Arabic
+  // candidate's release name here creates circular confirmation bias when that candidate is wrong.
   const referenceSearch = buildVideoIdentity({
     ...search,
-    filename: seed.releaseName || seed.fileName || search.filename,
+    filename: search.filename || '',
     query: search.title || search.query,
   });
   const plan = createSearchPlan(referenceSearch, providerDefinitions, config.providers.enabled, {
@@ -238,21 +272,59 @@ async function attachReferenceCandidates(arabicResults, search) {
     maxProvidersPerStage: config.resolver.maxReferenceProviders,
     references: true,
   });
+
   const raw = [];
-  for (const stage of plan.slice(0, 2)) {
-    raw.push(...await runStage(stage, referenceSearch, config.ranking.referenceLanguage || 'en'));
-    if (raw.length) break;
+  const exactHashStage = plan.find(stage => stage.name === 'exact-hash');
+  if (exactHashEvidenceEnabled && exactHashStage) {
+    raw.push(...await runStage(exactHashStage, referenceSearch, config.ranking.referenceLanguage || 'en'));
   }
-  const references = rankReferenceResults(raw, referenceSearch);
-  if (!references.length) return arabicResults;
+
+  let references = rankReferenceResults(raw, referenceSearch);
+  const exactReferences = references.filter(reference => exactHashMatch(reference, referenceSearch));
+
+  // Generic reference auto-sync remains opt-in. If enabled and hash lookup did not produce a
+  // reference, fall back to metadata/release searches based on the actual video filename.
+  if (autoSyncEnabled && !references.length) {
+    for (const stage of plan.filter(stage => stage.name !== 'exact-hash').slice(0, 2)) {
+      raw.push(...await runStage(stage, referenceSearch, config.ranking.referenceLanguage || 'en'));
+      if (raw.length) break;
+    }
+    references = rankReferenceResults(raw, referenceSearch);
+  }
+
+  const timingReferences = exactReferences.length ? exactReferences : (autoSyncEnabled ? references : []);
+  if (!timingReferences.length) return arabicResults;
+
   return arabicResults.map(item => {
     if (item.provider === 'registry' || item.provider === 'vault') return item;
-    const candidates = references
+    const candidates = timingReferences
       .map(reference => ({ reference, matchScore: referenceCompatibility(item, reference, search) }))
-      .filter(candidate => candidate.matchScore >= config.referenceSync.minReferenceMatchScore)
       .sort((left, right) => right.matchScore - left.matchScore);
     const best = candidates[0];
-    return best ? { ...item, referenceSubtitle: best.reference, referenceMatchScore: best.matchScore } : item;
+    if (!best) return item;
+
+    let output = item;
+    if (exactHashMatch(best.reference, referenceSearch)) {
+      output = {
+        ...output,
+        timingReferenceEvidence: {
+          provider: best.reference.provider,
+          providerId: best.reference.providerId || best.reference.id || null,
+          releaseName: best.reference.releaseName || best.reference.fileName || best.reference.name || '',
+          matchScore: best.matchScore,
+          exactVideoHash: true,
+        },
+      };
+    }
+
+    if (autoSyncEnabled && best.matchScore >= config.referenceSync.minReferenceMatchScore) {
+      output = {
+        ...output,
+        referenceSubtitle: best.reference,
+        referenceMatchScore: best.matchScore,
+      };
+    }
+    return output;
   });
 }
 
@@ -309,10 +381,10 @@ async function buildFreshSubtitles(input) {
   for (const stage of plan) {
     raw.push(...await runStage(stage, search, 'ar'));
   }
-  let ranked = await rankArabic(raw, search);
+  let ranked = await rankArabic(raw, search, { limit: false });
   let recoveryRaw = [];
   if (!ranked.length && config.resolver.recoveryEnabled) {
-    ranked = await rankArabic(raw, search, { relaxed: true });
+    ranked = await rankArabic(raw, search, { relaxed: true, limit: false });
     if (!ranked.length && config.providers.enabled.includes('opensubtitles')) {
       const recoveryPlan = createSearchPlan(search, providerDefinitions, ['opensubtitles'], {
         language: 'ar',
@@ -324,7 +396,7 @@ async function buildFreshSubtitles(input) {
       for (const stage of recoveryPlan) {
         recoveryRaw.push(...await runStage(stage, search, 'ar'));
       }
-      ranked = await rankArabic(mergeResults(raw, recoveryRaw), search, { relaxed: true });
+      ranked = await rankArabic(mergeResults(raw, recoveryRaw), search, { relaxed: true, limit: false });
     }
   }
   const withReferences = await attachReferenceCandidates(ranked, search);
