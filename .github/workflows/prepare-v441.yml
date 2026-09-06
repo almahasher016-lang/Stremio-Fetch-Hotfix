@@ -1,0 +1,37 @@
+name: prepare-v441
+
+on:
+  push:
+    branches:
+      - fix/partial-result-poisoning-v441
+    paths:
+      - .github/workflows/prepare-v441.yml
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/partial-result-poisoning-v441
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.18.0
+      - name: Apply v4.4.1 patch
+        run: python scripts/apply-v441.py
+      - name: Clean install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify
+        run: npm run verify
+      - name: Commit prepared release
+        run: |
+          rm -f .github/workflows/prepare-v441.yml scripts/apply-v441.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Preserve timing candidates across partial outages v4.4.1"
+          git push origin HEAD:fix/partial-result-poisoning-v441
