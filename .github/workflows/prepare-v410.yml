@@ -19,7 +19,15 @@ jobs:
       - name: Bump package version
         run: npm version 4.1.0 --no-git-tag-version
       - name: Apply recovery changes
-        run: python3 scripts/prepare-v410.py
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/prepare-v410.py')
+          text = p.read_text()
+          text = text.replace("anchor = 'RESOLVER_UPGRADE_MIN_DELTA=180\\n'", "anchor = 'RESOLVER_MAX_PROVIDERS_PER_STAGE=4\\n'")
+          p.write_text(text)
+          PY
+          python3 scripts/prepare-v410.py
       - name: Install cleanly
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify
