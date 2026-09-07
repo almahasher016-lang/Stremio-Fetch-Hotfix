@@ -1,3 +1,12 @@
+## 4.5.0 - 2026-09-07
+
+- Add a hard identity gate for explicit year/season/episode/edition conflicts while preserving exact-hash authority.
+- Qualify strict movie title/alias fallback searches with the target year to prevent remake/title collisions.
+- Promote exact-video-hash English timeline references to a stable delivery path independent of generic experimental Reference Sync.
+- Automatically derive conservative DTW + piecewise timing correction for exact-hash references only, requiring >=92 confidence, >=0.72 anchor coverage, and >=0.84 temporal agreement.
+- Carry stable timing references through original Stremio options and fallback candidates while keeping generic metadata reference sync opt-in.
+- Add regression coverage for remake disambiguation, identity conflicts, and exact-hash timeline token delivery.
+
 ## 4.4.2 - 2026-09-07
 
 - Reconcile degraded provider responses with the Final Arabic Last-Known-Good pool before returning the response to Stremio, not only before cache writes.

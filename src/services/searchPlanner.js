@@ -106,12 +106,16 @@ export function createSearchPlan(search = {}, providerDefinitions = {}, enabledN
 
   if (identity.title || identity.query) {
     const providers = configuredProviders(providerDefinitions, enabledNames, language, identity.type, providerOptions);
+    const baseTitle = identity.title || identity.query;
+    const strictTitleQuery = identity.type === 'movie' && identity.year
+      ? `${baseTitle} ${identity.year}`
+      : baseTitle;
     if (providers.length) {
       stages.push({
         name: 'title-fallback',
         providers,
         variants: [variant('title-fallback', identity, {
-          query: identity.title || identity.query,
+          query: relaxed ? baseTitle : strictTitleQuery,
           filename: '',
           imdbId: null,
           tmdbId: null,
@@ -136,7 +140,7 @@ export function createSearchPlan(search = {}, providerDefinitions = {}, enabledN
         name: 'alias-fallback',
         providers,
         variants: aliases.map(alias => variant('alias-fallback', identity, {
-          query: alias,
+          query: (!relaxed && identity.type === 'movie' && identity.year) ? `${alias} ${identity.year}` : alias,
           title: alias,
           filename: '',
           imdbId: null,

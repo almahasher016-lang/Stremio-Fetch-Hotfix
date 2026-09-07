@@ -100,6 +100,12 @@ function referenceForProxy(baseUrl, item) {
   };
 }
 
+function stableReferenceForProxy(baseUrl, item) {
+  if (!item?.timingReferenceEvidence?.exactVideoHash || item?.referenceSyncMode !== 'exact-hash-stable') return null;
+  const reference = referenceForProxy(baseUrl, item);
+  return reference ? { ...reference, exactVideoHash: true } : null;
+}
+
 function styledModeFormat(mode) {
   const match = String(mode || '').match(/^styled-(ass|ssa)$/);
   return match ? match[1] : null;
@@ -119,6 +125,7 @@ function qualityBadges(item, mode) {
   if (mode === 'sync') badges.push('⏱ Manual Timing');
   if (styledModeFormat(mode)) badges.push('🎨 Original Styles');
   if (item.searchReason === 'hash-first' || item.movieHash) badges.push('🔑 Hash');
+  if (item.timingReferenceEvidence?.exactVideoHash) badges.push('🧭 Exact Timeline');
   if (item.hearingImpaired || item.sdh) badges.push('👂 SDH');
   if (item.machineTranslated || item.automatedTranslated) badges.push('🤖 MT');
   if (item.quality?.score) badges.push(`✓ Q${item.quality.score}`);
@@ -159,7 +166,12 @@ export function toStremioSubtitles(results, baseUrl, search = {}) {
       ...results.slice(index + 1),
       ...results.slice(0, index),
     ].filter(candidate => candidate?.download || candidate?.url);
-    const originalUrl = proxiedSubtitleUrl(baseUrl, item, null, null, search, rankedFallbacks);
+    const stableReference = stableReferenceForProxy(baseUrl, item);
+    const stableFallbacks = rankedFallbacks.map(candidate => ({
+      ...candidate,
+      reference: stableReferenceForProxy(baseUrl, candidate),
+    }));
+    const originalUrl = proxiedSubtitleUrl(baseUrl, item, null, stableReference, search, stableFallbacks);
     if (!originalUrl) continue;
     eligible.push({ item, index, rankedFallbacks, originalUrl });
   }

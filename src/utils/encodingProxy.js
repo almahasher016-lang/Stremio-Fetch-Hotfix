@@ -77,6 +77,7 @@ function compactTokenSource(source = {}) {
       name: tokenText(source.name),
       provider: 'vault',
       candidate: compactTokenCandidate(source.candidate),
+      exactVideoHash: Boolean(source.exactVideoHash),
     };
   }
   if (source.kind === 'provider') {
@@ -91,6 +92,7 @@ function compactTokenSource(source = {}) {
       providerId,
       name: tokenText(source.name),
       candidate: compactTokenCandidate(source.candidate),
+      exactVideoHash: Boolean(source.exactVideoHash),
     };
   }
   return {
@@ -99,6 +101,7 @@ function compactTokenSource(source = {}) {
     name: tokenText(source.name),
     provider,
     candidate: compactTokenCandidate(source.candidate),
+    exactVideoHash: Boolean(source.exactVideoHash),
   };
 }
 
@@ -548,7 +551,18 @@ async function finalizeProcessedSource(loaded, payload, fallbackIndex, fetcher, 
         frameRate: payload.context?.fps,
         sourceName: referenceExtracted.entryName || reference.name,
       });
-      const referencePlan = deriveReferenceSyncPlan(processed.text, referenceProcessed.text, config.referenceSync);
+      const referenceOptions = reference.exactVideoHash
+        ? {
+          ...config.referenceSync,
+          minConfidence: Math.max(92, Number(config.referenceSync.minConfidence || 0)),
+          minAnchorCoverage: Math.max(0.72, Number(config.referenceSync.minAnchorCoverage || 0)),
+          minTemporalAgreement: Math.max(0.84, Number(config.referenceSync.minTemporalAgreement || 0)),
+          dtwEnabled: true,
+          piecewise: true,
+          allowAggressiveStretch: false,
+        }
+        : config.referenceSync;
+      const referencePlan = deriveReferenceSyncPlan(processed.text, referenceProcessed.text, referenceOptions);
       if (referencePlan.enabled) {
         syncPlan = {
           ...referencePlan,
@@ -693,8 +707,9 @@ function tokenReferenceFor(baseUrl, reference) {
     id: reference.id,
     name: reference.name,
     download: reference.url || reference.download,
+    exactVideoHash: Boolean(reference.exactVideoHash),
   });
-  return { ...source, candidate: null };
+  return { ...source, candidate: null, exactVideoHash: Boolean(reference.exactVideoHash) };
 }
 
 export function proxiedSubtitleUrl(baseUrl, item, syncPlan = null, reference = null, context = null, fallbackItems = []) {
