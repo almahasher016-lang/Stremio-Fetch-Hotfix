@@ -35,10 +35,10 @@ test('metadata and fallback plans do not over-constrain providers with title plu
   const title = plan.find(stage => stage.name === 'title-fallback').variants[0];
   assert.equal(title.imdbId, null);
   assert.equal(title.tmdbId, null);
-  assert.equal(title.query, 'The Whisper Man');
+  assert.equal(title.query, 'The Whisper Man 2026');
 
   const alias = plan.find(stage => stage.name === 'alias-fallback').variants[0];
-  assert.equal(alias.query, 'Whisper Man');
+  assert.equal(alias.query, 'Whisper Man 2026');
 });
 
 test('OpenSubtitles recovery includes hearing-impaired results only for relaxed fallback', () => {

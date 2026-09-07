@@ -222,7 +222,17 @@ async function filterRejected(search, items) {
   return allowed.filter(Boolean);
 }
 
+const IDENTITY_HARD_CONFLICTS = new Set(['season', 'episode', 'year', 'edition']);
 const RECOVERY_HARD_CONFLICTS = new Set(['season', 'episode', 'year', 'edition', 'fps']);
+
+export function hasHardIdentityConflict(item, search = {}) {
+  const exactSource = item?.sourceType === 'personal-vault-exact-hash'
+    || item?.sourceType === 'version-registry-exact-hash'
+    || exactHashMatch(item, search);
+  if (exactSource) return false;
+  const mismatched = Array.isArray(item?.releaseMatch?.mismatched) ? item.releaseMatch.mismatched : [];
+  return mismatched.some(field => IDENTITY_HARD_CONFLICTS.has(field));
+}
 
 async function rankArabic(items, search, { relaxed = false, limit = true } = {}) {
   const allowed = await filterRejected(search, items);
@@ -236,9 +246,10 @@ async function rankArabic(items, search, { relaxed = false, limit = true } = {})
     minRankScore,
     applyMinRankScore: false,
   });
+  const identitySafe = ranked.filter(item => !hasHardIdentityConflict(item, search));
   const safe = relaxed
-    ? ranked.filter(item => !(item.releaseMatch?.mismatched || []).some(field => RECOVERY_HARD_CONFLICTS.has(field)))
-    : ranked;
+    ? identitySafe.filter(item => !(item.releaseMatch?.mismatched || []).some(field => RECOVERY_HARD_CONFLICTS.has(field)))
+    : identitySafe;
 
   // Accuracy-first must see the entire plausible pool before TOP_N is applied. Cutting on
   // raw score first can permanently discard the subtitle whose timing family is correct.
@@ -362,14 +373,21 @@ async function attachReferenceCandidates(arabicResults, search) {
           matchScore: best.matchScore,
           exactVideoHash: true,
         },
+        // Exact-hash references describe the actual playback timeline. They are safe to attach
+        // even when generic experimental Reference Sync is disabled; delivery still applies a
+        // strict structural confidence gate before changing a single timestamp.
+        referenceSubtitle: best.reference,
+        referenceMatchScore: best.matchScore,
+        referenceSyncMode: 'exact-hash-stable',
       };
     }
 
-    if (autoSyncEnabled && best.matchScore >= config.referenceSync.minReferenceMatchScore) {
+    if (!output.referenceSubtitle && autoSyncEnabled && best.matchScore >= config.referenceSync.minReferenceMatchScore) {
       output = {
         ...output,
         referenceSubtitle: best.reference,
         referenceMatchScore: best.matchScore,
+        referenceSyncMode: 'generic-experimental',
       };
     }
     return output;
