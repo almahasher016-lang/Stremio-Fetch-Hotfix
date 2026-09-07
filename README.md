@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v4.4.1
+# m7md Arabic Resolver v4.4.2
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,12 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 4.4.2
+
+- في دورة `degraded` يتم دمج النتائج الجزئية مع Final Arabic LKG **قبل إرسال الاستجابة إلى Stremio**، وليس فقط عند تحديث Redis.
+- إذا لم يوجد Last-Good سابق، تُعرض النتيجة الجزئية الحالية للمستخدم لكنها لا تُعتمد كـFinal LKG.
+- بعد الدمج يعاد Accuracy Preflight + Accuracy-First بالقواعد الحالية قبل الإرجاع.
 
 ## ما الجديد في 4.4.1
 

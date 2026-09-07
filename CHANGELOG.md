@@ -1,3 +1,10 @@
+## 4.4.2 - 2026-09-07
+
+- Reconcile degraded provider responses with the Final Arabic Last-Known-Good pool before returning the response to Stremio, not only before cache writes.
+- Never promote a degraded first-ever partial result into the Final LKG when no prior good pool exists.
+- Re-run current Accuracy Preflight and Accuracy-First ordering over the reconciled degraded pool.
+- Add regression coverage for first-response partial-result poisoning.
+
 ## 4.4.1 - 2026-09-06
 
 - Prevent partial non-empty provider cycles from replacing a richer cached timing-compatible candidate pool.
