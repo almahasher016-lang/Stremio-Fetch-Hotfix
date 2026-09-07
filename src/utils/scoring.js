@@ -374,6 +374,7 @@ export function rankAndFilter(results, search = {}, config = {}) {
   const excludeMachine = config.excludeMachineTranslated ?? true;
   const maxPerRelease = config.maxReturnedPerRelease ?? 1;
   const minRankScore = config.minRankScore ?? appConfig.ranking.minRankScore ?? -250;
+  const applyMinRankScore = config.applyMinRankScore ?? true;
   const seenCounts = new Map();
 
   const ranked = [];
@@ -384,7 +385,7 @@ export function rankAndFilter(results, search = {}, config = {}) {
     if (excludeMachine && (item.machineTranslated || item.automatedTranslated || item.autoTranslated)) continue;
     if (config.strictQualityFilters && item.quality && item.quality.valid === false) continue;
     const scoring = scoreSubtitle(item, search);
-    if (scoring.score < minRankScore) continue;
+    if (applyMinRankScore && scoring.score < minRankScore) continue;
     ranked.push({
       ...item,
       score: scoring.score,

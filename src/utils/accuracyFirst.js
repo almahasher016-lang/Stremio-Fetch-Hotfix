@@ -101,6 +101,22 @@ export function prioritizeAccurateSubtitles(results = [], search = {}) {
   });
 }
 
+export function hasStrongTimingEvidence(item, search = {}) {
+  if (evidenceRank(item) > 0 || timingReferenceRank(item) > 0) return true;
+  if (hardConflictCount(item) > 0) return false;
+  const targetFamily = sourceFamily(search?.filename || search?.extra?.filename || search?.query || search?.title || '');
+  const candidateFamily = sourceFamily(releaseText(item));
+  if (targetFamily && candidateFamily && targetFamily === candidateFamily) return true;
+  const match = meaningfulReleaseMatch(item);
+  return Boolean(match && Number(match.criticalMismatches || 0) === 0 && Number(match.tier || 0) >= 2);
+}
+
+export function applyPostAccuracyScoreFloor(results = [], search = {}, minScore = Number.NEGATIVE_INFINITY) {
+  const ranked = prioritizeAccurateSubtitles(results, search);
+  const floor = Number(minScore);
+  if (!Number.isFinite(floor)) return ranked;
+  return ranked.filter(item => Number(item?.score ?? Number.NEGATIVE_INFINITY) >= floor || hasStrongTimingEvidence(item, search));
+}
 
 export function prioritizeAndLimitAccurateSubtitles(results = [], search = {}, limit = Infinity) {
   const ranked = prioritizeAccurateSubtitles(results, search);
