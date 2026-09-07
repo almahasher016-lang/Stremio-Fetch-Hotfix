@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Triggered once to apply and verify the final v4.5.0 timing pool.
 ROOT = Path('.')
 
 def read(path):
