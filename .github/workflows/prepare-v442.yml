@@ -3,7 +3,9 @@ name: prepare-v442
 on:
   push:
     branches: [fix/degraded-response-v442]
-    paths: [.github/workflows/prepare-v442.yml]
+    paths:
+      - .github/workflows/prepare-v442.yml
+      - scripts/apply-v442.py
 
 permissions:
   contents: write
