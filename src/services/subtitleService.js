@@ -51,25 +51,44 @@ function usable(results) {
 }
 
 async function readAvailabilityLkg(search) {
-  let broadFallback = null;
+  const specific = [];
+  const catalog = [];
+  let allStale = true;
   for (const spec of availabilityKeySpecs(search)) {
     const cached = await cacheGetEntry(spec.key, { allowStale: true, preferShared: true });
     if (!cached?.hit || !usable(cached.value)) continue;
-    const hit = { ...cached, kind: spec.kind };
-    if (spec.kind === 'catalog') broadFallback ||= hit;
-    else return hit;
+    allStale = allStale && Boolean(cached.stale);
+    if (spec.kind === 'catalog') catalog.push(cached.value);
+    else specific.push(cached.value);
   }
-  return broadFallback;
+  const groups = specific.length ? specific : catalog;
+  if (!groups.length) return null;
+  const value = core.preserveAccurateCandidates(search, ...groups);
+  return usable(value) ? {
+    hit: true,
+    stale: allStale,
+    kind: specific.length ? 'specific' : 'catalog',
+    value,
+  } : null;
 }
 
-async function writeAvailabilityLkg(search, results) {
+async function writeAvailabilityLkg(search, results, mode = 'merge') {
   if (!usable(results)) return;
-  const writes = availabilityKeySpecs(search).map(spec => cacheSet(
-    spec.key,
-    results,
-    config.cache.availabilityTtlSeconds,
-    config.cache.availabilityStaleSeconds,
-  ));
+  const writes = availabilityKeySpecs(search).map(async spec => {
+    const current = await cacheGetEntry(spec.key, { allowStale: true, preferShared: true });
+    const preserved = mode === 'replace'
+      ? core.preserveAccurateCandidates(search, results)
+      : (current?.hit && usable(current.value)
+        ? core.preserveAccurateCandidates(search, results, current.value)
+        : core.preserveAccurateCandidates(search, results));
+    if (!usable(preserved)) return;
+    await cacheSet(
+      spec.key,
+      preserved,
+      config.cache.availabilityTtlSeconds,
+      config.cache.availabilityStaleSeconds,
+    );
+  });
   await Promise.allSettled(writes);
 }
 
@@ -91,8 +110,10 @@ function singleflightKey(search) {
 }
 
 async function searchCore(search) {
-  return applyAccuracyPreflight(await core.searchSubtitles(search), search);
+  const outcome = await core.searchSubtitlesWithStatus(search);
+  return { ...outcome, results: await applyAccuracyPreflight(outcome.results, search) };
 }
+
 
 async function runDistributed(search, key) {
   let lock = await acquireRefreshLock(key, config.cache.refreshLockTtlSeconds);
@@ -122,9 +143,11 @@ export async function searchSubtitles(search) {
   const existing = inFlight.get(key);
   if (existing) return existing;
   const pending = (async () => {
-    const fresh = await runDistributed(search, key);
+    const outcome = await runDistributed(search, key);
+    const fresh = outcome.results;
     if (usable(fresh)) {
-      await writeAvailabilityLkg(search, fresh);
+      if (outcome.cycleStatus === 'complete') await writeAvailabilityLkg(search, fresh, 'replace');
+      else if (outcome.cycleStatus === 'degraded') await writeAvailabilityLkg(search, fresh, 'merge');
       return fresh;
     }
     if (lkg?.hit && usable(lkg.value)) return lkg.value;

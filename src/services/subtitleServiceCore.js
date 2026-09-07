@@ -1,13 +1,14 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { config } from '../config.js';
 import { acquireRefreshLock, cacheGetEntry, cacheSet, releaseRefreshLock } from '../cache/redis.js';
 import { CircuitBreaker } from '../utils/circuitBreaker.js';
 import { ProviderLimiter } from '../utils/providerLimiter.js';
 import { parseRetryAfter, withRetry } from '../utils/retry.js';
 import { parseRelease, tokenOverlapScore } from '../utils/releaseParser.js';
-import { prioritizeAndLimitAccurateSubtitles } from '../utils/accuracyFirst.js';
+import { applyPostAccuracyScoreFloor, hasStrongTimingEvidence, prioritizeAndLimitAccurateSubtitles } from '../utils/accuracyFirst.js';
 import { sourceFamily } from '../utils/timingCompatibility.js';
 import { rankAndFilter, scoreSubtitle } from '../utils/scoring.js';
-import { isEnglishLanguage } from '../utils/language.js';
+import { isArabicLanguage, isEnglishLanguage } from '../utils/language.js';
 import { buildVideoIdentity } from '../utils/videoIdentity.js';
 import { providerDefinitions, getProviderDefinition } from '../providers/registry.js';
 import { searchVault, getVaultStatus } from './vaultService.js';
@@ -35,6 +36,46 @@ const providerLimiters = new Map(Object.keys(providerHandlers).map(name => [
 ]));
 const refreshingKeys = new Set();
 const backgroundRefreshTasks = new Set();
+const providerCycleStorage = new AsyncLocalStorage();
+
+function createProviderCycle() {
+  return { attempted: 0, succeeded: 0, failed: 0, providersAttempted: new Set(), providersFailed: new Set() };
+}
+
+function cycleFor(variant) {
+  return isArabicLanguage(variant?.language || 'ar') ? providerCycleStorage.getStore() : null;
+}
+
+function recordCycleAttempt(providerName, variant) {
+  const cycle = cycleFor(variant);
+  if (!cycle) return;
+  cycle.attempted += 1;
+  cycle.providersAttempted.add(providerName);
+}
+
+function recordCycleSuccess(providerName, variant) {
+  const cycle = cycleFor(variant);
+  if (!cycle) return;
+  cycle.succeeded += 1;
+}
+
+function recordCycleFailure(providerName, variant) {
+  const cycle = cycleFor(variant);
+  if (!cycle) return;
+  cycle.failed += 1;
+  cycle.providersFailed.add(providerName);
+}
+
+export function classifyProviderCycle(cycle = {}) {
+  const attempted = Number(cycle.attempted || 0);
+  const succeeded = Number(cycle.succeeded || 0);
+  const failed = Number(cycle.failed || 0);
+  if (!attempted) return 'complete';
+  if (!failed) return 'complete';
+  if (!succeeded) return 'failed';
+  return 'degraded';
+}
+
 
 function lower(value) {
   return String(value || '').toLowerCase();
@@ -70,12 +111,14 @@ function providerAvailable(providerName, language, mediaType = 'movie') {
 async function runProvider(providerName, variant) {
   const handler = providerHandlers[providerName];
   if (!handler) return [];
+  recordCycleAttempt(providerName, variant);
   const breaker = breakers.get(providerName);
   const limiter = providerLimiters.get(providerName);
   try {
     return await limiter.run(async () => {
       if (breaker && !breaker.tryAcquire()) {
         recordProviderCall(providerName, { ok: false, count: 0, ms: 0, error: 'circuit-breaker-open' });
+        recordCycleFailure(providerName, variant);
         return [];
       }
       const started = Date.now();
@@ -92,6 +135,7 @@ async function runProvider(providerName, variant) {
         const elapsedMs = Date.now() - started;
         limiter?.recordOutcome({ ok: true, ms: elapsedMs });
         breaker?.recordSuccess();
+        recordCycleSuccess(providerName, variant);
         recordProviderCall(providerName, { ok: true, count: results.length, ms: elapsedMs });
         return results.map(item => ({
           ...item,
@@ -102,6 +146,7 @@ async function runProvider(providerName, variant) {
         if (variant.signal?.aborted || error?.name === 'AbortError') {
           breaker?.recordCancellation();
           recordProviderCall(providerName, { ok: false, count: 0, ms: Date.now() - started, error: 'stage-deadline' });
+          recordCycleFailure(providerName, variant);
           return [];
         }
         const elapsedMs = Date.now() - started;
@@ -112,6 +157,7 @@ async function runProvider(providerName, variant) {
           retryAfterMs: parseRetryAfter(error?.retryAfter) || 0,
         });
         breaker?.recordFailure();
+        recordCycleFailure(providerName, variant);
         recordProviderCall(providerName, { ok: false, count: 0, ms: elapsedMs, error: error.message });
         console.warn(`[provider:${providerName}]`, error.message);
         return [];
@@ -123,8 +169,10 @@ async function runProvider(providerName, variant) {
     if (variant.signal?.aborted || error?.name === 'AbortError') {
       breaker?.recordCancellation();
       recordProviderCall(providerName, { ok: false, count: 0, ms: 0, error: 'stage-deadline-queued' });
+      recordCycleFailure(providerName, variant);
       return [];
     }
+    recordCycleFailure(providerName, variant);
     recordProviderCall(providerName, { ok: false, count: 0, ms: 0, error: error.message });
     console.warn(`[provider:${providerName}]`, error.message);
     return [];
@@ -161,6 +209,7 @@ async function runStage(stage, search, language = 'ar') {
     ]);
     if (outcome === 'deadline') {
       controller.abort(new DOMException('Provider stage deadline exceeded', 'AbortError'));
+      await Promise.allSettled(tasks);
     }
   } finally {
     limit.cancel();
@@ -177,13 +226,15 @@ const RECOVERY_HARD_CONFLICTS = new Set(['season', 'episode', 'year', 'edition',
 
 async function rankArabic(items, search, { relaxed = false, limit = true } = {}) {
   const allowed = await filterRejected(search, items);
+  const minRankScore = relaxed ? config.resolver.recoveryMinRankScore : config.ranking.minRankScore;
   const ranked = rankAndFilter(allowed, search, {
     outputArabicOnly: config.providers.outputArabicOnly,
     excludeHearingImpaired: relaxed ? false : config.providers.excludeHearingImpaired,
     excludeMachineTranslated: config.providers.excludeMachineTranslated,
     strictQualityFilters: relaxed ? false : config.providers.strictQualityFilters,
     maxReturnedPerRelease: config.ranking.maxReturnedPerRelease,
-    minRankScore: relaxed ? config.resolver.recoveryMinRankScore : config.ranking.minRankScore,
+    minRankScore,
+    applyMinRankScore: false,
   });
   const safe = relaxed
     ? ranked.filter(item => !(item.releaseMatch?.mismatched || []).some(field => RECOVERY_HARD_CONFLICTS.has(field)))
@@ -191,11 +242,8 @@ async function rankArabic(items, search, { relaxed = false, limit = true } = {})
 
   // Accuracy-first must see the entire plausible pool before TOP_N is applied. Cutting on
   // raw score first can permanently discard the subtitle whose timing family is correct.
-  const prioritized = prioritizeAndLimitAccurateSubtitles(
-    safe,
-    search,
-    limit ? config.providers.topN : Infinity,
-  );
+  const ordered = applyPostAccuracyScoreFloor(safe, search, minRankScore);
+  const prioritized = limit ? ordered.slice(0, config.providers.topN) : ordered;
   return prioritized.map(item => (relaxed ? { ...item, recoveryTier: 'relaxed-arabic' } : item));
 }
 
@@ -348,6 +396,15 @@ export function mergeResults(...groups) {
   return output;
 }
 
+
+export function preserveAccurateCandidates(search, ...groups) {
+  return prioritizeAndLimitAccurateSubtitles(
+    mergeResults(...groups),
+    search,
+    config.providers.topN,
+  );
+}
+
 async function buildFreshSubtitles(input) {
   const initial = await versionRegistry.hydrateIdentity(buildVideoIdentity(input));
   const [registryResults, vaultResults] = await Promise.all([
@@ -408,6 +465,12 @@ async function buildFreshSubtitles(input) {
   return finalizeArabic(search, registryResults, vaultResults, withReferences);
 }
 
+async function buildFreshSubtitlesWithStatus(input) {
+  const cycle = createProviderCycle();
+  const results = await providerCycleStorage.run(cycle, () => buildFreshSubtitles(input));
+  return { results, cycleStatus: classifyProviderCycle(cycle) };
+}
+
 function refreshInBackground(key, search) {
   if (refreshingKeys.has(key)) {
     recordRefreshLock('local-skipped');
@@ -421,9 +484,16 @@ function refreshInBackground(key, search) {
     try {
       lock = await acquireRefreshLock(key, config.cache.refreshLockTtlSeconds);
       if (!lock.acquired) return;
-      const fresh = await buildFreshSubtitles(search);
+      const { results: fresh, cycleStatus } = await buildFreshSubtitlesWithStatus(search);
       if (Array.isArray(fresh) && fresh.length > 0) {
-        await cacheSet(key, fresh, config.cache.searchTtlSeconds, config.cache.staleSeconds);
+        const existing = await cacheGetEntry(key, { allowStale: true, preferShared: true });
+        const existingGood = existing?.hit && hasUsableSubtitleResults(existing.value) ? existing.value : null;
+        const next = cycleStatus === 'complete'
+          ? preserveAccurateCandidates(search, fresh)
+          : (existingGood ? preserveAccurateCandidates(search, fresh, existingGood) : preserveAccurateCandidates(search, fresh));
+        if (cycleStatus === 'complete' || existingGood) {
+          await cacheSet(key, next, config.cache.searchTtlSeconds, config.cache.staleSeconds);
+        }
       }
     } catch (error) {
       console.warn('[cache:refresh]', error.message);
@@ -452,33 +522,35 @@ export function hasUsableSubtitleResults(value) {
   return Array.isArray(value) && value.length > 0;
 }
 
-export async function searchSubtitles(search) {
+export async function searchSubtitlesWithStatus(search) {
   const identity = await versionRegistry.hydrateIdentity(buildVideoIdentity(search));
   const key = cacheKey(identity);
-
-  // Search availability is shared-state critical. Prefer Redis over replica-local memory
-  // and always retain a stale non-empty result as Last-Known-Good fallback.
   const cached = await cacheGetEntry(key, { allowStale: true, preferShared: true });
   const cachedGood = cached?.hit && hasUsableSubtitleResults(cached.value) ? cached.value : null;
 
-  if (cachedGood && !cached.stale) return cachedGood;
+  if (cachedGood && !cached.stale) return { results: cachedGood, cycleStatus: 'cached' };
   if (cachedGood && cached.stale && config.cache.staleWhileRevalidate) {
     refreshInBackground(key, identity);
-    return cachedGood;
+    return { results: cachedGood, cycleStatus: 'cached' };
   }
 
-  const ranked = await buildFreshSubtitles(identity);
+  const { results: ranked, cycleStatus } = await buildFreshSubtitlesWithStatus(identity);
   if (hasUsableSubtitleResults(ranked)) {
-    await cacheSet(key, ranked, config.cache.searchTtlSeconds, config.cache.staleSeconds);
-    return ranked;
+    const next = cycleStatus === 'complete'
+      ? preserveAccurateCandidates(identity, ranked)
+      : (cachedGood ? preserveAccurateCandidates(identity, ranked, cachedGood) : preserveAccurateCandidates(identity, ranked));
+    if (cycleStatus === 'complete' || cachedGood) {
+      await cacheSet(key, next, config.cache.searchTtlSeconds, config.cache.staleSeconds);
+    }
+    return { results: next, cycleStatus };
   }
 
-  // Never poison Redis or replica memory with an empty search result. Provider 403/429,
-  // timeouts, circuit-breaker opens and transient metadata failures are intentionally
-  // indistinguishable from a legitimate empty provider response at this layer.
-  // Keeping empties uncached makes the next Stremio probe retry immediately.
-  if (cachedGood) return cachedGood;
-  return [];
+  if (cachedGood) return { results: cachedGood, cycleStatus };
+  return { results: [], cycleStatus };
+}
+
+export async function searchSubtitles(search) {
+  return (await searchSubtitlesWithStatus(search)).results;
 }
 
 export async function getProvidersStatus() {

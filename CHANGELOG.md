@@ -1,3 +1,13 @@
+## 4.4.1 - 2026-09-06
+
+- Prevent partial non-empty provider cycles from replacing a richer cached timing-compatible candidate pool.
+- Merge fresh and previous candidates, then re-run current Accuracy-First ordering before Redis search-cache writes.
+- Preserve and re-rank prior candidates during background refresh and Final Arabic Last-Known-Good updates.
+- Keep newly discovered exact-video-hash evidence authoritative over preserved heuristic candidates.
+- Move `minRankScore` behind Accuracy-First and rescue candidates with strong timing evidence.
+- Classify provider cycles as complete/degraded/failed and only merge prior pools on degraded cycles.
+- Add a permanent timing regression corpus, including the House of the Dragon BluRay-vs-WEB incident.
+
 ## 4.4.0 - 2026-09-06
 
 - Apply timing accuracy ordering to the full plausible candidate pool before TOP_N truncation.

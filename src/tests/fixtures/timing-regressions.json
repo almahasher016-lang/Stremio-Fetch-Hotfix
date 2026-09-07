@@ -1,0 +1,20 @@
+[
+  {
+    "name":"house-of-the-dragon-s01e07-bluray-over-web",
+    "search":{"filename":"House.of.the.Dragon.S01E07.2160p.BluRay.Remux.DV.HDR.HEVC.Atmos-SGF.mkv"},
+    "expected":"bluray",
+    "candidates":[
+      {"id":"web","provider":"opensubtitles","releaseName":"House.of.the.Dragon.S01E07.2160p.WEB-DL-GRP","score":1500,"releaseMatch":{"targetFields":3,"tier":2,"priority":21000,"criticalMismatches":0,"mismatched":["source"]}},
+      {"id":"bluray","provider":"opensubtitles","releaseName":"House.of.the.Dragon.S01E07.720p.BluRay.x264-BLOODY","score":700,"releaseMatch":{"targetFields":3,"tier":2,"priority":18000,"criticalMismatches":0,"mismatched":["quality"]}}
+    ]
+  },
+  {
+    "name":"exact-hash-veto",
+    "search":{"filename":"Movie.2026.2160p.BluRay.Remux.mkv","videoHash":"abcd1234"},
+    "expected":"hash",
+    "candidates":[
+      {"id":"heuristic","provider":"subdl","releaseName":"Movie.2026.2160p.BluRay.Remux-GRP","score":2200,"releaseMatch":{"targetFields":4,"tier":5,"priority":52000,"criticalMismatches":0,"mismatched":[]}},
+      {"id":"hash","provider":"opensubtitles","releaseName":"Movie.2026.1080p.WEB-DL-OTHER","score":100,"scoreReasons":[{"reason":"exact-video-hash-match","value":1800}],"releaseMatch":{"targetFields":4,"tier":1,"priority":8000,"criticalMismatches":0,"mismatched":["source"]}}
+    ]
+  }
+]
