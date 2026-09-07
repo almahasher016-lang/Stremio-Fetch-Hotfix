@@ -20,14 +20,16 @@ jobs:
         with:
           node-version: 24.18.0
       - name: Apply v4.5.0 timing proof
-        run: python scripts/apply-v450.py
+        run: |
+          python scripts/apply-v450.py
+          python scripts/fix-v450-prep.py
       - name: Install
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Verify
         run: npm run verify
       - name: Commit verified v4.5.0
         run: |
-          rm -f .github/workflows/prepare-v450.yml scripts/apply-v450.py
+          rm -f .github/workflows/prepare-v450.yml scripts/apply-v450.py scripts/fix-v450-prep.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
