@@ -65,3 +65,38 @@ test('reference outage fails open and preserves deterministic existing ranking',
   assert.deepEqual(results.map(x=>x.id),['shifted','aligned']);
   assert.equal(results.some(x=>x.actualTimingEvidence),false);
 });
+
+
+test('timing evidence rescues an aligned candidate from the tenth visible slot', async () => {
+  const shiftedProfile = buildTimingProfile(srt(baseStarts.map(v => v + 8500)));
+  const alignedProfile = buildTimingProfile(srt(baseStarts));
+  const candidates = Array.from({ length: 10 }, (_, index) => {
+    const aligned = index === 9;
+    const id = aligned ? 'aligned-tenth' : `shifted-${index}`;
+    return {
+      ...candidate('shifted', 1000 - index * 35),
+      id,
+      providerId: String(300 + index),
+      fileId: String(300 + index),
+      download: `/downloads/opensubtitles/${300 + index}.srt`,
+      releaseName: `Movie.2026.2160p.BluRay.${id}`,
+      exactTimingReference: reference,
+    };
+  });
+
+  const results = await applyAccuracyPreflight(
+    candidates,
+    { filename: 'Movie.2026.2160p.BluRay.Remux.mkv', videoHash: 'abc' },
+    {
+      ...noCache,
+      preflightImpl: async item => ({
+        quality: { valid: true, score: 90, reasons: [] },
+        timingProfile: item.id === 'aligned-tenth' ? alignedProfile : shiftedProfile,
+      }),
+      referencePreflightImpl: async () => ({ timingProfile: referenceProfile }),
+    },
+  );
+
+  assert.equal(results[0].id, 'aligned-tenth');
+  assert.equal(results[0].actualTimingEvidence.verdict, 'aligned');
+});

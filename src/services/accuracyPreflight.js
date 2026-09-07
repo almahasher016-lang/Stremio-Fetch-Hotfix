@@ -182,7 +182,16 @@ export async function applyAccuracyPreflight(results = [], search = {}, {
   }
 
   const inspected = new Map();
-  const targets = ranked.slice(0, config.accuracyPreflight.topN);
+  // When we have a timing reference proven to belong to this exact video hash,
+  // measure every candidate that can actually be surfaced to the user (normally TOP_N=10).
+  // Without exact-hash evidence, retain the bounded quality-preflight window.
+  const exactHashTimingAvailable = config.timingEvidence.enabled
+    && ranked.some(item => item?.exactTimingReference?.exactVideoHash);
+  const timingTargetCount = exactHashTimingAvailable
+    ? Math.min(Number(config.providers.topN || 10), 10)
+    : 0;
+  const targetCount = Math.max(config.accuracyPreflight.topN, timingTargetCount);
+  const targets = ranked.slice(0, Math.min(targetCount, ranked.length));
   await Promise.all(targets.map(async item => {
     const key = candidateKey(item, search);
     const outcome = await inspectOne(item, search, { preflightImpl, cacheGetImpl, cacheSetImpl });
