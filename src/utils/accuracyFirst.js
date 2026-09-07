@@ -51,6 +51,13 @@ function timingReferenceRank(item) {
   return Math.max(0, Math.min(10_000, Number.isFinite(score) ? score : 0));
 }
 
+function actualTimingRank(item) {
+  const evidence = item?.actualTimingEvidence;
+  if (!evidence?.measured || !evidence?.exactVideoHash) return null;
+  const score = Number(evidence.rankScore);
+  return Number.isFinite(score) ? score : 0;
+}
+
 export function prioritizeAccurateSubtitles(results = [], search = {}) {
   const targetFamily = sourceFamily(search?.filename || search?.extra?.filename || search?.query || search?.title || '');
 
@@ -60,6 +67,16 @@ export function prioritizeAccurateSubtitles(results = [], search = {}) {
 
     const hardConflictDelta = hardConflictCount(a) - hardConflictCount(b);
     if (hardConflictDelta) return hardConflictDelta;
+
+    // Actual cue-timeline evidence is stronger than release-name/source-family guesses.
+    // Compare it only when both candidates were measured, so a transient reference/preflight
+    // failure never blindly penalizes an unmeasured subtitle.
+    const aActualTiming = actualTimingRank(a);
+    const bActualTiming = actualTimingRank(b);
+    if (aActualTiming !== null && bActualTiming !== null) {
+      const actualTimingDelta = bActualTiming - aActualTiming;
+      if (actualTimingDelta) return actualTimingDelta;
+    }
 
     // An English subtitle returned for the exact video hash describes the actual playback
     // timeline more reliably than a filename-derived source-family guess.
@@ -102,7 +119,7 @@ export function prioritizeAccurateSubtitles(results = [], search = {}) {
 }
 
 export function hasStrongTimingEvidence(item, search = {}) {
-  if (evidenceRank(item) > 0 || timingReferenceRank(item) > 0) return true;
+  if (evidenceRank(item) > 0 || actualTimingRank(item) !== null || timingReferenceRank(item) > 0) return true;
   if (hardConflictCount(item) > 0) return false;
   const targetFamily = sourceFamily(search?.filename || search?.extra?.filename || search?.query || search?.title || '');
   const candidateFamily = sourceFamily(releaseText(item));

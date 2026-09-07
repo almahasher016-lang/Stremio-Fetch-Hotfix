@@ -100,6 +100,30 @@ function referenceForProxy(baseUrl, item) {
   };
 }
 
+function safeTimingReferenceForProxy(baseUrl, item) {
+  if (!item?.safeTimingSyncPlan?.enabled || !item?.safeTimingSyncPlan?.exactVideoHash) return null;
+  const ref = item.safeTimingReference;
+  const download = ref?.download || ref?.url;
+  if (!ref?.exactVideoHash || !download) return null;
+  return {
+    url: download.startsWith('/') ? `${baseUrl}${download}` : download,
+    provider: ref.provider,
+    providerId: ref.providerId || ref.fileId || ref.id,
+    name: ref.releaseName || ref.fileName || ref.name || 'Exact-hash timing reference',
+  };
+}
+
+function safeTimingFallbacks(baseUrl, candidates = []) {
+  return candidates.map(candidate => {
+    const reference = safeTimingReferenceForProxy(baseUrl, candidate);
+    return {
+      ...candidate,
+      syncPlan: reference ? candidate.safeTimingSyncPlan : null,
+      reference,
+    };
+  });
+}
+
 function styledModeFormat(mode) {
   const match = String(mode || '').match(/^styled-(ass|ssa)$/);
   return match ? match[1] : null;
@@ -121,6 +145,8 @@ function qualityBadges(item, mode) {
   if (item.searchReason === 'hash-first' || item.movieHash) badges.push('🔑 Hash');
   if (item.hearingImpaired || item.sdh) badges.push('👂 SDH');
   if (item.machineTranslated || item.automatedTranslated) badges.push('🤖 MT');
+  if (item.actualTimingEvidence?.verdict === 'aligned') badges.push('🎯 Timed');
+  else if (item.safeTimingSyncPlan?.enabled) badges.push('⏱ Auto-aligned');
   if (item.quality?.score) badges.push(`✓ Q${item.quality.score}`);
   return badges;
 }
@@ -159,7 +185,11 @@ export function toStremioSubtitles(results, baseUrl, search = {}) {
       ...results.slice(index + 1),
       ...results.slice(0, index),
     ].filter(candidate => candidate?.download || candidate?.url);
-    const originalUrl = proxiedSubtitleUrl(baseUrl, item, null, null, search, rankedFallbacks);
+    const safeReference = safeTimingReferenceForProxy(baseUrl, item);
+    const safePlan = safeReference ? item.safeTimingSyncPlan : null;
+    const originalUrl = proxiedSubtitleUrl(
+      baseUrl, item, safePlan, safeReference, search, safeTimingFallbacks(baseUrl, rankedFallbacks),
+    );
     if (!originalUrl) continue;
     eligible.push({ item, index, rankedFallbacks, originalUrl });
   }

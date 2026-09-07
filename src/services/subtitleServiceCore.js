@@ -342,6 +342,19 @@ async function attachReferenceCandidates(arabicResults, search) {
 
   const timingReferences = exactReferences.length ? exactReferences : (autoSyncEnabled ? references : []);
   if (!timingReferences.length) return arabicResults;
+  const primaryExactReference = exactReferences[0] || null;
+  const exactTimingReference = primaryExactReference ? {
+    provider: primaryExactReference.provider,
+    originalProvider: primaryExactReference.originalProvider,
+    providerId: primaryExactReference.fileId || primaryExactReference.providerId || primaryExactReference.id,
+    fileId: primaryExactReference.fileId || null,
+    id: primaryExactReference.id || null,
+    download: primaryExactReference.download || primaryExactReference.url || null,
+    releaseName: primaryExactReference.releaseName || primaryExactReference.fileName || primaryExactReference.name || '',
+    fileName: primaryExactReference.fileName || '',
+    lang: 'eng',
+    exactVideoHash: true,
+  } : null;
 
   return arabicResults.map(item => {
     if (item.provider === 'registry' || item.provider === 'vault') return item;
@@ -351,7 +364,7 @@ async function attachReferenceCandidates(arabicResults, search) {
     const best = candidates[0];
     if (!best) return item;
 
-    let output = item;
+    let output = exactTimingReference ? { ...item, exactTimingReference } : item;
     if (exactHashMatch(best.reference, referenceSearch)) {
       output = {
         ...output,

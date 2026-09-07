@@ -5,7 +5,7 @@ import { config } from '../config.js';
 import { cacheGet, cacheSet } from '../cache/redis.js';
 import { processSubtitleBuffer } from './subtitleProcessor.js';
 import { applySyncPlan } from './subtitleTiming.js';
-import { deriveReferenceSyncPlan } from './referenceSync.js';
+import { buildTimingProfile, deriveReferenceSyncPlan } from './referenceSync.js';
 import { httpError } from './httpError.js';
 import { analyzeSubtitleQuality } from './subtitleQuality.js';
 import { versionRegistry } from '../services/versionRegistryService.js';
@@ -478,6 +478,35 @@ export async function preflightSubtitleCandidate(item, context = {}, {
   const quality = analyzeProcessedSubtitle(processed.text, context);
   return {
     quality,
+    timingProfile: buildTimingProfile(processed.text, config.timingEvidence.maxCues),
+    encoding: processed.encoding,
+    format: processed.format,
+    archive: extracted.archive || null,
+    archiveEntry: extracted.entryName || null,
+  };
+}
+
+export async function preflightTimingReferenceCandidate(item, {
+  fetcher = fetchRemoteSubtitleBuffer,
+  providerLinkResolver = defaultProviderLinkResolver,
+  signal,
+} = {}) {
+  const source = preflightSourceForItem(item);
+  const boundFetcher = (url, options = {}) => fetcher(url, { ...options, signal });
+  const buffer = await fetchSourceBuffer(source, boundFetcher, providerLinkResolver);
+  const extracted = await extractSubtitlePayload(buffer, {
+    maxDecompressedBytes: config.encodingProxy.maxDecompressedBytes,
+    maxArchiveEntries: config.encodingProxy.maxArchiveEntries,
+    sourceName: source.name,
+  });
+  const processed = processSubtitleBuffer(extracted.buffer, {
+    stripSdh: true,
+    stripMusicNotes: config.encodingProxy.stripMusicNotes,
+    sourceName: extracted.entryName || source.name,
+  });
+  assertValidProcessedSubtitle(processed.text);
+  return {
+    timingProfile: buildTimingProfile(processed.text, config.timingEvidence.maxCues),
     encoding: processed.encoding,
     format: processed.format,
     archive: extracted.archive || null,

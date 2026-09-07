@@ -1,3 +1,11 @@
+## 4.5.0 - 2026-09-07
+
+- Add actual cue-timeline evidence against an English subtitle matched to the exact video hash; release-name/source-family similarity is now a fallback rather than the strongest available timing signal.
+- Reuse the bounded Accuracy Preflight downloads to compare Arabic cue structure with the exact-hash reference using temporal anchors + DTW.
+- Rank already-aligned Arabic subtitles above merely repairable or incompatible candidates, even when textual/provider scores favor the wrong file.
+- Safely auto-align only repairable subtitles that meet strict exact-hash timing thresholds; generic filename-based auto-sync remains opt-in/off.
+- Add generic regression tests for same-family/different-timeline, shifted, different-cut, and reference-outage cases without title-specific rules.
+
 ## 4.4.2 - 2026-09-07
 
 - Reconcile degraded provider responses with the Final Arabic Last-Known-Good pool before returning the response to Stremio, not only before cache writes.
