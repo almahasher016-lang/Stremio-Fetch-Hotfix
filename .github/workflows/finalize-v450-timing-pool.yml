@@ -1,0 +1,33 @@
+name: finalize-v450-timing-pool
+on:
+  push:
+    branches: [feat/actual-timing-evidence-v450]
+    paths:
+      - 'scripts/finalize-v450-timing-pool.py'
+permissions:
+  contents: write
+jobs:
+  finalize:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: feat/actual-timing-evidence-v450
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.18.0
+          check-latest: false
+      - name: Apply final timing-pool refinement
+        run: python scripts/finalize-v450-timing-pool.py
+      - name: Install
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Verify
+        run: npm run verify
+      - name: Commit verified refinement
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/services/accuracyPreflight.js src/tests/actualTimingEvidence.test.js
+          git diff --cached --quiet && exit 0
+          git commit -m 'Measure all visible candidates with exact-hash timing evidence'
+          git push origin HEAD:feat/actual-timing-evidence-v450
