@@ -1,3 +1,11 @@
+## 4.6.0 - 2026-09-07
+
+- Rank Arabic subtitles by measured cue-timeline compatibility when an English reference is proven by the exact video hash.
+- Measure every candidate in the configured timing-evidence window (default 10), so a correct subtitle cannot be lost merely because metadata ranked it lower initially.
+- Classify measured candidates as aligned, repairable, or incompatible using DTW/temporal anchors, cue ratio, coverage, and residuals.
+- Keep exact Arabic hash authority and hard identity conflicts above timing evidence; keep transient preflight/reference failures fail-open.
+- Preserve v4.5.0 exact-hash delivery sync as the correction stage after measured selection rather than replacing it.
+
 ## 4.5.0 - 2026-09-07
 
 - Add a hard identity gate for explicit year/season/episode/edition conflicts while preserving exact-hash authority.

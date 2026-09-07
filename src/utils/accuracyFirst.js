@@ -51,6 +51,14 @@ function timingReferenceRank(item) {
   return Math.max(0, Math.min(10_000, Number.isFinite(score) ? score : 0));
 }
 
+function actualTimingRank(item) {
+  const evidence = item?.actualTimingEvidence;
+  if (!evidence?.measured || !evidence?.exactVideoHash) return { classRank: 1, score: 0 };
+  const classRank = evidence.verdict === 'aligned' ? 4 : evidence.verdict === 'repairable' ? 3 : 0;
+  const score = Number(evidence.rankScore || 0);
+  return { classRank, score: Number.isFinite(score) ? score : 0 };
+}
+
 export function prioritizeAccurateSubtitles(results = [], search = {}) {
   const targetFamily = sourceFamily(search?.filename || search?.extra?.filename || search?.query || search?.title || '');
 
@@ -60,6 +68,17 @@ export function prioritizeAccurateSubtitles(results = [], search = {}) {
 
     const hardConflictDelta = hardConflictCount(a) - hardConflictCount(b);
     if (hardConflictDelta) return hardConflictDelta;
+
+    // Positive cue-timeline proof beats unknown metadata; an unknown candidate still beats a
+    // candidate proven structurally incompatible. This keeps failures fail-open without ignoring proof.
+    const aActualTiming = actualTimingRank(a);
+    const bActualTiming = actualTimingRank(b);
+    const actualClassDelta = bActualTiming.classRank - aActualTiming.classRank;
+    if (actualClassDelta) return actualClassDelta;
+    if (aActualTiming.classRank !== 1) {
+      const actualScoreDelta = bActualTiming.score - aActualTiming.score;
+      if (actualScoreDelta) return actualScoreDelta;
+    }
 
     // An English subtitle returned for the exact video hash describes the actual playback
     // timeline more reliably than a filename-derived source-family guess.
@@ -102,7 +121,8 @@ export function prioritizeAccurateSubtitles(results = [], search = {}) {
 }
 
 export function hasStrongTimingEvidence(item, search = {}) {
-  if (evidenceRank(item) > 0 || timingReferenceRank(item) > 0) return true;
+  const actual = item?.actualTimingEvidence;
+  if (evidenceRank(item) > 0 || actual?.verdict === 'aligned' || actual?.verdict === 'repairable' || timingReferenceRank(item) > 0) return true;
   if (hardConflictCount(item) > 0) return false;
   const targetFamily = sourceFamily(search?.filename || search?.extra?.filename || search?.query || search?.title || '');
   const candidateFamily = sourceFamily(releaseText(item));

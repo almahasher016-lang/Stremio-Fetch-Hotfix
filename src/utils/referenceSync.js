@@ -425,6 +425,85 @@ function candidateScore(candidate) {
     + (candidate.enabled ? 1000 : 0);
 }
 
+function timingProfileCues(profile = {}) {
+  return Array.isArray(profile.cues)
+    ? profile.cues
+      .map(cue => ({
+        start: Number(cue.start),
+        end: Number(cue.end),
+        mid: Number(cue.mid ?? (Number(cue.start) + Number(cue.end)) / 2),
+      }))
+      .filter(cue => Number.isFinite(cue.start) && Number.isFinite(cue.end) && cue.end > cue.start)
+    : [];
+}
+
+export function buildTimingProfile(text = '', maxCues = 192) {
+  const cues = parseCueTimes(text);
+  const sampled = sampleCueSequence(cues, Math.max(32, Number(maxCues) || 192)).map(item => item.cue);
+  return {
+    cueCount: cues.length,
+    startMs: cues[0]?.start || 0,
+    endMs: cues.at(-1)?.end || 0,
+    durationMs: cues.length ? cues.at(-1).end - cues[0].start : 0,
+    cues: sampled.map(cue => ({ start: cue.start, end: cue.end, mid: cue.mid })),
+  };
+}
+
+export function deriveReferenceSyncPlanFromProfiles(sourceProfile = {}, referenceProfile = {}, options = {}) {
+  const sourceCues = timingProfileCues(sourceProfile);
+  const referenceCues = timingProfileCues(referenceProfile);
+  const sourceCueCount = Number(sourceProfile.cueCount || sourceCues.length);
+  const referenceCueCount = Number(referenceProfile.cueCount || referenceCues.length);
+  const minCues = Number(options.minCues ?? 8);
+  if (sourceCueCount < minCues || referenceCueCount < minCues || sourceCues.length < 4 || referenceCues.length < 4) {
+    return {
+      enabled: false,
+      type: 'reference-piecewise',
+      ratio: 1,
+      offsetMs: 0,
+      confidence: 0,
+      hints: [`reference:not-enough-cues:${sourceCueCount}/${referenceCueCount}`],
+      sourceCueCount,
+      referenceCueCount,
+    };
+  }
+  const cueRatio = Math.min(sourceCueCount, referenceCueCount) / Math.max(sourceCueCount, referenceCueCount);
+  if (cueRatio < Number(options.minCueRatio ?? 0.55)) {
+    return {
+      enabled: false,
+      type: 'reference-piecewise',
+      ratio: 1,
+      offsetMs: 0,
+      confidence: 0,
+      hints: [`reference:cue-ratio-low:${cueRatio.toFixed(2)}`],
+      sourceCueCount,
+      referenceCueCount,
+      cueRatio: Number(cueRatio.toFixed(3)),
+    };
+  }
+  const temporalAnchors = buildTemporalAnchors(sourceCues, referenceCues, options.maxAnchors ?? 48);
+  const candidates = [evaluateAnchorPlan(temporalAnchors, sourceCues, referenceCues, options, 'temporal')];
+  if (options.dtwEnabled !== false) {
+    const dtwAnchors = buildDtwAnchors(sourceCues, referenceCues, {
+      maxCues: options.dtwMaxCues ?? 192,
+      maxAnchors: options.maxAnchors ?? 48,
+      bandRatio: options.dtwBandRatio ?? 0.18,
+      gapPenalty: options.dtwGapPenalty ?? 0.42,
+      maxMatchCost: options.dtwMaxMatchCost ?? 0.52,
+    });
+    candidates.push(evaluateAnchorPlan(dtwAnchors, sourceCues, referenceCues, options, 'dtw'));
+  }
+  const selected = candidates.reduce((best, candidate) => (
+    candidateScore(candidate) > candidateScore(best) ? candidate : best
+  ));
+  return {
+    ...selected,
+    sourceCueCount,
+    referenceCueCount,
+    cueRatio: Number(cueRatio.toFixed(3)),
+  };
+}
+
 export function deriveReferenceSyncPlan(sourceText, referenceText, options = {}) {
   const sourceCues = parseCueTimes(sourceText);
   const referenceCues = parseCueTimes(referenceText);
