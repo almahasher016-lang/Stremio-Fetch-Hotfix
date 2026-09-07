@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { config } from '../config.js';
 import { cacheGet, cacheSet } from '../cache/redis.js';
 import { prioritizeAccurateSubtitles } from '../utils/accuracyFirst.js';
-import { preflightSubtitleCandidate } from '../utils/encodingProxy.js';
+import { preflightSubtitleCandidate, preflightTimingReferenceCandidate } from '../utils/encodingProxy.js';
+import { deriveReferenceSyncPlanFromProfiles } from '../utils/referenceSync.js';
 import { recordAccuracyPreflight } from '../utils/metrics.js';
 
 const HARD_REJECT_REASONS = new Set(['low-arabic-ratio', 'too-few-cues', 'invalid-timed-cues']);
@@ -32,6 +33,7 @@ function normalizeOutcome(raw = {}, elapsedMs = 0) {
     format: raw.format || null,
     archive: raw.archive || null,
     archiveEntry: raw.archiveEntry || null,
+    timingProfile: raw.timingProfile || null,
     elapsedMs: Math.max(0, Math.round(elapsedMs)),
   };
 }
@@ -49,12 +51,18 @@ function outcomeFromError(error, elapsedMs = 0) {
   };
 }
 
+function exactTimingReference(item = {}) {
+  const reference = item?.referenceSubtitle;
+  if (!reference || item?.timingReferenceEvidence?.exactVideoHash !== true) return null;
+  return { ...reference, exactVideoHash: true };
+}
+
 async function inspectOne(item, search, {
   preflightImpl,
   cacheGetImpl,
   cacheSetImpl,
 } = {}) {
-  if (item?.quality?.valid === true) {
+  if (item?.quality?.valid === true && !exactTimingReference(item)) {
     return {
       state: 'valid',
       quality: item.quality,
@@ -68,7 +76,7 @@ async function inspectOne(item, search, {
   if (cached?.state) return { ...cached, source: 'shared-cache' };
 
   const started = Date.now();
-  const timeoutMs = config.accuracyPreflight.timeoutMs;
+  const timeoutMs = exactTimingReference(item) ? config.timingEvidence.timeoutMs : config.accuracyPreflight.timeoutMs;
   const signal = AbortSignal.timeout(timeoutMs);
   let outcome;
   try {
@@ -91,8 +99,82 @@ async function inspectOne(item, search, {
   return { ...outcome, source: 'live-preflight' };
 }
 
+function timingReferenceKey(reference = {}) {
+  const payload = JSON.stringify({
+    provider: reference.provider || '',
+    providerId: reference.providerId || reference.fileId || reference.id || '',
+    release: reference.releaseName || reference.fileName || reference.name || '',
+    policyVersion: config.app.version,
+  });
+  return `timing-reference:${createHash('sha256').update(payload).digest('hex')}`;
+}
+
+async function inspectTimingReference(reference, { referencePreflightImpl, cacheGetImpl, cacheSetImpl } = {}) {
+  if (!reference?.exactVideoHash) return null;
+  const key = timingReferenceKey(reference);
+  const cached = await cacheGetImpl(key);
+  if (cached?.timingProfile) return { ...cached, source: 'shared-cache' };
+  const started = Date.now();
+  try {
+    const signal = AbortSignal.timeout(config.timingEvidence.timeoutMs);
+    const result = await referencePreflightImpl(reference, { signal });
+    if (!result?.timingProfile) return null;
+    const outcome = { timingProfile: result.timingProfile, elapsedMs: Date.now() - started };
+    await cacheSetImpl(key, outcome, config.timingEvidence.cacheTtlSeconds, config.cache.staleSeconds);
+    return { ...outcome, source: 'live-reference' };
+  } catch {
+    return null;
+  }
+}
+
+function measuredTimingEvidence(plan = {}) {
+  const agreement = Number(plan.temporalAgreement || 0);
+  const coverage = Number(plan.anchorCoverage || 0);
+  const cueRatio = Number(plan.cueRatio || 0);
+  const confidence = Number(plan.confidence || 0);
+  const residualMedianMs = Number(plan.residualMedianMs ?? Number.POSITIVE_INFINITY);
+  const residualP90Ms = Number(plan.residualP90Ms ?? Number.POSITIVE_INFINITY);
+  const offsetMs = Number(plan.offsetMs || 0);
+  const ratio = Number(plan.ratio || 1);
+  const ratioDelta = Math.abs(ratio - 1);
+  const cfg = config.timingEvidence;
+  const structurallyCompatible = Number(plan.sourceCueCount || 0) >= cfg.minCues
+    && Number(plan.referenceCueCount || 0) >= cfg.minCues
+    && cueRatio >= cfg.minCueRatio
+    && agreement >= cfg.minTemporalAgreement
+    && coverage >= cfg.minAnchorCoverage
+    && residualMedianMs <= cfg.maxResidualMedianMs
+    && residualP90Ms <= cfg.maxResidualP90Ms;
+  const aligned = structurallyCompatible
+    && Math.abs(offsetMs) <= cfg.alignedMaxOffsetMs
+    && ratioDelta <= cfg.alignedMaxRatioDelta;
+  const verdict = aligned ? 'aligned' : (structurallyCompatible ? 'repairable' : 'incompatible');
+  const structuralScore = Math.round(
+    agreement * 3500 + coverage * 2500 + cueRatio * 1500 + confidence * 15
+    - Math.min(1200, Math.abs(offsetMs) / 50)
+    - Math.min(1200, ratioDelta * 30000),
+  );
+  const classBase = verdict === 'aligned' ? 30000 : verdict === 'repairable' ? 15000 : 0;
+  return {
+    measured: true,
+    exactVideoHash: true,
+    verdict,
+    rankScore: Math.max(0, classBase + structuralScore),
+    confidence,
+    temporalAgreement: agreement,
+    anchorCoverage: coverage,
+    cueRatio,
+    residualMedianMs: Number.isFinite(residualMedianMs) ? residualMedianMs : null,
+    residualP90Ms: Number.isFinite(residualP90Ms) ? residualP90Ms : null,
+    offsetMs,
+    ratio,
+    strategy: plan.strategy || null,
+  };
+}
+
 export async function applyAccuracyPreflight(results = [], search = {}, {
   preflightImpl = preflightSubtitleCandidate,
+  referencePreflightImpl = preflightTimingReferenceCandidate,
   cacheGetImpl = cacheGet,
   cacheSetImpl = cacheSet,
 } = {}) {
@@ -102,12 +184,25 @@ export async function applyAccuracyPreflight(results = [], search = {}, {
   }
 
   const inspected = new Map();
-  const targets = ranked.slice(0, config.accuracyPreflight.topN);
+  const exactHashTimingAvailable = config.timingEvidence.enabled
+    && ranked.some(item => exactTimingReference(item));
+  const timingTargetCount = exactHashTimingAvailable
+    ? Math.min(config.timingEvidence.topN, ranked.length)
+    : 0;
+  const targetCount = Math.max(config.accuracyPreflight.topN, timingTargetCount);
+  const targets = ranked.slice(0, Math.min(targetCount, ranked.length));
   await Promise.all(targets.map(async item => {
     const key = candidateKey(item, search);
     const outcome = await inspectOne(item, search, { preflightImpl, cacheGetImpl, cacheSetImpl });
     inspected.set(key, outcome);
   }));
+
+  const exactReference = config.timingEvidence.enabled
+    ? targets.map(item => exactTimingReference(item)).find(Boolean)
+    : null;
+  const referenceOutcome = exactReference
+    ? await inspectTimingReference(exactReference, { referencePreflightImpl, cacheGetImpl, cacheSetImpl })
+    : null;
 
   const decorated = ranked.map(item => {
     const outcome = inspected.get(candidateKey(item, search));
@@ -115,9 +210,30 @@ export async function applyAccuracyPreflight(results = [], search = {}, {
     const measuredQuality = outcome.quality
       ? { ...(item.quality || {}), ...outcome.quality }
       : item.quality;
+    let timing = null;
+    if (
+      config.timingEvidence.enabled
+      && exactTimingReference(item)
+      && outcome?.timingProfile
+      && referenceOutcome?.timingProfile
+    ) {
+      const plan = deriveReferenceSyncPlanFromProfiles(outcome.timingProfile, referenceOutcome.timingProfile, {
+        minCues: 4,
+        minCueRatio: 0,
+        minConfidence: 0,
+        minTemporalAgreement: 0,
+        minAnchorCoverage: 0,
+        maxAnchors: 48,
+        piecewise: true,
+        dtwEnabled: true,
+        dtwMaxCues: config.timingEvidence.maxCues,
+      });
+      timing = measuredTimingEvidence(plan);
+    }
     return {
       ...item,
       ...(measuredQuality ? { quality: measuredQuality, qualityScore: measuredQuality.score } : {}),
+      ...(timing ? { actualTimingEvidence: timing } : {}),
       accuracyPreflight: outcome,
     };
   });
