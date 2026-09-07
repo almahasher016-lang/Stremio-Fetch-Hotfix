@@ -24,15 +24,21 @@ s = replace_once(
 )
 write(p, s)
 
-# The previous regression asserted bare-title strict search. v4.5.0 intentionally qualifies
-# strict movie title fallback with the known year; relaxed recovery still tests the bare title path.
+# The previous regression asserted bare-title strict searches. v4.5.0 intentionally qualifies
+# strict movie title and alias fallbacks with the known year; relaxed recovery retains bare titles.
 p = 'src/tests/zeroResultRecovery.test.js'
 s = read(p)
 s = replace_once(
     s,
-    "assert.equal(title.variants[0].query, 'The Whisper Man');",
-    "assert.equal(title.variants[0].query, 'The Whisper Man 2026');",
+    "  assert.equal(title.query, 'The Whisper Man');",
+    "  assert.equal(title.query, 'The Whisper Man 2026');",
     'strict title-year regression expectation',
+)
+s = replace_once(
+    s,
+    "  assert.equal(alias.query, 'Whisper Man');",
+    "  assert.equal(alias.query, 'Whisper Man 2026');",
+    'strict alias-year regression expectation',
 )
 write(p, s)
 
