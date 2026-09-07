@@ -114,6 +114,15 @@ async function searchCore(search) {
   return { ...outcome, results: await applyAccuracyPreflight(outcome.results, search) };
 }
 
+export async function reconcileDegradedAvailability(search, outcome, lkg) {
+  const fresh = Array.isArray(outcome?.results) ? outcome.results : [];
+  if (outcome?.cycleStatus !== 'degraded' || !usable(fresh) || !lkg?.hit || !usable(lkg.value)) {
+    return fresh;
+  }
+  const merged = core.preserveAccurateCandidates(search, fresh, lkg.value);
+  return applyAccuracyPreflight(merged, search);
+}
+
 
 async function runDistributed(search, key) {
   let lock = await acquireRefreshLock(key, config.cache.refreshLockTtlSeconds);
@@ -146,8 +155,20 @@ export async function searchSubtitles(search) {
     const outcome = await runDistributed(search, key);
     const fresh = outcome.results;
     if (usable(fresh)) {
-      if (outcome.cycleStatus === 'complete') await writeAvailabilityLkg(search, fresh, 'replace');
-      else if (outcome.cycleStatus === 'degraded') await writeAvailabilityLkg(search, fresh, 'merge');
+      if (outcome.cycleStatus === 'complete') {
+        await writeAvailabilityLkg(search, fresh, 'replace');
+        return fresh;
+      }
+      if (outcome.cycleStatus === 'degraded') {
+        if (lkg?.hit && usable(lkg.value)) {
+          const reconciled = await reconcileDegradedAvailability(search, outcome, lkg);
+          await writeAvailabilityLkg(search, reconciled, 'merge');
+          return reconciled;
+        }
+        // A degraded first-ever search is useful for the current request, but it is not
+        // authoritative enough to become the Final Last-Known-Good pool.
+        return fresh;
+      }
       return fresh;
     }
     if (lkg?.hit && usable(lkg.value)) return lkg.value;
