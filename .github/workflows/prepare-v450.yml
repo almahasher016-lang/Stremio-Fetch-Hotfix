@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: 24.18.0
-      - name: Apply v4.5.0 timing proof
+      - name: Apply corrected v4.5.0 timing proof
         run: |
           python scripts/apply-v450.py
           python scripts/fix-v450-prep.py
