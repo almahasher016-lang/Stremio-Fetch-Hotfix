@@ -1,14 +1,50 @@
 import { createHash } from 'node:crypto';
 import { parseRelease, stableFingerprint } from './releaseParser.js';
+import { buildUniversalVideoProfile } from './universalVideoIdentity.js';
 
 const HASH_RE = /^[a-f0-9]{16,64}$/i;
+const MAX_IDENTITY_TEXT = 1024;
+const TECHNICAL_BOUNDARY_RE = /(?:^|\s)(?:s\d{1,3}e\d{1,4}|\d{1,3}x\d{1,4}|8640p|4320p|2160p|1440p|1080[pi]|720[pi]|576[pi]|480[pi]|8k|4k|uhd|web\s*dl|web\s*rip|webrip|webdl|blu\s*ray|bluray|bdremux|bdrip|remux|hdtv|dvdrip|hdcam|telesync|telecine|x264|x265|h264|h265|hevc|avc|av1|vp9|hdr10\+?|hdr|dolby\s*vision|dovi|truehd|dts|ddp|eac3|aac|atmos|extended|theatrical|unrated|director(?:'s|s)?\s*cut|imax)(?=\s|$)/i;
 
 function firstDefined(values) {
   return values.find(value => value !== undefined && value !== null && String(value).trim() !== '');
 }
 
 function cleanText(value) {
-  return String(value || '').trim();
+  return String(value ?? '').slice(0, MAX_IDENTITY_TEXT).trim();
+}
+
+function isAsciiAlphaNumeric(char) {
+  const code = char.codePointAt(0);
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function isWhitespace(char) {
+  const code = char.charCodeAt(0);
+  return code === 9 || code === 10 || code === 11 || code === 12 || code === 13 || code === 32;
+}
+
+function normalizeFilenameSeparators(value) {
+  const input = cleanText(value);
+  const lastDot = input.lastIndexOf('.');
+  let base = input;
+  if (lastDot >= 0) {
+    const extension = input.slice(lastDot + 1);
+    if (extension.length >= 1 && extension.length <= 12 && [...extension].every(isAsciiAlphaNumeric)) {
+      base = input.slice(0, lastDot);
+    }
+  }
+  let output = '';
+  let pendingSpace = false;
+  for (const char of base) {
+    if (char === '.' || char === '_' || char === '-' || isWhitespace(char)) {
+      pendingSpace = output.length > 0;
+      continue;
+    }
+    if (pendingSpace) { output += ' '; pendingSpace = false; }
+    output += char;
+  }
+  return output.trim();
 }
 
 function cleanImdb(value) {
@@ -58,6 +94,16 @@ function routeEpisode(id, type) {
   };
 }
 
+function deriveTitleFromFilename(filename, parsed = {}) {
+  let value = normalizeFilenameSeparators(filename);
+  if (!value) return '';
+  const boundary = value.match(TECHNICAL_BOUNDARY_RE);
+  if (boundary?.index > 0) value = value.slice(0, boundary.index).trim();
+  const yearSuffix = parsed.year ? ` ${parsed.year}` : '';
+  if (yearSuffix && value.endsWith(yearSuffix)) value = value.slice(0, -yearSuffix.length).trim();
+  return value;
+}
+
 export function normalizeStremioExtra(extra = {}) {
   const raw = extra && typeof extra === 'object' ? extra : {};
   const videoId = firstDefined([raw.videoId, raw.videoID, raw.video_id, raw.contentId, raw.contentID]);
@@ -90,8 +136,9 @@ export function buildVideoIdentity({ type = 'movie', id, extra = {}, ...input } 
   const videoId = normalizedExtra.videoId || (legacyHash ? '' : routeId);
   const hash = normalizedExtra.videoHash || legacyHash || normalizeHash(input.videoHash || input.hash);
   const filename = cleanText(input.filename || normalizedExtra.filename);
-  const title = cleanText(input.title || normalizedExtra.title || input.query || filename || videoId || routeId);
-  const parsed = parseRelease(filename || title || routeId);
+  const explicitTitle = cleanText(input.title || normalizedExtra.title || input.query);
+  const parsed = parseRelease(filename || explicitTitle || routeId);
+  const title = explicitTitle || deriveTitleFromFilename(filename, parsed) || cleanText(videoId || routeId);
   const routeSe = routeEpisode(videoId || routeId, type);
   const imdbId = cleanImdb(input.imdbId || normalizedExtra.imdbId || normalizedExtra.imdb_id || videoId || routeId || filename);
   const tmdbId = cleanText(input.tmdbId || normalizedExtra.tmdbId || normalizedExtra.tmdb_id || extractPrefixedId('tmdb', videoId || routeId));
@@ -117,12 +164,30 @@ export function buildVideoIdentity({ type = 'movie', id, extra = {}, ...input } 
   const enrichedExtra = {
     ...normalizedExtra,
     ...(fps && !normalizedExtra.fps ? { fps } : {}),
+    ...(durationMs && !normalizedExtra.durationMs ? { durationMs } : {}),
     ...(resolution && !normalizedExtra.resolution ? { resolution } : {}),
     ...(videoCodec && !normalizedExtra.videoCodec ? { videoCodec } : {}),
     ...(hdr && !normalizedExtra.hdr ? { hdr } : {}),
     ...(audioCodec && !normalizedExtra.audioCodec ? { audioCodec } : {}),
     ...(audioChannels && !normalizedExtra.audioChannels ? { audioChannels } : {}),
+    ...(container && !normalizedExtra.container ? { container } : {}),
   };
+  const videoProfile = buildUniversalVideoProfile({
+    ...input,
+    filename,
+    videoHash: hash,
+    videoSize,
+    durationMs,
+    fps,
+    width,
+    height,
+    resolution,
+    videoCodec,
+    hdr,
+    container,
+    parsedRelease: parsed,
+    extra: enrichedExtra,
+  });
   return {
     ...input,
     type,
@@ -143,19 +208,21 @@ export function buildVideoIdentity({ type = 'movie', id, extra = {}, ...input } 
     season,
     episode,
     year: toPositiveNumber(input.year || normalizedExtra.year || parsed.year),
-    durationMs,
-    fps,
+    durationMs: videoProfile.durationMs || durationMs,
+    fps: videoProfile.fps || fps,
     width,
     height,
-    resolution,
-    videoCodec,
+    resolution: videoProfile.resolution || resolution,
+    videoCodec: videoProfile.codec || videoCodec,
     pixelFormat,
-    hdr,
+    hdr: videoProfile.hdr || hdr,
     audioCodec,
     audioChannels,
-    container,
+    container: videoProfile.container || container,
     releaseFingerprint,
+    timingFingerprint: stableKey(videoProfile.timingSignature),
     parsedRelease: parsed,
+    videoProfile,
     extra: enrichedExtra,
   };
 }
@@ -168,6 +235,7 @@ export function versionKeys(search = {}) {
   if (identity.catalogId && identity.season != null && identity.episode) keys.push(`episode:${identity.catalogId}:s${identity.season}:e${identity.episode}`);
   if (identity.catalogId && !identity.season && !identity.episode) keys.push(`movie:${identity.catalogId}`);
   if (identity.catalogId && identity.releaseFingerprint) keys.push(`release:${identity.catalogId}:${stableKey(identity.releaseFingerprint)}`);
+  if (identity.catalogId && identity.timingFingerprint) keys.push(`timeline:${identity.catalogId}:${identity.timingFingerprint}`);
   return [...new Set(keys)];
 }
 

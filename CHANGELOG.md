@@ -1,3 +1,13 @@
+## 5.1.0 - 2026-09-08
+
+- Add Universal Video Identity + Timeline Matcher with format-agnostic container and release normalization.
+- Treat resolution, codec, HDR and container differences as visual diagnostics rather than timing conflicts.
+- Use exact video hash, measured duration, FPS, edition/cut, normalized source family, service, and release group as independent timeline evidence.
+- Normalize WEB/BluRay/REMUX/HDTV/DVD/CAM families and major streaming-service aliases while keeping unknown formats neutral.
+- Derive clean fallback titles from technical filenames and add a normalized timeline LKG cache key across compatible visual encodes.
+- Revalidate Last-Known-Good subtitle candidates with live Accuracy Preflight before V5 proof evaluation.
+- Add regressions for The Devil Wears Prada 2, Euphoria, exact hash, format variants, unknown containers, and hard FPS/edition/duration conflicts.
+
 ## 5.0.1 - 2026-09-08
 
 - Restore valid Arabic subtitle availability by separating timing-family evidence from visual resolution/codec metadata.

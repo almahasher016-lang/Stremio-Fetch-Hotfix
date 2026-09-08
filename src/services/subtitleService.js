@@ -26,15 +26,18 @@ function normalizedFilename(value) {
 }
 
 function availabilityKeySpecs(search = {}) {
-  const type = String(search.type || 'movie').toLowerCase();
-  const id = String(search.id || search.imdbId || search.tmdbId || search.query || search.title || '').trim().toLowerCase();
-  const season = search.season ?? '';
-  const episode = search.episode ?? '';
-  const videoHash = String(search.videoHash || search.hash || '').trim().toLowerCase();
-  const videoSize = String(search.videoSize || search.size || '').trim();
-  const filename = normalizedFilename(search.filename);
+  const identity = search.videoProfile ? search : buildVideoIdentity(search);
+  const type = String(identity.type || 'movie').toLowerCase();
+  const id = String(identity.catalogId || identity.id || identity.imdbId || identity.tmdbId || identity.query || identity.title || '').trim().toLowerCase();
+  const season = identity.season ?? '';
+  const episode = identity.episode ?? '';
+  const videoHash = String(identity.videoHash || identity.hash || '').trim().toLowerCase();
+  const videoSize = String(identity.videoSize || identity.size || '').trim();
+  const filename = normalizedFilename(identity.filename);
+  const timingFingerprint = String(identity.timingFingerprint || '').trim();
   const raw = [];
   if (videoHash) raw.push({ kind: 'exact', raw: `hash|${type}|${videoHash}|${videoSize}` });
+  if (id && timingFingerprint) raw.push({ kind: 'timeline', raw: `timeline|${type}|${id}|${season}|${episode}|${timingFingerprint}` });
   if (filename) raw.push({ kind: 'release', raw: `release|${type}|${id}|${season}|${episode}|${filename}|${videoSize}` });
   if (id) raw.push({ kind: 'catalog', raw: `catalog|${type}|${id}|${season}|${episode}` });
   const seen = new Set();
@@ -95,6 +98,16 @@ async function writeAvailabilityLkg(search, results, mode = 'merge') {
   await Promise.allSettled(writes);
 }
 
+export async function revalidateAvailabilityLkg(search, lkg, { preflight = applyAccuracyPreflight } = {}) {
+  if (!lkg?.hit || !usable(lkg.value)) return [];
+  // LKG preserves candidate identity, not delivery/integrity truth. Remote links and archives can
+  // change after caching, so every fallback must be freshly preflighted before V5 can judge it.
+  // This prevents a provider outage from turning previously valid cached candidates into false
+  // integrity:invalid-subtitle / delivery:unverified rejects merely because proof metadata is stale.
+  const checked = await preflight(lkg.value, search);
+  return Array.isArray(checked) ? checked : [];
+}
+
 function singleflightKey(search) {
   const identity = JSON.stringify({
     type: search?.type || 'movie',
@@ -110,6 +123,7 @@ function singleflightKey(search) {
     hints: search?.extra || {},
     fps: search?.fps || null,
     durationMs: search?.durationMs || null,
+    timingFingerprint: search?.timingFingerprint || '',
     release: config.app.version,
   });
   return `cold-search:${digest(identity)}`;
@@ -217,7 +231,13 @@ export async function searchSubtitles(search) {
       }
       return fresh;
     }
-    if (lkg?.hit && usable(lkg.value)) return lkg.value;
+    if (lkg?.hit && usable(lkg.value)) {
+      const revalidated = await revalidateAvailabilityLkg(search, lkg);
+      if (usable(revalidated)) {
+        await writeAvailabilityLkg(search, revalidated, 'replace');
+        return revalidated;
+      }
+    }
     return fresh;
   })();
   inFlight.set(key, pending);

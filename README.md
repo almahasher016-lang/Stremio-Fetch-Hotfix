@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v5.0.1
+# m7md Arabic Resolver v5.1.0
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,17 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 5.1.0
+
+- إضافة **Universal Video Identity + Timeline Matcher** لفهم صيغ وأسماء الفيديو المختلفة كهوية موحدة بدل مقارنة الاسم الخام.
+- دعم وتطبيع حاويات الفيديو الشائعة والقديمة، مع اعتبار الامتداد غير المعروف معلومة محايدة لا سببًا للرفض.
+- فصل خصائص الصورة والترميز مثل 2160p/1080p وHEVC/AVC وHDR/DV ونوع الحاوية عن أدلة التوقيت؛ اختلافها وحده لا يرفض الترجمة.
+- استخدام Video Hash والمدة وFPS وEdition/Cut وعائلة المصدر والخدمة ومجموعة الإصدار كأدلة Timeline مستقلة، مع إبقاء التعارض الصريح كرفض قوي.
+- توحيد AMZN/NF/DSNP/ATVP وغيرها، وتوحيد WEB/BluRay/REMUX/HDTV/DVD/CAM إلى عائلات توقيت قابلة للمقارنة.
+- إضافة عنوان بحث نظيف مشتق من اسم الملف عند غياب العنوان، حتى لا تدخل وسوم REMUX/HDR/codec في title fallback.
+- إضافة Timeline LKG key مشترك بين نسخ الصورة المتوافقة، وإعادة فحص Last-Known-Good حيًا قبل V5 لمنع اختفاء ترجمة سليمة بعد تعطل مزود.
+- إضافة اختبارات انحدار لـThe Devil Wears Prada 2 وEuphoria، اختلافات الحاوية/الدقة/codec، Exact Hash، FPS/Edition/Duration، والصيغ غير المعروفة.
 
 ## ما الجديد في 5.0.1
 
