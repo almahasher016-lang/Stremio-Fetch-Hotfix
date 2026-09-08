@@ -43,6 +43,23 @@ test('remote candidate with stored valid quality is still checked for live deliv
   assert.deepEqual(result, []);
 });
 
+test('wrapped upstream 404 inside proxy 502 is rejected before Stremio output', async () => {
+  let calls = 0;
+  const result = await applyAccuracyPreflight([candidate('wrapped-upstream-404')], { type: 'movie', filename: 'The.Mummy.2026.2160p.UHD.BluRay.REMUX.mkv' }, {
+    cacheGetImpl: async () => null,
+    cacheSetImpl: noCacheWrite,
+    preflightImpl: async () => {
+      calls += 1;
+      const error = new Error('Subtitle upstream failed with 404');
+      error.status = 502;
+      throw error;
+    },
+  });
+
+  assert.equal(calls, 1);
+  assert.deepEqual(result, []);
+});
+
 test('legacy remote preflight cache without checkedAt is revalidated', async () => {
   let calls = 0;
   const result = await applyAccuracyPreflight([candidate('legacy-cache')], { type: 'movie', filename: 'Movie.2026.BluRay.mkv' }, {

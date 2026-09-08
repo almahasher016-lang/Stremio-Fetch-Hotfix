@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v4.6.4
+# m7md Arabic Resolver v4.6.5
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,13 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 4.6.5
+
+- إصلاح خطأ إنتاجي مؤكّد: كانت استجابة المصدر الأصلية 403/404/410 تُغلّف كـ 502، فيفشل Accuracy Preflight في تمييزها كمصدر ميت ويعيدها إلى Stremio.
+- حفظ حالة HTTP الأصلية للمصدر في `upstreamStatus` مع إبقاء استجابة البروكسي الخارجية 502.
+- دعم التعرف على الحالة الأصلية أيضًا من رسالة الخطأ لحماية المسارات القديمة.
+- إضافة اختبار انحدار مطابق لحالة The Mummy 2026: `status=502` مع `Subtitle upstream failed with 404` يجب أن يُحذف قبل Stremio output.
 
 ## ما الجديد في 4.6.4
 

@@ -1,3 +1,9 @@
+## 4.6.5 - 2026-09-08
+
+- Preserve upstream HTTP status metadata when remote subtitle downloads are wrapped as proxy 502 errors.
+- Treat wrapped upstream 403/404/410 as terminal delivery failures during accuracy preflight instead of temporary fail-open failures.
+- Add a production-shaped regression for the observed The Mummy 2026 failure (proxy 502 carrying upstream 404).
+
 ## 4.6.4 - 2026-09-08
 
 - Require fresh reachability validation for remote subtitle sources even when stored quality is already valid.
