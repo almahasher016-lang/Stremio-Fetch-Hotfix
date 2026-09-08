@@ -13,6 +13,7 @@ export function evaluateV5Candidates(results = [], search = {}, { now = Date.now
     const proof = evaluateSubtitleProof(evidence);
     return {
       item,
+      legacyRank: index,
       candidateId: stableCandidateId(item, index),
       evidence,
       proof,
@@ -32,12 +33,20 @@ export function summarizeV5Evaluation(evaluated = []) {
     const decision = entry?.proof?.decision;
     if (decision in counts) counts[decision] += 1;
   }
+  const legacyTop = evaluated.find(entry => entry.legacyRank === 0) || null;
+  const v5Top = evaluated[0] || null;
+  const legacyTopDecision = legacyTop?.proof?.decision || null;
   return {
     total: evaluated.length,
     counts,
-    topDecision: evaluated[0]?.proof?.decision || null,
-    topCandidateId: evaluated[0]?.candidateId || null,
-    topProofFloor: evaluated[0]?.proof?.proofFloor ?? null,
+    topDecision: v5Top?.proof?.decision || null,
+    topCandidateId: v5Top?.candidateId || null,
+    topProofFloor: v5Top?.proof?.proofFloor ?? null,
+    legacyTopCandidateId: legacyTop?.candidateId || null,
+    legacyTopDecision,
+    topDisagreesWithLegacy: Boolean(v5Top && legacyTop && v5Top.candidateId !== legacyTop.candidateId),
+    legacyTopWouldBeWithheld: ['withhold', 'reject'].includes(legacyTopDecision),
+    legacyTopNotCertified: Boolean(legacyTop && legacyTopDecision !== 'certified'),
   };
 }
 
