@@ -3,6 +3,7 @@ import { parseRelease, stableFingerprint } from './releaseParser.js';
 import { buildUniversalVideoProfile } from './universalVideoIdentity.js';
 
 const HASH_RE = /^[a-f0-9]{16,64}$/i;
+const TECHNICAL_BOUNDARY_RE = /(?:^|\s)(?:s\d{1,3}e\d{1,4}|\d{1,3}x\d{1,4}|8640p|4320p|2160p|1440p|1080[pi]|720[pi]|576[pi]|480[pi]|8k|4k|uhd|web\s*dl|web\s*rip|webrip|webdl|blu\s*ray|bluray|bdremux|bdrip|remux|hdtv|dvdrip|hdcam|telesync|telecine|x264|x265|h264|h265|hevc|avc|av1|vp9|hdr10\+?|hdr|dolby\s*vision|dovi|truehd|dts|ddp|eac3|aac|atmos|extended|theatrical|unrated|director(?:'s|s)?\s*cut|imax)(?=\s|$)/i;
 
 function firstDefined(values) {
   return values.find(value => value !== undefined && value !== null && String(value).trim() !== '');
@@ -59,6 +60,22 @@ function routeEpisode(id, type) {
   };
 }
 
+function deriveTitleFromFilename(filename, parsed = {}) {
+  let value = cleanText(filename)
+    .replace(/\.[a-z0-9]{1,12}$/i, '')
+    .replace(/[._]+/g, ' ')
+    .replace(/\s*-\s*/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!value) return '';
+  const boundary = value.match(TECHNICAL_BOUNDARY_RE);
+  if (boundary?.index > 0) value = value.slice(0, boundary.index).trim();
+  if (parsed.year && new RegExp(`\\s${parsed.year}$`).test(value)) {
+    value = value.replace(new RegExp(`\\s${parsed.year}$`), '').trim();
+  }
+  return value;
+}
+
 export function normalizeStremioExtra(extra = {}) {
   const raw = extra && typeof extra === 'object' ? extra : {};
   const videoId = firstDefined([raw.videoId, raw.videoID, raw.video_id, raw.contentId, raw.contentID]);
@@ -91,8 +108,9 @@ export function buildVideoIdentity({ type = 'movie', id, extra = {}, ...input } 
   const videoId = normalizedExtra.videoId || (legacyHash ? '' : routeId);
   const hash = normalizedExtra.videoHash || legacyHash || normalizeHash(input.videoHash || input.hash);
   const filename = cleanText(input.filename || normalizedExtra.filename);
-  const title = cleanText(input.title || normalizedExtra.title || input.query || filename || videoId || routeId);
-  const parsed = parseRelease(filename || title || routeId);
+  const explicitTitle = cleanText(input.title || normalizedExtra.title || input.query);
+  const parsed = parseRelease(filename || explicitTitle || routeId);
+  const title = explicitTitle || deriveTitleFromFilename(filename, parsed) || cleanText(videoId || routeId);
   const routeSe = routeEpisode(videoId || routeId, type);
   const imdbId = cleanImdb(input.imdbId || normalizedExtra.imdbId || normalizedExtra.imdb_id || videoId || routeId || filename);
   const tmdbId = cleanText(input.tmdbId || normalizedExtra.tmdbId || normalizedExtra.tmdb_id || extractPrefixedId('tmdb', videoId || routeId));
