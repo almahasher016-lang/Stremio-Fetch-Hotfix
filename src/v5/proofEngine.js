@@ -77,6 +77,7 @@ function timingProof(evidence = {}) {
   const similarity = clamp01(evidence.timelineSimilarity);
   const consensus = Math.max(0, Number(evidence.independentConsensusCount) || 0);
   const releaseTier = Math.max(0, Number(evidence.releaseTier) || 0);
+  const timingFamilyTier = Math.max(0, Number(evidence.timingFamilyTier) || 0);
   const absoluteBounds = bool(evidence.absoluteBoundsMatched);
 
   // Certification without an exact timeline is deliberately expensive: distinct public providers
@@ -88,6 +89,13 @@ function timingProof(evidence = {}) {
   }
   if (absoluteBounds && consensus >= 2 && similarity >= 0.985 && releaseTier >= 4) {
     return { confidence: 0.985, hardFail: false, reasons: ['timing:strong-consensus'] };
+  }
+
+  // A stable distribution timeline (for example the exact same series episode and WEB-DL family)
+  // is strong enough for SAFE, but never for CERTIFIED. Visual resolution is intentionally not a
+  // timing-family field, while edition/cut and FPS conflicts remain hard failures.
+  if (bool(evidence.stableReleaseFamily) && timingFamilyTier >= 5) {
+    return { confidence: 0.965, hardFail: false, reasons: ['timing:stable-release-family'] };
   }
   if (releaseTier >= 5 && bool(evidence.fpsMatch)) {
     return { confidence: 0.94, hardFail: false, reasons: ['timing:release-family-strong'] };
