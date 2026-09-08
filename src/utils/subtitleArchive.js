@@ -177,7 +177,8 @@ function extractZip(input, {
       const release = parseRelease(candidate.name);
       const match = buildReleaseMatch(target, release);
       const episodeConflict = ['season', 'episode'].some(key => target[key] != null
-        && (release[key] != null ? release[key] !== Number(target[key]) : timedCandidates.length > 1));
+        && release[key] != null
+        && release[key] !== Number(target[key]));
       const hardConflict = match.mismatched.some(key => ['year', 'edition', 'season', 'episode'].includes(key));
       return {
         ...candidate,
@@ -186,7 +187,7 @@ function extractZip(input, {
       };
     })
     .filter(candidate => Number.isFinite(candidate.score))
-    .sort((left, right) => right.match.tier - left.match.tier || right.score - left.score || (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+    .sort((left, right) => right.score - left.score || right.match.tier - left.match.tier || (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
   if (!ranked.length) throw httpError(422, 'ZIP archive does not contain a supported subtitle file matching the requested identity');
 
   return {
