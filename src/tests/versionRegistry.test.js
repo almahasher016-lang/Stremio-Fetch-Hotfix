@@ -27,7 +27,7 @@ test('persists verified versions and hydrates local media facts', async () => {
 
     const reopened = new VersionRegistry({ storagePath, maxItems: 20 });
     const status = await reopened.status();
-    assert.equal(status.verified, 4);
+    assert.equal(status.verified, 5);
     assert.equal(status.media, 1);
   } finally {
     await fs.rm(directory, { recursive: true, force: true });

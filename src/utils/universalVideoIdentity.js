@@ -181,7 +181,10 @@ function detectSourceDetail(value = '') {
 }
 
 function normalizeReleaseGroup(value) {
-  const raw = text(value).replace(/^[\[({]+|[\])}]+$/g, '').replace(/[._]+$/g, '');
+  const raw = text(value)
+    .replace(/^[\[({]+|[\])}]+$/g, '')
+    .replace(/\.(?:mkv|mk3d|webm|mp4|m4v|mov|qt|avi|wmv|asf|flv|f4v|ts|m2ts|mts|m2t|mpg|mpeg|mpe|vob|3gp|3g2|ogv|ogg|mxf|rm|rmvb|iso|nut|nsv|divx|amv|y4m)$/i, '')
+    .replace(/[._]+$/g, '');
   if (!raw || raw.length > 48) return null;
   return raw.toUpperCase();
 }
@@ -277,8 +280,12 @@ export function buildUniversalVideoProfile(source = {}) {
   const container = detectVideoContainer(raw, firstDefined([source.container, extra.container, extra.videoContainer]));
   const videoHash = hashValue(source) || null;
   const videoSize = positiveInt(firstDefined([source.videoSize, source.movieByteSize, source.moviebytesize, source.size, extra.videoSize, extra.size]));
+  // The normalized timeline identity deliberately excludes container, resolution, codec,
+  // HDR/audio and source detail such as UHD-REMUX vs BluRay encode. Those can differ while
+  // the underlying cut/timeline remains identical. Family + service/group + edition/FPS/duration
+  // are the signals that may safely define a reusable timing cache identity.
   const timingSignature = [
-    sourceFamily || '?', sourceDetail || '?', service || '?', releaseGroup || '?',
+    sourceFamily || '?', service || '?', releaseGroup || '?',
     editions.join('+') || '?', fps || '?', durationMs || '?',
   ].join('|');
   const visualSignature = [container || '?', resolution || '?', codec || '?', hdr || '?'].join('|');
