@@ -1,0 +1,35 @@
+name: spiderman-language-profile
+
+on:
+  push:
+    branches:
+      - qa/spiderman-language-profile
+
+permissions:
+  contents: read
+
+jobs:
+  profile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Profile production Spider-Man subtitles
+        shell: bash
+        env:
+          BASE_URL: https://pleasing-gentleness-production.up.railway.app
+        run: |
+          set -euo pipefail
+          curl -fsS -G \
+            --data-urlencode 'filename=Spider.Man.Brand.New.Day.2026.4k.Th Rong.mkv' \
+            --data-urlencode 'videoSize=16243759197' \
+            --data-urlencode 'videoHash=981bb99030667653' \
+            "$BASE_URL/subtitles/movie/tt22084616.json" -o spider.json
+          jq '{count:(.subtitles|length), results:[.subtitles[]|{name,lang,id}]}' spider.json
+          count="$(jq '.subtitles|length' spider.json)"
+          limit="$count"; if [ "$limit" -gt 8 ]; then limit=8; fi
+          if [ "$limit" -eq 0 ]; then exit 0; fi
+          for i in $(seq 0 $((limit - 1))); do
+            url="$(jq -r ".subtitles[$i].url" spider.json)"
+            curl -fsS --max-time 20 "$url" -o "sub-$i.srt"
+            python -c 'import re,sys,json; t=open(sys.argv[1],encoding="utf-8",errors="ignore").read(); words=re.findall(r"[\u0600-\u06ff]+",t); pers_chars=len(re.findall(r"[پچژگکی]",t)); arabic_specific=len(re.findall(r"[ةۀىئؤأإآظضثذ]",t)); pset={"است","نیست","که","برای","این","آن","را","می","یک","خیلی","باید","اگر","چرا","وقتی","شما","هست"}; aset={"في","إلى","على","هذا","هذه","الذي","التي","أنا","نحن","أنت","لكن","هل","كان","ليس","مع","عن","لقد","سوف","الآن","هناك"}; pw=sum(1 for w in words if w in pset); aw=sum(1 for w in words if w in aset); print(json.dumps({"file":sys.argv[1],"persian_distinctive_chars":pers_chars,"arabic_specific_chars":arabic_specific,"persian_common_words":pw,"arabic_common_words":aw,"script_words":len(words)},ensure_ascii=False))' "sub-$i.srt"
+          done
