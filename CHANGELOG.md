@@ -1,3 +1,9 @@
+## 4.6.2 - 2026-09-08
+
+- Prefer confirmed Arabic subtitle content before ZIP release-match tiers, while preserving release-family preference between Arabic candidates.
+- Accept multi-file episode ZIP archives with generic subtitle filenames and reject only explicit season/episode conflicts.
+- Add regression coverage for Arabic-vs-English ZIP selection and generic exact-episode variants, and synchronize corrected release identifiers to 4.6.2.
+
 ## 4.6.1 - 2026-09-08
 
 - Reject conflicting catalog IDs, media types, and structured or filename season/episode identities before ranking and deduplication; normalize OpenSubtitles episode IDs to their parent series scope.
