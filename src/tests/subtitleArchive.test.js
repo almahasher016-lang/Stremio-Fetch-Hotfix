@@ -51,6 +51,48 @@ test('ZIP extraction chooses the strongest Arabic subtitle candidate', async () 
   assert.equal(result.buffer.toString('utf8'), ARABIC_SRT);
 });
 
+test('ZIP extraction prefers Arabic content over a stronger release-name match', async () => {
+  const archive = zipSync({
+    'Movie.2026.1080p.WEB-DL.English.srt': strToU8(ENGLISH_SRT),
+    'Arabic.srt': strToU8(ARABIC_SRT),
+  });
+  const result = await extractSubtitlePayload(Buffer.from(archive), {
+    sourceName: 'Movie.2026.1080p.WEB-DL.zip',
+    context: {
+      type: 'movie',
+      year: 2026,
+      filename: 'Movie.2026.1080p.WEB-DL.mkv',
+    },
+    maxDecompressedBytes: 100_000,
+    maxArchiveEntries: 10,
+  });
+
+  assert.equal(result.entryName, 'Arabic.srt');
+  assert.equal(result.buffer.toString('utf8'), ARABIC_SRT);
+});
+
+test('ZIP extraction keeps generic variants for an exact episode archive', async () => {
+  const archive = zipSync({
+    'Arabic.srt': strToU8(ARABIC_SRT),
+    'Arabic-alt.srt': strToU8(ARABIC_SRT),
+  });
+  const result = await extractSubtitlePayload(Buffer.from(archive), {
+    sourceName: 'Show.S01E02.1080p.WEB-DL.zip',
+    context: {
+      type: 'series',
+      season: 1,
+      episode: 2,
+      filename: 'Show.S01E02.1080p.WEB-DL.mkv',
+    },
+    maxDecompressedBytes: 100_000,
+    maxArchiveEntries: 10,
+  });
+
+  assert.equal(result.archive, 'zip');
+  assert.match(result.entryName, /^Arabic(?:-alt)?\.srt$/);
+  assert.equal(result.buffer.toString('utf8'), ARABIC_SRT);
+});
+
 test('ZIP extraction ignores absolute and traversal entry paths', async () => {
   const archive = zipSync({
     '../Escape.Arabic.srt': strToU8(ARABIC_SRT),

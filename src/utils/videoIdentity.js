@@ -37,9 +37,10 @@ function technicalText(value, maxLength = 64) {
   return text && text.length <= maxLength ? text : null;
 }
 
-function normalizeEpisode(value) {
-  const number = toPositiveNumber(value);
-  return number && number <= 9999 ? number : null;
+function normalizeEpisode(value, min = 1) {
+  if (value === null || value === undefined || value === '') return null;
+  const number = Number(value);
+  return Number.isInteger(number) && number >= min && number <= 9999 ? number : null;
 }
 
 function extractPrefixedId(prefix, value) {
@@ -52,7 +53,7 @@ function routeEpisode(id, type) {
   const parts = cleanText(id).split(':');
   if (parts.length < 3) return { season: null, episode: null };
   return {
-    season: normalizeEpisode(parts.at(-2)),
+    season: normalizeEpisode(parts.at(-2), 0),
     episode: normalizeEpisode(parts.at(-1)),
   };
 }
@@ -97,8 +98,8 @@ export function buildVideoIdentity({ type = 'movie', id, extra = {}, ...input } 
   const kitsuId = cleanText(input.kitsuId || normalizedExtra.kitsuId || extractPrefixedId('kitsu', videoId || routeId));
   const anidbId = cleanText(input.anidbId || normalizedExtra.anidbId || extractPrefixedId('anidb', videoId || routeId));
   const malId = cleanText(input.malId || normalizedExtra.malId || extractPrefixedId('mal', videoId || routeId));
-  const season = normalizeEpisode(input.season || normalizedExtra.season || parsed.season || routeSe.season);
-  const episode = normalizeEpisode(input.episode || normalizedExtra.episode || parsed.episode || routeSe.episode);
+  const season = normalizeEpisode(input.season ?? normalizedExtra.season ?? routeSe.season ?? parsed.season, 0);
+  const episode = normalizeEpisode(input.episode ?? normalizedExtra.episode ?? routeSe.episode ?? parsed.episode);
   const catalogId = cleanText(imdbId || (tmdbId ? `tmdb:${tmdbId}` : '') || (kitsuId ? `kitsu:${kitsuId}` : '') || (anidbId ? `anidb:${anidbId}` : '') || (malId ? `mal:${malId}` : '') || videoId || routeId);
   const releaseFingerprint = stableFingerprint(filename || title || catalogId);
   const videoSize = toPositiveNumber(input.videoSize || normalizedExtra.videoSize);
@@ -164,7 +165,7 @@ export function versionKeys(search = {}) {
   const keys = [];
   if (identity.videoHash && identity.videoSize) keys.push(`hash-size:${identity.videoHash}:${identity.videoSize}`);
   if (identity.videoHash) keys.push(`hash:${identity.videoHash}`);
-  if (identity.catalogId && identity.season && identity.episode) keys.push(`episode:${identity.catalogId}:s${identity.season}:e${identity.episode}`);
+  if (identity.catalogId && identity.season != null && identity.episode) keys.push(`episode:${identity.catalogId}:s${identity.season}:e${identity.episode}`);
   if (identity.catalogId && !identity.season && !identity.episode) keys.push(`movie:${identity.catalogId}`);
   if (identity.catalogId && identity.releaseFingerprint) keys.push(`release:${identity.catalogId}:${stableKey(identity.releaseFingerprint)}`);
   return [...new Set(keys)];

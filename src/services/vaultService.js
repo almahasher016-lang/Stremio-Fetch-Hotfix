@@ -47,20 +47,21 @@ function normalizeText(input) {
   return processed.text;
 }
 
-function normalizeEpisode(value) {
-  const n = Number(value || 0);
-  return Number.isFinite(n) && n > 0 ? n : null;
+function normalizeEpisode(value, min = 1) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isInteger(n) && n >= min ? n : null;
 }
 
 function searchKeys(search = {}) {
   const imdbId = cleanImdb(search.imdbId || search.id || search.query);
-  const season = normalizeEpisode(search.season);
+  const season = normalizeEpisode(search.season, 0);
   const episode = normalizeEpisode(search.episode);
   const videoHash = String(search.videoHash || search.hash || '').toLowerCase() || null;
   const filename = stableFingerprint(search.filename || search.query || '');
   const keys = [];
   if (videoHash) keys.push(`hash:${videoHash}`);
-  if (imdbId && season && episode) keys.push(`episode:${imdbId}:s${season}:e${episode}`);
+  if (imdbId && season != null && episode) keys.push(`episode:${imdbId}:s${season}:e${episode}`);
   if (imdbId && !season && !episode) keys.push(`movie:${imdbId}`);
   if (imdbId && filename) keys.push(`release:${imdbId}:${sha(filename).slice(0, 24)}`);
   return keys;
@@ -68,13 +69,13 @@ function searchKeys(search = {}) {
 
 function itemKeys(item = {}) {
   const imdbId = cleanImdb(item.imdbId || item.id || item.query);
-  const season = normalizeEpisode(item.season);
+  const season = normalizeEpisode(item.season, 0);
   const episode = normalizeEpisode(item.episode);
   const videoHash = String(item.videoHash || item.hash || '').toLowerCase() || null;
   const filename = stableFingerprint(item.filename || item.releaseName || item.name || '');
   const keys = [];
   if (videoHash) keys.push(`hash:${videoHash}`);
-  if (imdbId && season && episode) keys.push(`episode:${imdbId}:s${season}:e${episode}`);
+  if (imdbId && season != null && episode) keys.push(`episode:${imdbId}:s${season}:e${episode}`);
   if (imdbId && !season && !episode) keys.push(`movie:${imdbId}`);
   if (imdbId && filename) keys.push(`release:${imdbId}:${sha(filename).slice(0, 24)}`);
   return keys;
@@ -194,7 +195,7 @@ function toProviderItem(item, search = {}) {
     lang: normalizeStremioLanguage(item.lang || 'ar'),
     downloads: 999999,
     rating: 5,
-    season: item.season || null,
+    season: item.season ?? null,
     episode: item.episode || null,
     imdbId: cleanImdb(item.imdbId) || null,
     tmdbId: item.tmdbId || null,
@@ -218,14 +219,14 @@ function buildVaultItem(input, { requireId = false } = {}) {
   if (requestedId && !/^[A-Za-z0-9_-]{1,64}$/.test(requestedId)) throw httpError(400, 'Invalid vault subtitle ID');
   const videoHash = String(input.videoHash || '').trim().toLowerCase();
   if (videoHash.length > 128 || /[^a-z0-9_-]/i.test(videoHash)) throw httpError(400, 'Invalid video hash');
-  const id = requestedId || sha(`${input.imdbId || ''}:${input.season || ''}:${input.episode || ''}:${videoHash}:${input.releaseName || input.filename || ''}:${text}`).slice(0, 32) || randomUUID();
+  const id = requestedId || sha(`${input.imdbId || ''}:${input.season ?? ''}:${input.episode || ''}:${videoHash}:${input.releaseName || input.filename || ''}:${text}`).slice(0, 32) || randomUUID();
   const createdAt = Number.isFinite(Date.parse(input.createdAt)) ? new Date(input.createdAt).toISOString() : new Date().toISOString();
   const item = {
     id,
     name: String(input.name || input.releaseName || input.filename || 'Personal Arabic Subtitle').slice(0, 180),
     imdbId: cleanImdb(input.imdbId || (requireId ? null : input.id) || input.query) || null,
     tmdbId: input.tmdbId || null,
-    season: normalizeEpisode(input.season),
+    season: normalizeEpisode(input.season, 0),
     episode: normalizeEpisode(input.episode),
     videoHash: videoHash || null,
     filename: String(input.filename || '').slice(0, 260),

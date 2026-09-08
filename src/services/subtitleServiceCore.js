@@ -7,7 +7,7 @@ import { parseRetryAfter, withRetry } from '../utils/retry.js';
 import { parseRelease, tokenOverlapScore } from '../utils/releaseParser.js';
 import { applyPostAccuracyScoreFloor, hasStrongTimingEvidence, prioritizeAndLimitAccurateSubtitles } from '../utils/accuracyFirst.js';
 import { sourceFamily } from '../utils/timingCompatibility.js';
-import { rankAndFilter, scoreSubtitle } from '../utils/scoring.js';
+import { hasSubtitleIdentityConflict, rankAndFilter, scoreSubtitle } from '../utils/scoring.js';
 import { isArabicLanguage, isEnglishLanguage } from '../utils/language.js';
 import { buildVideoIdentity } from '../utils/videoIdentity.js';
 import { providerDefinitions, getProviderDefinition } from '../providers/registry.js';
@@ -91,6 +91,9 @@ function cacheKey(search) {
     release: identity.releaseFingerprint,
     season: identity.season,
     episode: identity.episode,
+    hints: identity.extra,
+    fps: identity.fps,
+    durationMs: identity.durationMs,
     providers: config.providers.enabled,
     resolver: config.app.version,
   })}`;
@@ -226,6 +229,7 @@ const IDENTITY_HARD_CONFLICTS = new Set(['season', 'episode', 'year', 'edition']
 const RECOVERY_HARD_CONFLICTS = new Set(['season', 'episode', 'year', 'edition', 'fps']);
 
 export function hasHardIdentityConflict(item, search = {}) {
+  if (hasSubtitleIdentityConflict(item, search)) return true;
   const exactSource = item?.sourceType === 'personal-vault-exact-hash'
     || item?.sourceType === 'version-registry-exact-hash'
     || exactHashMatch(item, search);
@@ -416,8 +420,28 @@ export function mergeResults(...groups) {
 
 
 export function preserveAccurateCandidates(search, ...groups) {
+  const currentHash = lower(search.videoHash);
+  const rebound = mergeResults(...groups).map(item => {
+    const boundHash = lower(item.evidenceVideoHash || item.movieHash || item.hash);
+    if (currentHash && boundHash === currentHash) return item;
+    return {
+      ...item,
+      matchedByHash: false,
+      sourceType: /exact-hash$/.test(item.sourceType || '') ? null : item.sourceType,
+      actualTimingEvidence: null,
+      timingReferenceEvidence: null,
+      referenceSubtitle: null,
+    };
+  });
+  const rescored = rankAndFilter(rebound, search, {
+    outputArabicOnly: config.providers.outputArabicOnly,
+    excludeHearingImpaired: false,
+    excludeMachineTranslated: config.providers.excludeMachineTranslated,
+    applyMinRankScore: false,
+    maxReturnedPerRelease: config.ranking.maxReturnedPerRelease,
+  }).filter(item => !hasHardIdentityConflict(item, search));
   return prioritizeAndLimitAccurateSubtitles(
-    mergeResults(...groups),
+    rescored,
     search,
     config.providers.topN,
   );

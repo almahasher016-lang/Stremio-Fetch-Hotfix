@@ -17,6 +17,10 @@ function candidateKey(item = {}, search = {}) {
     release: item.releaseName || item.fileName || item.name || '',
     durationMs: search.durationMs || null,
     fps: search.fps || search.extra?.fps || null,
+    filename: search.filename || search.extra?.filename || '',
+    season: search.season ?? null,
+    episode: search.episode ?? null,
+    type: search.type || null,
     policyVersion: config.app.version,
   });
   return `accuracy-preflight:${createHash('sha256').update(payload).digest('hex')}`;

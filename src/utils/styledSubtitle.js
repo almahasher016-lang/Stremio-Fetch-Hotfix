@@ -289,6 +289,7 @@ export async function resolveStyledSubtitle(token, {
     maxArchiveEntries: config.encodingProxy.maxArchiveEntries,
     sourceName: source.name || source.candidate?.fileName || source.candidate?.name,
     allowedExtensions: ['ass', 'ssa'],
+    context: payload.context,
   });
   const normalized = normalizeStyledSubtitleBuffer(extracted.buffer, {
     sourceName: extracted.entryName || source.name || source.candidate?.fileName,

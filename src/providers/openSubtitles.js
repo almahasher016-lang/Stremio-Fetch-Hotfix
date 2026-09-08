@@ -33,6 +33,11 @@ export function normalizeOpenSubtitlesItem(item, expectedLanguage = 'ar', varian
   const movieHash = attr.moviehash || attr.movie_hash || attr.feature_details?.moviehash || null;
   const matchedByHash = Boolean(attr.moviehash_match || attr.movie_hash_match)
     || Boolean(variant.videoHash && movieHash && String(movieHash).toLowerCase() === String(variant.videoHash).toLowerCase());
+  const feature = attr.feature_details || {};
+  const isEpisode = String(feature.feature_type).toLowerCase() === 'episode';
+  // Episode catalog IDs identify the episode, while Stremio searches use the series ID.
+  const imdbId = feature.parent_imdb_id || (!isEpisode ? feature.imdb_id : null);
+  const tmdbId = feature.parent_tmdb_id || (!isEpisode ? feature.tmdb_id : null);
   return {
     provider: 'opensubtitles',
     id: `os-${item.id || fileId || attr.subtitle_id}`,
@@ -44,12 +49,14 @@ export function normalizeOpenSubtitlesItem(item, expectedLanguage = 'ar', varian
     lang: normalizeStremioLanguage(language),
     downloads: attr.download_count || attr.downloads || 0,
     rating: attr.ratings || attr.rating || 0,
-    season: attr.feature_details?.season_number || attr.season_number || null,
-    episode: attr.feature_details?.episode_number || attr.episode_number || null,
-    imdbId: attr.feature_details?.imdb_id ? `tt${attr.feature_details.imdb_id}` : null,
+    season: attr.feature_details?.season_number ?? attr.season_number ?? null,
+    episode: attr.feature_details?.episode_number ?? attr.episode_number ?? null,
+    type: attr.feature_details?.feature_type || null,
+    imdbId: imdbId ? `tt${cleanImdb(imdbId)}` : null,
     movieHash,
     matchedByHash,
-    tmdbId: attr.feature_details?.tmdb_id || null,
+    tmdbId: tmdbId || null,
+    fps: attr.fps || null,
     hearingImpaired: Boolean(attr.hearing_impaired),
     machineTranslated: Boolean(attr.machine_translated),
     automatedTranslated: Boolean(attr.ai_translated),

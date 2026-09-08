@@ -5,6 +5,8 @@ import { Decompressor as XzDecompressor } from '@napi-rs/lzma/xz';
 import { decodeSubtitleBuffer } from './subtitleEncoding.js';
 import { detectSubtitleFormat } from './subtitleFormats.js';
 import { httpError } from './httpError.js';
+import { parseRelease } from './releaseParser.js';
+import { buildReleaseMatch } from './scoring.js';
 
 const gunzipAsync = promisify(gunzip);
 const SUBTITLE_EXTENSIONS = new Set([
@@ -13,6 +15,7 @@ const SUBTITLE_EXTENSIONS = new Set([
 const TIMESTAMP_RE = /(?:\d{1,3}:)?\d{1,2}:\d{2}(?:[,.]\d{1,9})?\s*-->\s*(?:\d{1,3}:)?\d{1,2}:\d{2}(?:[,.]\d{1,9})?/g;
 const ASS_DIALOGUE_RE = /^\s*Dialogue\s*:\s*[^,\r\n]*,\d{1,3}:\d{2}:\d{2}\.\d{1,3},\d{1,3}:\d{2}:\d{2}\.\d{1,3},/gmi;
 const ARABIC_RE = /\p{Script_Extensions=Arabic}/gu;
+const ARABIC_CONTENT_RATIO = 0.18;
 
 function startsWith(bytes, signature) {
   if (bytes.length < signature.length) return false;
@@ -67,6 +70,15 @@ function isSubtitleEntry(name, allowedExtensions = SUBTITLE_EXTENSIONS) {
   return allowedExtensions.has(extensionOf(normalized));
 }
 
+function arabicContentClass(candidate) {
+  const text = decodeSubtitleBuffer(candidate.buffer).text || '';
+  const arabicCount = (text.match(ARABIC_RE) || []).length;
+  if (!arabicCount) return 0;
+  const letters = (text.match(/\p{L}/gu) || []).length;
+  const arabicRatio = arabicCount / Math.max(1, letters);
+  return arabicRatio >= ARABIC_CONTENT_RATIO ? 2 : 1;
+}
+
 function scoreCandidate(candidate, sourceName = '') {
   const decoded = decodeSubtitleBuffer(candidate.buffer);
   const text = decoded.text || '';
@@ -115,6 +127,7 @@ function extractZip(input, {
   maxArchiveEntries,
   sourceName,
   allowedExtensions,
+  context,
 }) {
   const candidates = [];
   let entryCount = 0;
@@ -162,11 +175,37 @@ function extractZip(input, {
     throw httpError(422, 'Invalid or unsupported ZIP subtitle archive');
   }
 
-  const ranked = candidates
-    .map(candidate => ({ ...candidate, score: scoreCandidate(candidate, sourceName) }))
+  const target = parseRelease(context?.filename || sourceName);
+  target.season = context?.season ?? target.season;
+  target.episode = context?.episode ?? target.episode;
+  if (context?.type === 'movie') target.year = context.year ?? target.year;
+  const timedCandidates = candidates
+    .map(candidate => ({
+      ...candidate,
+      score: scoreCandidate(candidate, sourceName),
+      arabicContentClass: arabicContentClass(candidate),
+    }))
+    .filter(candidate => Number.isFinite(candidate.score));
+  const ranked = timedCandidates
+    .map(candidate => {
+      const release = parseRelease(candidate.name);
+      const match = buildReleaseMatch(target, release);
+      const episodeConflict = ['season', 'episode'].some(key => target[key] != null
+        && release[key] != null
+        && release[key] !== Number(target[key]));
+      const hardConflict = match.mismatched.some(key => ['year', 'edition', 'season', 'episode'].includes(key));
+      return {
+        ...candidate,
+        match,
+        score: episodeConflict || hardConflict ? Number.NEGATIVE_INFINITY : candidate.score,
+      };
+    })
     .filter(candidate => Number.isFinite(candidate.score))
-    .sort((left, right) => right.score - left.score || (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
-  if (!ranked.length) throw httpError(422, 'ZIP archive does not contain a supported subtitle file');
+    .sort((left, right) => right.arabicContentClass - left.arabicContentClass
+      || right.match.tier - left.match.tier
+      || right.score - left.score
+      || (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+  if (!ranked.length) throw httpError(422, 'ZIP archive does not contain a supported subtitle file matching the requested identity');
 
   return {
     buffer: ranked[0].buffer,
@@ -229,7 +268,7 @@ export async function extractSubtitlePayload(input, options = {}) {
   const archive = detectArchiveFormat(buffer);
 
   if (archive === 'zip') {
-    return extractZip(buffer, { maxDecompressedBytes, maxArchiveEntries, sourceName, allowedExtensions });
+    return extractZip(buffer, { maxDecompressedBytes, maxArchiveEntries, sourceName, allowedExtensions, context: options.context });
   }
   if (archive === 'gzip') return extractGzip(buffer, { maxDecompressedBytes, sourceName });
   if (archive === 'xz') return extractXz(buffer, { maxDecompressedBytes, sourceName });

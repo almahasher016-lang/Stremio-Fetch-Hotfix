@@ -140,7 +140,7 @@ export function createEncodingToken(payload) {
       title: tokenText(payload.context.title),
       imdbId: tokenText(payload.context.imdbId, 32),
       tmdbId: tokenText(payload.context.tmdbId, 32),
-      season: payload.context.season || null,
+      season: payload.context.season ?? null,
       episode: payload.context.episode || null,
       durationMs: payload.context.durationMs || null,
       fps: payload.context.fps || null,
@@ -197,7 +197,7 @@ export function createStableEncodingToken(payload) {
       title: tokenText(payload.context.title),
       imdbId: tokenText(payload.context.imdbId, 32),
       tmdbId: tokenText(payload.context.tmdbId, 32),
-      season: payload.context.season || null,
+      season: payload.context.season ?? null,
       episode: payload.context.episode || null,
       durationMs: payload.context.durationMs || null,
       fps: payload.context.fps || null,
@@ -470,6 +470,7 @@ export async function preflightSubtitleCandidate(item, context = {}, {
     maxDecompressedBytes: config.encodingProxy.maxDecompressedBytes,
     maxArchiveEntries: config.encodingProxy.maxArchiveEntries,
     sourceName: source.name,
+    context,
   });
   const processed = processSubtitleBuffer(extracted.buffer, {
     stripSdh: config.encodingProxy.stripSdhDefault,
@@ -523,6 +524,7 @@ async function loadProcessedSource(source, payload, fetcher, providerLinkResolve
     maxDecompressedBytes: config.encodingProxy.maxDecompressedBytes,
     maxArchiveEntries: config.encodingProxy.maxArchiveEntries,
     sourceName: source.name,
+    context: payload.context,
   });
   const processed = processSubtitleBuffer(extracted.buffer, {
     ...(payload.options || {}),
@@ -573,6 +575,7 @@ async function finalizeProcessedSource(loaded, payload, fallbackIndex, fetcher, 
         maxDecompressedBytes: config.encodingProxy.maxDecompressedBytes,
         maxArchiveEntries: config.encodingProxy.maxArchiveEntries,
         sourceName: reference.name,
+        context: payload.context,
       });
       const referenceProcessed = processSubtitleBuffer(referenceExtracted.buffer, {
         ...payload.options,
