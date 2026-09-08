@@ -34,6 +34,11 @@ assert.equal(health.version, '5.0.0');
 
 const cases = [
   {
+    id: 'devil-prada-2-framestor',
+    requireResult: true,
+    path: `/subtitles/movie/tt33612209.json?filename=${encoded('The.Devil.Wears.Prada.2.2026.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HDR10P.HEVC.HYBRID.REMUX-FraMeSToR.mkv')}&videoSize=55444604787&videoHash=8b9821a5bf6dd20a`,
+  },
+  {
     id: 'spiderman',
     path: `/subtitles/movie/tt22084616.json?filename=${encoded('Spider.Man.Brand.New.Day.2026.4k.Th Rong.mkv')}&videoHash=981bb99030667653`,
   },
@@ -51,10 +56,14 @@ for (const testCase of cases) {
   const payload = await getJson(testCase.path);
   const subtitles = Array.isArray(payload?.subtitles) ? payload.subtitles : [];
   console.log(`CASE ${testCase.id} count=${subtitles.length}`);
+  if (testCase.requireResult) {
+    assert.ok(subtitles.length > 0, `${testCase.id}: production still returned zero subtitles`);
+  }
   for (const [index, subtitle] of subtitles.entries()) {
     console.log(`RESULT ${testCase.id} #${index + 1}`, subtitle.name || '', subtitle.lang || '', subtitle.url || '');
     assert.equal(subtitle.lang, 'ara', `${testCase.id}: non-Arabic Stremio language code`);
-    assert.match(String(subtitle.name || ''), /V5\s+(Certified|Safe)/i, `${testCase.id}: result escaped balanced V5 proof policy`);
+    assert.match(String(subtitle.name || ''), /V5\s+(Certified|Safe|Recovery)/i, `${testCase.id}: result escaped V5 proof policy`);
+    assert.doesNotMatch(String(subtitle.name || ''), /V5\s+(Reject|Withhold)/i, `${testCase.id}: rejected V5 result escaped policy`);
     assert.ok(subtitle.url, `${testCase.id}: subtitle URL missing`);
 
     const asset = await fetchWithRetry(subtitle.url);
