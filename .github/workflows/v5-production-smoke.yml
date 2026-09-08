@@ -14,5 +14,5 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
         with:
           node-version: '24.18.0'
-      - name: Run production smoke
+      - name: Run production recovery smoke
         run: node .github/scripts/v5-production-smoke.mjs
