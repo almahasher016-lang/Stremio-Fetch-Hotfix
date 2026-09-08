@@ -1,0 +1,147 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { buildTimelineConsensus } from '../v5/consensusEngine.js';
+import { evaluateV5Candidates } from '../v5/shadowResolver.js';
+
+const NOW = 1_800_000_000_000;
+
+function strongQuality(overrides = {}) {
+  return {
+    valid: true,
+    score: 96,
+    reasons: [],
+    cueCount: 950,
+    coverageRatio: 0.99,
+    arabicRatio: 0.96,
+    detectedLanguage: 'arabic',
+    arabicWordHits: 600,
+    persianWordHits: 0,
+    persianDistinctiveRatio: 0,
+    fingerprint: { hash: 'timeline-aaa', points: [], durationMs: 7_000_000 },
+    ...overrides,
+  };
+}
+
+function freshPreflight(overrides = {}) {
+  return {
+    state: 'valid',
+    checkedAt: NOW - 1_000,
+    source: 'live-preflight',
+    ...overrides,
+  };
+}
+
+test('V5 certifies an exact-hash Arabic subtitle with measured aligned timeline and fresh delivery', () => {
+  const search = { type: 'movie', imdbId: 'tt123', videoHash: 'abc123' };
+  const [entry] = evaluateV5Candidates([{
+    provider: 'opensubtitles',
+    imdbId: 'tt123',
+    movieHash: 'abc123',
+    lang: 'ara',
+    quality: strongQuality(),
+    accuracyPreflight: freshPreflight(),
+    actualTimingEvidence: { measured: true, exactVideoHash: true, verdict: 'aligned' },
+    releaseMatchTier: 5,
+  }], search, { now: NOW });
+
+  assert.equal(entry.proof.decision, 'certified');
+  assert.equal(entry.proof.certified, true);
+  assert.ok(entry.proof.proofFloor >= 0.995);
+});
+
+test('V5 hard-rejects Persian content even when provider labels it Arabic', () => {
+  const [entry] = evaluateV5Candidates([{
+    provider: 'opensubtitles',
+    imdbId: 'tt123',
+    movieHash: 'abc123',
+    lang: 'ara',
+    quality: strongQuality({
+      valid: false,
+      detectedLanguage: 'persian',
+      reasons: ['wrong-language-persian'],
+      arabicWordHits: 0,
+      persianWordHits: 900,
+    }),
+    accuracyPreflight: freshPreflight(),
+  }], { type: 'movie', imdbId: 'tt123', videoHash: 'abc123' }, { now: NOW });
+
+  assert.equal(entry.proof.decision, 'reject');
+  assert.ok(entry.proof.hardFailures.some(failure => failure.dimension === 'language'));
+});
+
+test('V5 hard-rejects the wrong episode regardless of score or quality', () => {
+  const [entry] = evaluateV5Candidates([{
+    provider: 'subdl',
+    imdbId: 'ttshow',
+    season: 1,
+    episode: 3,
+    score: 99999,
+    lang: 'ara',
+    quality: strongQuality(),
+    accuracyPreflight: freshPreflight(),
+  }], { type: 'series', imdbId: 'ttshow', season: 1, episode: 2 }, { now: NOW });
+
+  assert.equal(entry.proof.decision, 'reject');
+  assert.ok(entry.proof.hardFailures.some(failure => failure.reason === 'identity-conflict:episode'));
+});
+
+test('V5 treats independent providers with the same temporal fingerprint as consensus', () => {
+  const a = { provider: 'opensubtitles', quality: strongQuality({ fingerprint: { hash: 'same', points: [], durationMs: 1 } }) };
+  const b = { provider: 'subdl', quality: strongQuality({ fingerprint: { hash: 'same', points: [], durationMs: 1 } }) };
+  const c = { provider: 'opensubtitles', quality: strongQuality({ fingerprint: { hash: 'same', points: [], durationMs: 1 } }) };
+  const consensus = buildTimelineConsensus([a, b, c]);
+
+  assert.equal(consensus.get(a).independentConsensusCount, 2);
+  assert.equal(consensus.get(b).timelineSimilarity, 1);
+  assert.equal(consensus.get(c).independentConsensusCount, 2);
+});
+
+test('V5 can certify multi-source consensus only when identity, language, delivery and integrity are also proven', () => {
+  const base = {
+    imdbId: 'ttshow',
+    season: 1,
+    episode: 2,
+    lang: 'ara',
+    releaseMatchTier: 4,
+    releaseMatch: { tier: 4, matched: ['fps'], mismatched: [], missing: [] },
+    quality: strongQuality({ fingerprint: { hash: 'episode-timeline', points: [], durationMs: 1 } }),
+    accuracyPreflight: freshPreflight(),
+  };
+  const evaluated = evaluateV5Candidates([
+    { ...base, provider: 'opensubtitles', providerId: 'a' },
+    { ...base, provider: 'subdl', providerId: 'b' },
+  ], { type: 'series', imdbId: 'ttshow', season: 1, episode: 2 }, { now: NOW });
+
+  assert.equal(evaluated[0].proof.decision, 'certified');
+  assert.equal(evaluated[1].proof.decision, 'certified');
+  assert.ok(evaluated[0].evidence.timing.independentConsensusCount >= 2);
+});
+
+test('V5 does not certify Arabic text when timing remains unverified', () => {
+  const [entry] = evaluateV5Candidates([{
+    provider: 'opensubtitles',
+    imdbId: 'tt123',
+    lang: 'ara',
+    releaseMatchTier: 1,
+    quality: strongQuality(),
+    accuracyPreflight: freshPreflight(),
+  }], { type: 'movie', imdbId: 'tt123' }, { now: NOW });
+
+  assert.notEqual(entry.proof.decision, 'certified');
+  assert.ok(entry.proof.confidence.timing < 0.94);
+});
+
+test('V5 hard-rejects terminal delivery failure even with otherwise perfect evidence', () => {
+  const [entry] = evaluateV5Candidates([{
+    provider: 'opensubtitles',
+    imdbId: 'tt123',
+    movieHash: 'abc123',
+    lang: 'ara',
+    quality: strongQuality(),
+    accuracyPreflight: freshPreflight({ state: 'rejected', deliveryFailure: true, upstreamStatus: 404 }),
+    actualTimingEvidence: { measured: true, exactVideoHash: true, verdict: 'aligned' },
+  }], { type: 'movie', imdbId: 'tt123', videoHash: 'abc123' }, { now: NOW });
+
+  assert.equal(entry.proof.decision, 'reject');
+  assert.ok(entry.proof.hardFailures.some(failure => failure.dimension === 'delivery'));
+});
