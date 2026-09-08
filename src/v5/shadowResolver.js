@@ -62,6 +62,25 @@ export function summarizeV5Evaluation(evaluated = []) {
   const legacyTop = evaluated.find(entry => entry.legacyRank === 0) || null;
   const v5Top = evaluated[0] || null;
   const legacyTopDecision = legacyTop?.proof?.decision || null;
+  const topCandidates = evaluated.slice(0, 5).map(entry => {
+    const item = entry?.item || {};
+    const quality = item.accuracyPreflight?.quality || item.quality || {};
+    return {
+      candidateId: entry?.candidateId || null,
+      provider: item.originalProvider || item.provider || null,
+      decision: entry?.proof?.decision || null,
+      preflightState: item.accuracyPreflight?.state || null,
+      preflightSource: item.accuracyPreflight?.source || null,
+      qualityValid: quality?.valid ?? null,
+      qualityScore: quality?.score ?? null,
+      qualityReasons: Array.isArray(quality?.reasons) ? quality.reasons.slice(0, 6) : [],
+      detectedLanguage: quality?.detectedLanguage || null,
+      arabicRatio: quality?.arabicRatio ?? null,
+      cueCount: quality?.cueCount ?? null,
+      deliveryFailure: item.accuracyPreflight?.deliveryFailure === true,
+      releaseName: String(item.releaseName || item.fileName || item.name || '').slice(0, 160),
+    };
+  });
   return {
     total: evaluated.length,
     counts,
@@ -77,6 +96,7 @@ export function summarizeV5Evaluation(evaluated = []) {
     topDisagreesWithLegacy: Boolean(v5Top && legacyTop && v5Top.candidateId !== legacyTop.candidateId),
     legacyTopWouldBeWithheld: ['withhold', 'reject'].includes(legacyTopDecision),
     legacyTopNotCertified: Boolean(legacyTop && legacyTopDecision !== 'certified'),
+    topCandidates,
   };
 }
 

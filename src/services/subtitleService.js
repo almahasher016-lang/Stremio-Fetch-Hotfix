@@ -149,6 +149,7 @@ function v5Log(mode, summary, search) {
     topDisagreesWithLegacy: summary.topDisagreesWithLegacy,
     legacyTopWouldBeWithheld: summary.legacyTopWouldBeWithheld,
     legacyTopNotCertified: summary.legacyTopNotCertified,
+    topCandidates: summary.topCandidates,
   }));
 }
 
