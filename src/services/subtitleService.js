@@ -95,6 +95,16 @@ async function writeAvailabilityLkg(search, results, mode = 'merge') {
   await Promise.allSettled(writes);
 }
 
+export async function revalidateAvailabilityLkg(search, lkg, { preflight = applyAccuracyPreflight } = {}) {
+  if (!lkg?.hit || !usable(lkg.value)) return [];
+  // LKG preserves candidate identity, not delivery/integrity truth. Remote links and archives can
+  // change after caching, so every fallback must be freshly preflighted before V5 can judge it.
+  // This prevents a provider outage from turning previously valid cached candidates into false
+  // integrity:invalid-subtitle / delivery:unverified rejects merely because proof metadata is stale.
+  const checked = await preflight(lkg.value, search);
+  return Array.isArray(checked) ? checked : [];
+}
+
 function singleflightKey(search) {
   const identity = JSON.stringify({
     type: search?.type || 'movie',
@@ -217,7 +227,13 @@ export async function searchSubtitles(search) {
       }
       return fresh;
     }
-    if (lkg?.hit && usable(lkg.value)) return lkg.value;
+    if (lkg?.hit && usable(lkg.value)) {
+      const revalidated = await revalidateAvailabilityLkg(search, lkg);
+      if (usable(revalidated)) {
+        await writeAvailabilityLkg(search, revalidated, 'replace');
+        return revalidated;
+      }
+    }
     return fresh;
   })();
   inFlight.set(key, pending);
