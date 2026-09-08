@@ -66,23 +66,42 @@ function exactTimingReference(item = {}) {
   return { ...reference, exactVideoHash: true };
 }
 
+function stableLocalSource(item = {}) {
+  const provider = String(item.originalProvider || item.provider || '').toLowerCase();
+  return provider === 'vault'
+    || item.sourceType === 'personal-vault-exact-hash'
+    || String(item.download || item.url || '').startsWith('/vault/subtitles/');
+}
+
+function cachedOutcomeIsFresh(cached, item, now = Date.now()) {
+  if (!cached?.state) return false;
+  if (stableLocalSource(item)) return true;
+  const checkedAt = Number(cached.checkedAt || 0);
+  const maxAgeMs = Number(config.accuracyPreflight.remoteFreshMs || 0);
+  if (!Number.isFinite(checkedAt) || checkedAt <= 0 || !Number.isFinite(maxAgeMs) || maxAgeMs <= 0) return false;
+  const ageMs = now - checkedAt;
+  return ageMs >= 0 && ageMs <= maxAgeMs;
+}
+
 async function inspectOne(item, search, {
   preflightImpl,
   cacheGetImpl,
   cacheSetImpl,
 } = {}) {
-  if (item?.quality?.valid === true && !exactTimingReference(item)) {
+  // Stored quality proves subtitle content, not that a remote provider URL is still alive.
+  // Only the local personal vault may bypass a fresh delivery check on that basis.
+  if (item?.quality?.valid === true && !exactTimingReference(item) && stableLocalSource(item)) {
     return {
       state: 'valid',
       quality: item.quality,
-      source: 'existing-quality',
+      source: 'existing-quality-local',
       elapsedMs: 0,
     };
   }
 
   const key = candidateKey(item, search);
   const cached = await cacheGetImpl(key);
-  if (cached?.state) return { ...cached, source: 'shared-cache' };
+  if (cachedOutcomeIsFresh(cached, item)) return { ...cached, source: 'shared-cache' };
 
   const started = Date.now();
   const timeoutMs = exactTimingReference(item) ? config.timingEvidence.timeoutMs : config.accuracyPreflight.timeoutMs;
@@ -94,6 +113,7 @@ async function inspectOne(item, search, {
   } catch (error) {
     outcome = outcomeFromError(error, Date.now() - started);
   }
+  outcome = { ...outcome, checkedAt: Date.now() };
 
   recordAccuracyPreflight(outcome.state, outcome.elapsedMs);
   if (outcome.state !== 'unavailable') {
