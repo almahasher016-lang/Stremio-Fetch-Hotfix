@@ -20,7 +20,8 @@ function isAsciiAlphaNumeric(char) {
 }
 
 function isWhitespace(char) {
-  return char === ' ' || char === '\t' || char === '\n' || char === '' || char === '\f' || char === '\v';
+  const code = char.charCodeAt(0);
+  return code === 9 || code === 10 || code === 11 || code === 12 || code === 13 || code === 32;
 }
 
 function normalizeFilenameSeparators(value) {
@@ -99,7 +100,7 @@ function deriveTitleFromFilename(filename, parsed = {}) {
   const boundary = value.match(TECHNICAL_BOUNDARY_RE);
   if (boundary?.index > 0) value = value.slice(0, boundary.index).trim();
   const yearSuffix = parsed.year ? ` ${parsed.year}` : '';
-  if (yearSuffix && value.endsWith(yearSuffix)) value = value.slice(0, - yearSuffix.length).trim();
+  if (yearSuffix && value.endsWith(yearSuffix)) value = value.slice(0, -yearSuffix.length).trim();
   return value;
 }
 
