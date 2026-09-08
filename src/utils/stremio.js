@@ -126,9 +126,16 @@ function qualityBadges(item, mode) {
   if (styledModeFormat(mode)) badges.push('🎨 Original Styles');
   if (item.searchReason === 'hash-first' || item.movieHash) badges.push('🔑 Hash');
   if (item.timingReferenceEvidence?.exactVideoHash) badges.push('🧭 Exact Timeline');
+  const timingVerified = Boolean(
+    item.timingReferenceEvidence?.exactVideoHash
+    || item.sourceType === 'version-registry-exact-hash'
+    || item.sourceType === 'personal-vault-exact-hash'
+    || item.releaseMatchTier >= 3
+  );
+  if (!timingVerified && item.provider !== 'vault' && item.provider !== 'registry') badges.push('⚠ Timing Unverified');
   if (item.hearingImpaired || item.sdh) badges.push('👂 SDH');
   if (item.machineTranslated || item.automatedTranslated) badges.push('🤖 MT');
-  if (item.quality?.score) badges.push(`✓ Q${item.quality.score}`);
+  if (item.quality?.score) badges.push(`✓ Text Q${item.quality.score}`);
   return badges;
 }
 

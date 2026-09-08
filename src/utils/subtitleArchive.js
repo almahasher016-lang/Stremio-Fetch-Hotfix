@@ -7,6 +7,7 @@ import { detectSubtitleFormat } from './subtitleFormats.js';
 import { httpError } from './httpError.js';
 import { parseRelease } from './releaseParser.js';
 import { buildReleaseMatch } from './scoring.js';
+import { analyzeArabicScriptLanguage } from './arabicLanguageProfile.js';
 
 const gunzipAsync = promisify(gunzip);
 const SUBTITLE_EXTENSIONS = new Set([
@@ -72,6 +73,7 @@ function isSubtitleEntry(name, allowedExtensions = SUBTITLE_EXTENSIONS) {
 
 function arabicContentClass(candidate) {
   const text = decodeSubtitleBuffer(candidate.buffer).text || '';
+  if (analyzeArabicScriptLanguage(text).likelyPersian) return 0;
   const arabicCount = (text.match(ARABIC_RE) || []).length;
   if (!arabicCount) return 0;
   const letters = (text.match(/\p{L}/gu) || []).length;
@@ -82,6 +84,7 @@ function arabicContentClass(candidate) {
 function scoreCandidate(candidate, sourceName = '') {
   const decoded = decodeSubtitleBuffer(candidate.buffer);
   const text = decoded.text || '';
+  if (analyzeArabicScriptLanguage(text).likelyPersian) return Number.NEGATIVE_INFINITY;
   const format = detectSubtitleFormat(text);
   if (['ttml', 'youtube-xml'].includes(format) && /<!DOCTYPE|<!ENTITY/i.test(text)) return Number.NEGATIVE_INFINITY;
   const formatCues = {

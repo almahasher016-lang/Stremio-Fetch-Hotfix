@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { timeToMs } from './subtitleTiming.js';
+import { analyzeArabicScriptLanguage } from './arabicLanguageProfile.js';
 
 const TIME_RE = /((?:\d{1,3}:)?\d{1,2}:\d{2}(?:[,.]\d{1,9})?)\s*-->\s*((?:\d{1,3}:)?\d{1,2}:\d{2}(?:[,.]\d{1,9})?)/;
 const LETTER_RE = /[\p{L}\p{N}]/gu;
@@ -75,6 +76,8 @@ export function analyzeSubtitleQuality(text = '', {
   const letters = allText.match(LETTER_RE) || [];
   const arabicChars = letters.filter(character => ARABIC_LETTER_OR_NUMBER_RE.test(character));
   const arabicRatio = letters.length ? clamp(arabicChars.length / letters.length, 0, 1) : 0;
+  const languageProfile = analyzeArabicScriptLanguage(allText);
+  const wrongLanguage = languageProfile.likelyPersian;
   const uniqueLines = new Set(cues.map(cue => cue.text.toLowerCase()).filter(Boolean));
   const duplicateRatio = cues.length ? 1 - (uniqueLines.size / cues.length) : 1;
   const cueDurationMs = cues.reduce((sum, cue) => sum + cue.durationMs, 0);
@@ -88,7 +91,8 @@ export function analyzeSubtitleQuality(text = '', {
   if (cues.length >= minCues) score += 24;
   else reasons.push('too-few-cues');
   if (cues.length >= 80) score += 12;
-  if (arabicRatio >= minArabicRatio) score += 28;
+  if (wrongLanguage) reasons.push('wrong-language-persian');
+  else if (arabicRatio >= minArabicRatio) score += 28;
   else reasons.push('low-arabic-ratio');
   if (averageCps >= 1.2 && averageCps <= 28) score += 16;
   else reasons.push('reading-speed-outlier');
@@ -102,7 +106,7 @@ export function analyzeSubtitleQuality(text = '', {
 
   const coverageValid = coverageRatio === null
     || (coverageRatio >= minCoverageRatio && coverageRatio <= 1.15);
-  const valid = cues.length >= minCues && arabicRatio >= minArabicRatio && coverageValid;
+  const valid = cues.length >= minCues && arabicRatio >= minArabicRatio && !wrongLanguage && coverageValid;
   return {
     valid,
     score: Math.round(clamp(score, 0, 100)),
@@ -113,6 +117,10 @@ export function analyzeSubtitleQuality(text = '', {
     durationMs: cues.length ? cues.at(-1).end - cues[0].start : 0,
     coverageRatio: coverageRatio === null ? null : Number(coverageRatio.toFixed(3)),
     arabicRatio: Number(arabicRatio.toFixed(3)),
+    detectedLanguage: languageProfile.language,
+    persianDistinctiveRatio: languageProfile.persianDistinctiveRatio,
+    persianWordHits: languageProfile.persianWordHits,
+    arabicWordHits: languageProfile.arabicWordHits,
     duplicateRatio: Number(duplicateRatio.toFixed(3)),
     averageCps: Number(averageCps.toFixed(2)),
     fingerprint: temporalFingerprint(cues),

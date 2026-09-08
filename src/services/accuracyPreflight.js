@@ -6,7 +6,7 @@ import { preflightSubtitleCandidate, preflightTimingReferenceCandidate } from '.
 import { deriveReferenceSyncPlanFromProfiles } from '../utils/referenceSync.js';
 import { recordAccuracyPreflight } from '../utils/metrics.js';
 
-const HARD_REJECT_REASONS = new Set(['low-arabic-ratio', 'too-few-cues', 'invalid-timed-cues']);
+const HARD_REJECT_REASONS = new Set(['low-arabic-ratio', 'wrong-language-persian', 'too-few-cues', 'invalid-timed-cues']);
 const TERMINAL_DELIVERY_STATUSES = new Set([403, 404, 410]);
 
 function candidateKey(item = {}, search = {}) {
