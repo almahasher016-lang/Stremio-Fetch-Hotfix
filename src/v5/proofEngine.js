@@ -25,6 +25,7 @@ function identityProof(evidence = {}) {
 
   const series = evidence.mediaType === 'series';
   const catalog = bool(evidence.catalogIdMatch);
+  const catalogSearch = bool(evidence.catalogSearchAnchored);
   const season = evidence.seasonMatch !== false && (bool(evidence.seasonMatch) || !series);
   const episode = evidence.episodeMatch !== false && (bool(evidence.episodeMatch) || !series);
   const year = evidence.yearMatch !== false;
@@ -35,6 +36,18 @@ function identityProof(evidence = {}) {
   if (!series && catalog && year) {
     return { confidence: 0.998, hardFail: false, reasons: ['identity:catalog'] };
   }
+
+  // A candidate returned from the exact-metadata provider stage was queried against the target
+  // catalog identifier even when that provider does not echo IMDb/TMDb back on every row. Treat
+  // that provenance as strong identity evidence only when no explicit conflict exists. Series still
+  // require an explicit season+episode match so a provider cannot leak a neighboring episode.
+  if (series && catalogSearch && bool(evidence.explicitEpisodeMatch) && year) {
+    return { confidence: 0.997, hardFail: false, reasons: ['identity:catalog-search-episode'] };
+  }
+  if (!series && catalogSearch && year) {
+    return { confidence: 0.997, hardFail: false, reasons: ['identity:catalog-search-anchored'] };
+  }
+
   if (series && bool(evidence.explicitEpisodeMatch) && year) {
     return { confidence: 0.992, hardFail: false, reasons: ['identity:explicit-episode'] };
   }
