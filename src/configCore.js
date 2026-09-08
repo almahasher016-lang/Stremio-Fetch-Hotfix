@@ -164,8 +164,9 @@ export function buildConfig(env = process.env) {
     },
     accuracyPreflight: {
       enabled: toBool(get('ACCURACY_PREFLIGHT_ENABLED'), true),
-      topN: toInt(get('ACCURACY_PREFLIGHT_TOP_N'), 5, 0, 5),
+      topN: toInt(get('ACCURACY_PREFLIGHT_TOP_N'), 10, 0, 10),
       timeoutMs: toInt(get('ACCURACY_PREFLIGHT_TIMEOUT_MS'), 1800, 300, 8000),
+      remoteFreshMs: toInt(get('ACCURACY_PREFLIGHT_REMOTE_FRESH_MS'), 120000, 10000, 900000),
       cacheTtlSeconds: toInt(get('ACCURACY_PREFLIGHT_CACHE_TTL'), 21600, 300, 604800),
       rejectCacheTtlSeconds: toInt(get('ACCURACY_PREFLIGHT_REJECT_CACHE_TTL'), 180, 30, 3600),
     },

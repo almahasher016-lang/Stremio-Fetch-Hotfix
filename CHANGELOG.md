@@ -1,3 +1,10 @@
+## 4.6.4 - 2026-09-08
+
+- Require fresh reachability validation for remote subtitle sources even when stored quality is already valid.
+- Add timestamped preflight outcomes and revalidate remote cached results after a two-minute freshness window.
+- Expand default accuracy preflight coverage from five to ten candidates so every default Stremio result is checked.
+- Preserve local Personal Vault shortcuts and temporary-network fail-open behavior while keeping terminal 403/404/410 sources excluded.
+
 ## 4.6.3 - 2026-09-08
 
 - Add identity-authority gating so explicit episode/catalog evidence outranks generic title fallbacks.
