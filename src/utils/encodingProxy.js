@@ -336,7 +336,10 @@ export async function fetchRemoteSubtitleBuffer(url, {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         await discardBody(response.body);
         bodyHandled = true;
-        throw httpError(502, `Subtitle upstream failed with ${response.statusCode}`);
+        const error = httpError(502, `Subtitle upstream failed with ${response.statusCode}`);
+        error.code = 'SUBTITLE_UPSTREAM_HTTP';
+        error.upstreamStatus = Number(response.statusCode);
+        throw error;
       }
 
       const declaredLength = Number(response.headers['content-length']);

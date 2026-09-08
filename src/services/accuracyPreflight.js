@@ -45,9 +45,13 @@ function normalizeOutcome(raw = {}, elapsedMs = 0) {
 
 function outcomeFromError(error, elapsedMs = 0) {
   const status = Number(error?.status || error?.statusCode || 0);
+  const message = String(error?.message || error || 'preflight unavailable');
+  const messageUpstreamStatus = Number(message.match(/Subtitle upstream failed with (\d{3})/i)?.[1] || 0);
+  const upstreamStatus = Number(error?.upstreamStatus || messageUpstreamStatus || 0);
+  const terminalStatus = upstreamStatus || status;
   const invalidTimedCues = status === 422
-    && /timed cues/i.test(String(error?.message || ''));
-  const deliveryFailure = TERMINAL_DELIVERY_STATUSES.has(status);
+    && /timed cues/i.test(message);
+  const deliveryFailure = TERMINAL_DELIVERY_STATUSES.has(terminalStatus);
   return {
     state: invalidTimedCues || deliveryFailure ? 'rejected' : 'unavailable',
     quality: invalidTimedCues
@@ -55,7 +59,8 @@ function outcomeFromError(error, elapsedMs = 0) {
       : null,
     deliveryFailure,
     status: status || null,
-    error: String(error?.message || error || 'preflight unavailable').slice(0, 180),
+    upstreamStatus: upstreamStatus || null,
+    error: message.slice(0, 180),
     elapsedMs: Math.max(0, Math.round(elapsedMs)),
   };
 }
