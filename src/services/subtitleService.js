@@ -26,15 +26,18 @@ function normalizedFilename(value) {
 }
 
 function availabilityKeySpecs(search = {}) {
-  const type = String(search.type || 'movie').toLowerCase();
-  const id = String(search.id || search.imdbId || search.tmdbId || search.query || search.title || '').trim().toLowerCase();
-  const season = search.season ?? '';
-  const episode = search.episode ?? '';
-  const videoHash = String(search.videoHash || search.hash || '').trim().toLowerCase();
-  const videoSize = String(search.videoSize || search.size || '').trim();
-  const filename = normalizedFilename(search.filename);
+  const identity = search.videoProfile ? search : buildVideoIdentity(search);
+  const type = String(identity.type || 'movie').toLowerCase();
+  const id = String(identity.catalogId || identity.id || identity.imdbId || identity.tmdbId || identity.query || identity.title || '').trim().toLowerCase();
+  const season = identity.season ?? '';
+  const episode = identity.episode ?? '';
+  const videoHash = String(identity.videoHash || identity.hash || '').trim().toLowerCase();
+  const videoSize = String(identity.videoSize || identity.size || '').trim();
+  const filename = normalizedFilename(identity.filename);
+  const timingFingerprint = String(identity.timingFingerprint || '').trim();
   const raw = [];
   if (videoHash) raw.push({ kind: 'exact', raw: `hash|${type}|${videoHash}|${videoSize}` });
+  if (id && timingFingerprint) raw.push({ kind: 'timeline', raw: `timeline|${type}|${id}|${season}|${episode}|${timingFingerprint}` });
   if (filename) raw.push({ kind: 'release', raw: `release|${type}|${id}|${season}|${episode}|${filename}|${videoSize}` });
   if (id) raw.push({ kind: 'catalog', raw: `catalog|${type}|${id}|${season}|${episode}` });
   const seen = new Set();
@@ -120,6 +123,7 @@ function singleflightKey(search) {
     hints: search?.extra || {},
     fps: search?.fps || null,
     durationMs: search?.durationMs || null,
+    timingFingerprint: search?.timingFingerprint || '',
     release: config.app.version,
   });
   return `cold-search:${digest(identity)}`;
