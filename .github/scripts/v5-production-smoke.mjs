@@ -30,7 +30,7 @@ function encoded(value) {
 const health = await getJson('/health');
 console.log('HEALTH', JSON.stringify(health));
 assert.equal(health.status, 'ok');
-assert.equal(health.version, '5.0.0');
+assert.equal(health.version, '5.0.1');
 
 const cases = [
   {
