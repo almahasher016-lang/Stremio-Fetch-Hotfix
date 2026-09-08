@@ -100,6 +100,18 @@ test('V5 treats independent providers with the same temporal fingerprint as cons
   assert.equal(consensus.get(c).independentConsensusCount, 2);
 });
 
+test('V5 does not count mirrored upstream families as independent consensus', () => {
+  const fingerprint = { hash: 'mirror-timeline', points: [], durationMs: 1 };
+  const a = { provider: 'opensubtitles', upstreamFamily: 'shared-origin', quality: strongQuality({ fingerprint }) };
+  const b = { provider: 'subdl', upstreamFamily: 'shared-origin', quality: strongQuality({ fingerprint }) };
+  const c = { provider: 'subsource', upstreamFamily: 'independent-origin', quality: strongQuality({ fingerprint }) };
+  const consensus = buildTimelineConsensus([a, b, c]);
+
+  assert.equal(consensus.get(a).independentConsensusCount, 2);
+  assert.equal(consensus.get(b).independentConsensusCount, 2);
+  assert.equal(consensus.get(c).independentConsensusCount, 2);
+});
+
 test('V5 detects near-identical temporal fingerprints without requiring identical hashes', () => {
   const left = { hash: 'a', points: temporalPoints(0), durationMs: 7_000_000 };
   const right = { hash: 'b', points: temporalPoints(0.2), durationMs: 7_002_000 };
