@@ -84,17 +84,30 @@ test('release-name evidence alone cannot pretend to be certified timing', () => 
   assert.ok(proof.confidence.timing < 0.995);
 });
 
-test('independent timing consensus can reach certified timing without exact hash', () => {
+test('three-source near-perfect timing consensus can reach certified timing without exact hash', () => {
   const proof = evaluateSubtitleProof(certifiedFixture({
     timing: {
       exactVideoHashReference: false,
-      releaseTier: 4,
+      releaseTier: 5,
       independentConsensusCount: 3,
-      timelineSimilarity: 0.991,
+      timelineSimilarity: 0.997,
     },
   }));
   assert.equal(proof.decision, PROOF_DECISION.CERTIFIED);
   assert.ok(proof.reasons.includes('timing:multi-source-consensus'));
+});
+
+test('two-source consensus remains safe rather than certified', () => {
+  const proof = evaluateSubtitleProof(certifiedFixture({
+    timing: {
+      exactVideoHashReference: false,
+      releaseTier: 5,
+      independentConsensusCount: 2,
+      timelineSimilarity: 0.997,
+    },
+  }));
+  assert.equal(proof.decision, PROOF_DECISION.SAFE);
+  assert.ok(proof.confidence.timing < 0.995);
 });
 
 test('provider Arabic label alone is withheld from certified output', () => {
