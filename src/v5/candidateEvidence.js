@@ -40,6 +40,13 @@ function catalogIdMatch(item = {}, search = {}) {
   return false;
 }
 
+function catalogSearchAnchored(item = {}, search = {}) {
+  if (lower(item.searchReason) !== 'exact-metadata') return false;
+  const hasImdb = Boolean(search.imdbId || /^tt\d{5,12}$/i.test(String(search.id || '')));
+  const hasTmdb = Boolean(search.tmdbId);
+  return hasImdb || hasTmdb;
+}
+
 function identityConflicts(item = {}, search = {}) {
   const conflicts = new Set();
   const releaseMismatches = Array.isArray(item.releaseMatch?.mismatched) ? item.releaseMatch.mismatched : [];
@@ -204,6 +211,7 @@ export function buildCandidateEvidence(item = {}, search = {}, consensus = {}, n
       conflicts: identityConflicts(item, search),
       exactVideoHash: exactHashMatch(item, search),
       catalogIdMatch: catalogIdMatch(item, search),
+      catalogSearchAnchored: catalogSearchAnchored(item, search),
       seasonMatch: seasonMatch ?? (mediaType === 'series' ? undefined : true),
       episodeMatch: episodeMatch ?? (mediaType === 'series' ? undefined : true),
       explicitEpisodeMatch: mediaType === 'series' && seasonMatch === true && episodeMatch === true,
