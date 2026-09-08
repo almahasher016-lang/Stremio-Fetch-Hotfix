@@ -1,3 +1,11 @@
+## 4.6.6 - 2026-09-08
+
+- Distinguish Persian/Farsi from Arabic using lexical and orthographic evidence instead of Arabic-script Unicode alone.
+- Hard-reject Persian subtitle content in Accuracy Preflight and ZIP entry selection.
+- Stop treating Persian language labels/codes as Arabic.
+- Rename Q badges to Text Q and label weak timing/release evidence as Timing Unverified.
+- Add Spider-Man: Brand New Day shaped regressions for Persian-vs-Arabic selection.
+
 ## 4.6.5 - 2026-09-08
 
 - Preserve upstream HTTP status metadata when remote subtitle downloads are wrapped as proxy 502 errors.

@@ -639,7 +639,7 @@ async function selectProcessedSource(payload, fetcher, providerLinkResolver) {
       if (
         error?.code === 'SUBTITLE_QUALITY_REJECTED'
         && error.stage === 'source'
-        && error.quality?.reasons?.includes('low-arabic-ratio')
+        && error.quality?.reasons?.some(reason => ['low-arabic-ratio', 'wrong-language-persian'].includes(reason))
       ) {
         await rejectMislabeledSource(payload, source, error.quality);
       }
