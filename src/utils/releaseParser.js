@@ -11,6 +11,24 @@ const SE_RE = /\bS(\d{1,2})E(\d{1,3})\b/i;
 const ALT_SE_RE = /\b(\d{1,2})x(\d{1,3})\b/;
 const YEAR_RE = /\b(19\d{2}|20\d{2})\b/;
 const FPS_RE = /\b(23[.,]976|23[.,]98|24|25|29[.,]97|30|50|60)\s?fps\b/i;
+const MAX_RELEASE_TEXT = 1024;
+const FILE_EXTENSIONS = new Set(['mkv', 'mp6', 'avi', 'm4v', 'mov', 'srt', 'ass', 'ssa', 'vtt']);
+const LANGUAGE_SUFFIXES = new Set(['ar', 'ara', 'arabic', 'en', 'eng', 'forced', 'sdh', 'hi']);
+
+function boundedText(value) {
+  return String(value ?? '').slice(0, MAX_RELEASE_TEXT);
+}
+
+function isWordChar(char) {
+  const code = char.codePointAt(0);
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || (code >= 0x0600 && code <= 0x06ff);
+}
+
+function isReleaseGroupChar(char, allowDash = false) {
+  const code = char.codePointAt(0);
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || char === '.' || char === '_' || (allowDash && char === '-');
+}
+
 const EDITION_PATTERNS = [
   ['directors-cut', /\bdirector(?:'s|s)?[- ._]+(?:cut|edition)\b/i],
   ['extended', /\bextended(?:[- ._]+(?:cut|edition|version))?\b/i],
@@ -21,17 +39,26 @@ const EDITION_PATTERNS = [
 ];
 
 function cleanToken(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/\[[^\]]*]/g, ' ')
-    .replace(/\([^)]*\)/g, ' ')
-    .replace(/[^a-z0-9\u0600-\u06FF]+/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const input = boundedText(value).toLowerCase();
+  let output = '';
+  let squareDepth = 0;
+  let roundDepth = 0;
+  let pendingSpace = false;
+  for (const char of input) {
+    if (char === '[') { squareDepth++; pendingSpace = true; continue; }
+    if (char === ']' && squareDepth > 0) { squareDepth--; pendingSpace = true; continue; }
+    if (char === '(') { roundDepth++; pendingSpace = true; continue; }
+    if (char === ')' && roundDepth > 0) { roundDepth--; pendingSpace = true; continue; }
+    if (squareDepth > 0 || roundDepth > 0) continue;
+    if (!isWordChar(char)) { pendingSpace = output.length > 0; continue; }
+    if (pendingSpace) { output += ' '; pendingSpace = false; }
+    output += char;
+  }
+  return output.trim();
 }
 
 function firstMatch(pattern, value) {
-  const match = String(value || '').match(pattern);
+  const match = boundedText(value).match(pattern);
   return match ? match[1] || match[0] : null;
 }
 
@@ -114,7 +141,7 @@ function normalizeService(value) {
 }
 
 function parseSeasonEpisode(value) {
-  const str = String(value || '');
+  const str = boundedText(value);
   let match = str.match(SE_RE);
   if (!match) match = str.match(ALT_SE_RE);
   if (!match) return { season: null, episode: null };
@@ -122,22 +149,45 @@ function parseSeasonEpisode(value) {
 }
 
 function parseReleaseGroup(value) {
-  const str = String(value || '')
-    .replace(/\.(?:mkv|mp4|avi|m4v|mov|srt|ass|ssa|vtt)$/i, '')
-    .replace(/(?:\.(?:ar|ara|arabic|en|eng|forced|sdh|hi))+$/i, '');
-  const dashMatch = str.match(/-([A-Za-z0-9][A-Za-z0-9._]{1,31})$/);
-  if (dashMatch) return dashMatch[1].replace(/[._]+$/g, '').toUpperCase();
-  const bracketMatch = str.match(/\[([A-Za-z0-9][A-Za-z0-9._-]{1,31})]/);
-  return bracketMatch ? bracketMatch[1].toUpperCase() : null;
+  let str = boundedText(value);
+  const stripSuffix = (allowed) => {
+    const dot = str.lastIndexOf('.');
+    if (dot < 0) return false;
+    const suffix = str.slice(dot + 1).toLowerCase();
+    if (!allowed.has(suffix)) return false;
+    str = str.slice(0, dot);
+    return true;
+  };
+  stripSuffix(FILE_EXTENSIONS);
+  while (stripSuffix(LANGUAGE_SUFFIXES)) {}
+
+  const dash = str.lastIndexOf('-');
+  if (dash >= 0) {
+    let group = str.slice(dash + 1);
+    while (group.endsWith('.') || group.endsWith('_')) group = group.slice(0, -1);
+    if (group.length >= 2 && group.length <= 32 && [...group].every(char => isReleaseGroupChar(char))) {
+      return group.toUpperCase();
+    }
+  }
+
+  const open = str.lastIndexOf('[');
+  const close = open >= 0 ? str.indexOf(']', open + 1) : -1;
+  if (open >= 0 && close > open + 1) {
+    const group = str.slice(open + 1, close);
+    if (group.length >= 2 && group.length <= 32 && [...group].every(char => isReleaseGroupChar(char, true))) {
+      return group.toUpperCase();
+    }
+  }
+  return null;
 }
 
 function parseEditions(value) {
-  const text = String(value || '');
+  const text = boundedText(value);
   return EDITION_PATTERNS.filter(([, pattern]) => pattern.test(text)).map(([edition]) => edition);
 }
 
 export function parseRelease(value = '') {
-  const text = String(value || '');
+  const text = boundedText(value);
   const se = parseSeasonEpisode(text);
   const year = firstMatch(YEAR_RE, text);
   const fps = firstMatch(FPS_RE, text);

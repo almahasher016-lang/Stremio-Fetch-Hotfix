@@ -3,6 +3,7 @@ import { parseRelease, stableFingerprint } from './releaseParser.js';
 import { buildUniversalVideoProfile } from './universalVideoIdentity.js';
 
 const HASH_RE = /^[a-f0-9]{16,64}$/i;
+const MAX_IDENTITY_TEXT = 1024;
 const TECHNICAL_BOUNDARY_RE = /(?:^|\s)(?:s\d{1,3}e\d{1,4}|\d{1,3}x\d{1,4}|8640p|4320p|2160p|1440p|1080[pi]|720[pi]|576[pi]|480[pi]|8k|4k|uhd|web\s*dl|web\s*rip|webrip|webdl|blu\s*ray|bluray|bdremux|bdrip|remux|hdtv|dvdrip|hdcam|telesync|telecine|x264|x265|h264|h265|hevc|avc|av1|vp9|hdr10\+?|hdr|dolby\s*vision|dovi|truehd|dts|ddp|eac3|aac|atmos|extended|theatrical|unrated|director(?:'s|s)?\s*cut|imax)(?=\s|$)/i;
 
 function firstDefined(values) {
@@ -10,7 +11,39 @@ function firstDefined(values) {
 }
 
 function cleanText(value) {
-  return String(value || '').trim();
+  return String(value ?? '').slice(0, MAX_IDENTITY_TEXT).trim();
+}
+
+function isAsciiAlphaNumeric(char) {
+  const code = char.codePointAt(0);
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function isWhitespace(char) {
+  return char === ' ' || char === '\t' || char === '\n' || char === '' || char === '\f' || char === '\v';
+}
+
+function normalizeFilenameSeparators(value) {
+  const input = cleanText(value);
+  const lastDot = input.lastIndexOf('.');
+  let base = input;
+  if (lastDot >= 0) {
+    const extension = input.slice(lastDot + 1);
+    if (extension.length >= 1 && extension.length <= 12 && [...extension].every(isAsciiAlphaNumeric)) {
+      base = input.slice(0, lastDot);
+    }
+  }
+  let output = '';
+  let pendingSpace = false;
+  for (const char of base) {
+    if (char === '.' || char === '_' || char === '-' || isWhitespace(char)) {
+      pendingSpace = output.length > 0;
+      continue;
+    }
+    if (pendingSpace) { output += ' '; pendingSpace = false; }
+    output += char;
+  }
+  return output.trim();
 }
 
 function cleanImdb(value) {
@@ -61,18 +94,12 @@ function routeEpisode(id, type) {
 }
 
 function deriveTitleFromFilename(filename, parsed = {}) {
-  let value = cleanText(filename)
-    .replace(/\.[a-z0-9]{1,12}$/i, '')
-    .replace(/[._]+/g, ' ')
-    .replace(/\s*-\s*/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  let value = normalizeFilenameSeparators(filename);
   if (!value) return '';
   const boundary = value.match(TECHNICAL_BOUNDARY_RE);
   if (boundary?.index > 0) value = value.slice(0, boundary.index).trim();
-  if (parsed.year && new RegExp(`\\s${parsed.year}$`).test(value)) {
-    value = value.replace(new RegExp(`\\s${parsed.year}$`), '').trim();
-  }
+  const yearSuffix = parsed.year ? ` ${parsed.year}` : '';
+  if (yearSuffix && value.endsWith(yearSuffix)) value = value.slice(0, - yearSuffix.length).trim();
   return value;
 }
 
