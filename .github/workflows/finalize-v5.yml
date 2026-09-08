@@ -1,0 +1,45 @@
+name: finalize-v5
+
+on:
+  push:
+    branches:
+      - feat/resolver-v5-proof-first
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: contains(github.event.head_commit.message, 'add v5 finalizer')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: feat/resolver-v5-proof-first
+          fetch-depth: 0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.12.0'
+      - name: Finalize V5 release metadata
+        shell: bash
+        run: |
+          npm version 5.0.0 --no-git-tag-version
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const releasePath = 'src/release.js';
+          let release = fs.readFileSync(releasePath, 'utf8');
+          release = release.replace(/RELEASE_VERSION = '[^']+'/, "RELEASE_VERSION = '5.0.0'");
+          fs.writeFileSync(releasePath, release);
+
+          const envPath = '.env.example';
+          let env = fs.readFileSync(envPath, 'utf8');
+          if (!env.includes('RESOLVER_V5_SHADOW=')) {
+            env += `\n# Resolver V5 proof-first. Keep MODE empty for legacy output, or use strict/balanced/recovery.\nRESOLVER_V5_SHADOW=false\nRESOLVER_V5_MODE=\n`;
+          }
+          fs.writeFileSync(envPath, env);
+          NODE
+          git config user.name 'almahasher016-lang'
+          git config user.email 'almahasher016@gmail.com'
+          git add package.json package-lock.json src/release.js .env.example
+          git commit -m 'release: finalize Resolver V5.0.0 [skip ci]'
+          git push origin HEAD:feat/resolver-v5-proof-first
