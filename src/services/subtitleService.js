@@ -5,6 +5,7 @@ import { applyAccuracyPreflight } from './accuracyPreflight.js';
 import * as core from './subtitleServiceCore.js';
 import { buildVideoIdentity } from '../utils/videoIdentity.js';
 import { runV5Shadow } from '../v5/shadowResolver.js';
+import { selectV5Output, v5ModeFromEnvironment } from '../v5/outputPolicy.js';
 
 const inFlight = new Map();
 const waitMs = Math.min(20_000, Math.max(250, Number(process.env.CACHE_SINGLEFLIGHT_WAIT_MS) || 5_000));
@@ -118,28 +119,37 @@ function v5ShadowEnabled() {
   return ['1', 'true', 'yes', 'on'].includes(String(process.env.RESOLVER_V5_SHADOW || '').toLowerCase());
 }
 
-function observeV5Shadow(results, search) {
-  if (!v5ShadowEnabled()) return;
+function v5Log(mode, summary, search) {
+  console.info(`[V5 ${mode}]`, JSON.stringify({
+    mediaType: search.type || 'movie',
+    catalogId: search.imdbId || search.tmdbId || search.id || null,
+    total: summary.total,
+    counts: summary.counts,
+    topDecision: summary.topDecision,
+    topProofFloor: summary.topProofFloor,
+  }));
+}
+
+function applyV5Policy(results, search) {
+  const mode = v5ModeFromEnvironment();
+  if (!mode && !v5ShadowEnabled()) return results;
   try {
-    const { summary } = runV5Shadow(results, search);
-    console.info('[V5 shadow]', JSON.stringify({
-      mediaType: search.type || 'movie',
-      catalogId: search.imdbId || search.tmdbId || search.id || null,
-      total: summary.total,
-      counts: summary.counts,
-      topDecision: summary.topDecision,
-      topProofFloor: summary.topProofFloor,
-    }));
+    const evaluation = runV5Shadow(results, search);
+    v5Log(mode || 'shadow', evaluation.summary, search);
+    if (!mode) return results;
+    return selectV5Output(evaluation.evaluated, {
+      mode,
+      maxResults: config.providers.topN,
+    });
   } catch (error) {
-    console.warn('[V5 shadow] evaluation failed:', error?.message || error);
+    console.warn('[V5] evaluation failed:', error?.message || error);
+    return mode ? [] : results;
   }
 }
 
 async function searchCore(search) {
   const outcome = await core.searchSubtitlesWithStatus(search);
-  const results = await applyAccuracyPreflight(outcome.results, search);
-  observeV5Shadow(results, search);
-  return { ...outcome, results };
+  return { ...outcome, results: await applyAccuracyPreflight(outcome.results, search) };
 }
 
 export async function reconcileDegradedAvailability(search, outcome, lkg) {
@@ -178,7 +188,7 @@ export async function searchSubtitles(search) {
 
   const key = singleflightKey(search);
   const existing = inFlight.get(key);
-  if (existing) return existing;
+  if (existing) return applyV5Policy(await existing, search);
   const pending = (async () => {
     const outcome = await runDistributed(search, key);
     const fresh = outcome.results;
@@ -204,7 +214,7 @@ export async function searchSubtitles(search) {
   })();
   inFlight.set(key, pending);
   try {
-    return await pending;
+    return applyV5Policy(await pending, search);
   } finally {
     if (inFlight.get(key) === pending) inFlight.delete(key);
   }
