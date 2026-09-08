@@ -1,0 +1,66 @@
+name: spiderman-v4.6.6-production
+
+on:
+  push:
+    branches:
+      - qa/spiderman-v466-production
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify production Spider-Man language and delivery
+        shell: bash
+        env:
+          BASE_URL: https://pleasing-gentleness-production.up.railway.app
+        run: |
+          set -euo pipefail
+          curl -fsS "$BASE_URL/health" -o health.json
+          jq -e '.status == "ok" and .version == "4.6.6"' health.json >/dev/null
+
+          curl -fsS -G \
+            --data-urlencode 'filename=Spider.Man.Brand.New.Day.2026.4k.Th Rong.mkv' \
+            --data-urlencode 'videoSize=16243759197' \
+            --data-urlencode 'videoHash=981bb99030667653' \
+            "$BASE_URL/subtitles/movie/tt22084616.json" -o spider.json
+
+          jq '{count:(.subtitles|length), results:[.subtitles[]|{name,lang,id}]}' spider.json
+          count="$(jq '.subtitles|length' spider.json)"
+          if [ "$count" -eq 0 ]; then
+            echo 'No verified Arabic subtitle is currently available.'
+            exit 0
+          fi
+
+          if jq -r '.subtitles[].name' spider.json | grep -Eq '✓ Q[0-9]'; then
+            echo 'Legacy ambiguous Q badge is still present.'
+            exit 1
+          fi
+
+          for i in $(seq 0 $((count - 1))); do
+            name="$(jq -r ".subtitles[$i].name" spider.json)"
+            url="$(jq -r ".subtitles[$i].url" spider.json)"
+            echo "Checking #$((i+1)): $name"
+            curl -fsS --max-time 25 "$url" -o "sub-$i.srt"
+            python - "sub-$i.srt" <<'PY'
+import re, sys, json
+text = open(sys.argv[1], encoding='utf-8', errors='ignore').read()
+words = re.findall(r'[\u0600-\u06ff]+', text)
+persian_chars = len(re.findall(r'[پچژگکیۀ]', text))
+persian_words = {'است','نیست','که','برای','این','آن','را','می','یک','خیلی','باید','اگر','چرا','وقتی','شما','هست','نمی','باشه','میشه','کردم','داری','داره','اون','اگه','خودش','چون','شاید'}
+arabic_words = {'في','إلى','على','هذا','هذه','الذي','التي','أنا','نحن','أنت','لكن','هل','كان','ليس','مع','عن','لقد','سوف','الآن','هناك','ماذا','لماذا','كيف','نعم','كلا','إن','أن','لا','هو','هي','هم','هنا','أين'}
+pw = sum(w in persian_words for w in words)
+aw = sum(w in arabic_words for w in words)
+script_chars = len(re.findall(r'[\u0600-\u06ff]', text))
+ratio = persian_chars / max(1, script_chars)
+likely_persian = (pw >= 6 and pw >= max(6, aw * 2)) or (persian_chars >= 20 and ratio >= 0.012 and pw >= 3 and pw > aw * 1.5)
+print(json.dumps({'file':sys.argv[1],'persian_distinctive_chars':persian_chars,'persian_common_words':pw,'arabic_common_words':aw,'persian_distinctive_ratio':round(ratio,4),'likely_persian':likely_persian}, ensure_ascii=False))
+if likely_persian:
+    raise SystemExit('Persian/Farsi subtitle leaked into Arabic output')
+if aw < 20:
+    raise SystemExit('Returned subtitle does not have enough Arabic lexical evidence')
+PY
+          done
