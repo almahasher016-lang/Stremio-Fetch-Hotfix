@@ -1,5 +1,17 @@
-function providerFamily(item = {}) {
-  return String(item.originalProvider || item.provider || 'unknown').trim().toLowerCase();
+function normalized(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+export function provenanceFamily(item = {}) {
+  return normalized(
+    item.provenanceFamily
+    || item.upstreamFamily
+    || item.sourceFamily
+    || item.originFamily
+    || item.originalProvider
+    || item.provider
+    || 'unknown',
+  );
 }
 
 function fingerprint(item = {}) {
@@ -85,13 +97,13 @@ function linkedComponents(items, threshold) {
 export function buildTimelineConsensus(items = [], { similarityThreshold = 0.985 } = {}) {
   const evidence = new Map();
   for (const group of linkedComponents(items, similarityThreshold)) {
-    const providers = new Set(group.map(providerFamily));
-    const independentConsensusCount = providers.size;
+    const families = new Set(group.map(provenanceFamily));
+    const independentConsensusCount = families.size;
     for (const item of group) {
       const own = fingerprint(item);
-      let bestSimilarity = independentConsensusCount >= 2 ? 0 : 0;
+      let bestSimilarity = 0;
       for (const other of group) {
-        if (other === item || providerFamily(other) === providerFamily(item)) continue;
+        if (other === item || provenanceFamily(other) === provenanceFamily(item)) continue;
         const candidate = fingerprint(other);
         const similarity = own?.hash && candidate?.hash && own.hash === candidate.hash
           ? 1
@@ -102,6 +114,7 @@ export function buildTimelineConsensus(items = [], { similarityThreshold = 0.985
         independentConsensusCount,
         timelineSimilarity: Number(bestSimilarity.toFixed(4)),
         fingerprint: own?.hash || '',
+        provenanceFamily: provenanceFamily(item),
       });
     }
   }
