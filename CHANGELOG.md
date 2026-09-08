@@ -1,5 +1,14 @@
 ## 4.6.6 - 2026-09-08
 
+## 5.0.0
+
+- Resolver V5 Proof-First with independent identity, Arabic-language, timing, delivery, and integrity proof dimensions.
+- Hard rejection for wrong media identity, Persian/Farsi content, terminal dead links, and invalid subtitle files.
+- Exact-hash/exact-timeline authority plus provenance-aware multi-source temporal consensus with absolute-bound validation.
+- Strict/balanced/recovery output policies, V5 proof badges, and legacy disagreement shadow telemetry.
+- Regression corpus covering The Mummy, Spider-Man Persian misclassification, unverified Spider-Man timing, wrong episodes, and exact-hash certification.
+- Statistical 99% precision gate requiring at least 500 audited CERTIFIED cases and a Wilson 95% lower bound >= 99%.
+
 - Distinguish Persian/Farsi from Arabic using lexical and orthographic evidence instead of Arabic-script Unicode alone.
 - Hard-reject Persian subtitle content in Accuracy Preflight and ZIP entry selection.
 - Stop treating Persian language labels/codes as Arabic.
