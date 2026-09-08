@@ -1,4 +1,5 @@
 import { parseRelease } from '../utils/releaseParser.js';
+import { sourceFamily } from '../utils/timingCompatibility.js';
 
 function lower(value) {
   return String(value || '').trim().toLowerCase();
@@ -84,9 +85,10 @@ function arabicProbability(quality = {}) {
 
 function timingFamilyEvidence(item = {}, search = {}) {
   const mediaType = lower(search.type) === 'series' ? 'series' : 'movie';
-  const target = parseRelease(search.filename || search.extra?.filename || search.query || '');
-  const release = item.parsedRelease
-    || parseRelease(item.releaseName || item.fileName || item.name || item.title || '');
+  const targetRaw = search.filename || search.extra?.filename || search.query || '';
+  const releaseRaw = item.releaseName || item.fileName || item.name || item.title || '';
+  const target = parseRelease(targetRaw);
+  const release = item.parsedRelease || parseRelease(releaseRaw);
 
   target.source ??= search.extra?.source || search.extra?.videoSource;
   target.service ??= search.extra?.service || search.extra?.streamingService;
@@ -104,7 +106,11 @@ function timingFamilyEvidence(item = {}, search = {}) {
   release.season = item.season ?? release.season;
   release.episode = item.episode ?? release.episode;
 
-  const sourceMatch = optionalEquals(target.source, release.source);
+  const targetSourceFamily = sourceFamily(targetRaw) || sourceFamily(target.source);
+  const releaseSourceFamily = sourceFamily(releaseRaw) || sourceFamily(release.source);
+  const sourceMatch = targetSourceFamily && releaseSourceFamily
+    ? targetSourceFamily === releaseSourceFamily
+    : optionalEquals(target.source, release.source);
   const serviceMatch = optionalEquals(target.service, release.service);
   const groupMatch = optionalEquals(target.releaseGroup, release.releaseGroup);
   const editionMatch = optionalEquals(target.edition, release.edition);
@@ -114,6 +120,8 @@ function timingFamilyEvidence(item = {}, search = {}) {
 
   // Resolution, codec, HDR and audio are intentionally absent here: those are useful ranking
   // signals, but a 1080p and 2160p encode from the same distribution timeline can share timing.
+  // Source comparison uses normalized timing families so BluRay REMUX and BluRay encodes remain
+  // compatible while WEB-derived remuxes stay separate from BluRay-derived remuxes.
   const editionConflict = editionMatch === false;
   const fpsConflict = fpsMatch === false;
   const hardConflict = editionConflict || fpsConflict;
@@ -144,6 +152,8 @@ function timingFamilyEvidence(item = {}, search = {}) {
     stableReleaseFamily,
     timingFamilyTier: tier,
     sourceMatch,
+    sourceFamily: releaseSourceFamily || '',
+    targetSourceFamily: targetSourceFamily || '',
     serviceMatch,
     releaseGroupMatch: groupMatch,
     editionMatch,
@@ -179,6 +189,8 @@ function timingEvidence(item = {}, search = {}, consensus = {}) {
     timingFamilyTier: family.timingFamilyTier,
     stableReleaseFamily: family.stableReleaseFamily,
     sourceMatch: family.sourceMatch,
+    sourceFamily: family.sourceFamily,
+    targetSourceFamily: family.targetSourceFamily,
     serviceMatch: family.serviceMatch,
     releaseGroupMatch: family.releaseGroupMatch,
     editionMatch: family.editionMatch,
