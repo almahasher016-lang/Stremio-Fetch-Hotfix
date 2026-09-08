@@ -45,22 +45,5 @@ jobs:
             url="$(jq -r ".subtitles[$i].url" spider.json)"
             echo "Checking #$((i+1)): $name"
             curl -fsS --max-time 25 "$url" -o "sub-$i.srt"
-            python - "sub-$i.srt" <<'PY'
-import re, sys, json
-text = open(sys.argv[1], encoding='utf-8', errors='ignore').read()
-words = re.findall(r'[\u0600-\u06ff]+', text)
-persian_chars = len(re.findall(r'[پچژگکیۀ]', text))
-persian_words = {'است','نیست','که','برای','این','آن','را','می','یک','خیلی','باید','اگر','چرا','وقتی','شما','هست','نمی','باشه','میشه','کردم','داری','داره','اون','اگه','خودش','چون','شاید'}
-arabic_words = {'في','إلى','على','هذا','هذه','الذي','التي','أنا','نحن','أنت','لكن','هل','كان','ليس','مع','عن','لقد','سوف','الآن','هناك','ماذا','لماذا','كيف','نعم','كلا','إن','أن','لا','هو','هي','هم','هنا','أين'}
-pw = sum(w in persian_words for w in words)
-aw = sum(w in arabic_words for w in words)
-script_chars = len(re.findall(r'[\u0600-\u06ff]', text))
-ratio = persian_chars / max(1, script_chars)
-likely_persian = (pw >= 6 and pw >= max(6, aw * 2)) or (persian_chars >= 20 and ratio >= 0.012 and pw >= 3 and pw > aw * 1.5)
-print(json.dumps({'file':sys.argv[1],'persian_distinctive_chars':persian_chars,'persian_common_words':pw,'arabic_common_words':aw,'persian_distinctive_ratio':round(ratio,4),'likely_persian':likely_persian}, ensure_ascii=False))
-if likely_persian:
-    raise SystemExit('Persian/Farsi subtitle leaked into Arabic output')
-if aw < 20:
-    raise SystemExit('Returned subtitle does not have enough Arabic lexical evidence')
-PY
+            python -c 'import re,sys,json; text=open(sys.argv[1],encoding="utf-8",errors="ignore").read(); words=re.findall(r"[\u0600-\u06ff]+",text); pc=len(re.findall(r"[پچژگکیۀ]",text)); p={"است","نیست","که","برای","این","آن","را","می","یک","خیلی","باید","اگر","چرا","وقتی","شما","هست","نمی","باشه","میشه","کردم","داری","داره","اون","اگه","خودش","چون","شاید"}; a={"في","إلى","على","هذا","هذه","الذي","التي","أنا","نحن","أنت","لكن","هل","كان","ليس","مع","عن","لقد","سوف","الآن","هناك","ماذا","لماذا","كيف","نعم","كلا","إن","أن","لا","هو","هي","هم","هنا","أين"}; pw=sum(w in p for w in words); aw=sum(w in a for w in words); sc=len(re.findall(r"[\u0600-\u06ff]",text)); ratio=pc/max(1,sc); likely=(pw>=6 and pw>=max(6,aw*2)) or (pc>=20 and ratio>=0.012 and pw>=3 and pw>aw*1.5); print(json.dumps({"file":sys.argv[1],"persian_distinctive_chars":pc,"persian_common_words":pw,"arabic_common_words":aw,"persian_distinctive_ratio":round(ratio,4),"likely_persian":likely},ensure_ascii=False)); sys.exit(1 if likely or aw<20 else 0)' "sub-$i.srt"
           done
