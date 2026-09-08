@@ -7,6 +7,7 @@ import { deriveReferenceSyncPlanFromProfiles } from '../utils/referenceSync.js';
 import { recordAccuracyPreflight } from '../utils/metrics.js';
 
 const HARD_REJECT_REASONS = new Set(['low-arabic-ratio', 'too-few-cues', 'invalid-timed-cues']);
+const TERMINAL_DELIVERY_STATUSES = new Set([403, 404, 410]);
 
 function candidateKey(item = {}, search = {}) {
   const payload = JSON.stringify({
@@ -43,13 +44,17 @@ function normalizeOutcome(raw = {}, elapsedMs = 0) {
 }
 
 function outcomeFromError(error, elapsedMs = 0) {
-  const invalidTimedCues = Number(error?.status || error?.statusCode || 0) === 422
+  const status = Number(error?.status || error?.statusCode || 0);
+  const invalidTimedCues = status === 422
     && /timed cues/i.test(String(error?.message || ''));
+  const deliveryFailure = TERMINAL_DELIVERY_STATUSES.has(status);
   return {
-    state: invalidTimedCues ? 'rejected' : 'unavailable',
+    state: invalidTimedCues || deliveryFailure ? 'rejected' : 'unavailable',
     quality: invalidTimedCues
       ? { valid: false, score: 0, reasons: ['invalid-timed-cues'] }
       : null,
+    deliveryFailure,
+    status: status || null,
     error: String(error?.message || error || 'preflight unavailable').slice(0, 180),
     elapsedMs: Math.max(0, Math.round(elapsedMs)),
   };
@@ -242,14 +247,16 @@ export async function applyAccuracyPreflight(results = [], search = {}, {
     };
   });
 
-  // Only hard content failures are removed. Slow/unavailable preflight never hides a subtitle.
-  const survivors = decorated.filter(item => item.accuracyPreflight?.state !== 'rejected');
+  // A 403/404/410 observed while resolving the real provider source is a delivery failure, not
+  // merely missing quality evidence. Never return that source to Stremio or resurrect it via fail-open.
+  const deliverable = decorated.filter(item => item.accuracyPreflight?.deliveryFailure !== true);
+  const survivors = deliverable.filter(item => item.accuracyPreflight?.state !== 'rejected');
   if (survivors.length > 0) return prioritizeAccurateSubtitles(survivors, search);
+  if (deliverable.length === 0 && decorated.length > 0) return [];
 
-  // Availability invariant: content preflight may demote the last candidates, but it may
-  // not erase an otherwise non-empty Arabic provider result. Delivery-time quality gates
-  // still validate the selected source and can fall through to its fallback chain.
-  const failOpen = (decorated.length ? decorated : ranked).map(item => ({
+  // Content-quality rejection still fails open to preserve Arabic availability, but terminally
+  // unreachable sources have already been removed above. Delivery-time quality gates remain active.
+  const failOpen = (deliverable.length ? deliverable : ranked).map(item => ({
     ...item,
     accuracyPreflightFallback: 'all-candidates-rejected',
   }));
