@@ -1,0 +1,18 @@
+name: v5-production-smoke
+
+on:
+  push:
+    branches:
+      - qa/v5-production-smoke
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '24.18.0'
+      - name: Run production smoke
+        run: node .github/scripts/v5-production-smoke.mjs
