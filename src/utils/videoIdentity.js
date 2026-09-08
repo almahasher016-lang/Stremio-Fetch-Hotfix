@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { parseRelease, stableFingerprint } from './releaseParser.js';
+import { buildUniversalVideoProfile } from './universalVideoIdentity.js';
 
 const HASH_RE = /^[a-f0-9]{16,64}$/i;
 
@@ -117,12 +118,30 @@ export function buildVideoIdentity({ type = 'movie', id, extra = {}, ...input } 
   const enrichedExtra = {
     ...normalizedExtra,
     ...(fps && !normalizedExtra.fps ? { fps } : {}),
+    ...(durationMs && !normalizedExtra.durationMs ? { durationMs } : {}),
     ...(resolution && !normalizedExtra.resolution ? { resolution } : {}),
     ...(videoCodec && !normalizedExtra.videoCodec ? { videoCodec } : {}),
     ...(hdr && !normalizedExtra.hdr ? { hdr } : {}),
     ...(audioCodec && !normalizedExtra.audioCodec ? { audioCodec } : {}),
     ...(audioChannels && !normalizedExtra.audioChannels ? { audioChannels } : {}),
+    ...(container && !normalizedExtra.container ? { container } : {}),
   };
+  const videoProfile = buildUniversalVideoProfile({
+    ...input,
+    filename,
+    videoHash: hash,
+    videoSize,
+    durationMs,
+    fps,
+    width,
+    height,
+    resolution,
+    videoCodec,
+    hdr,
+    container,
+    parsedRelease: parsed,
+    extra: enrichedExtra,
+  });
   return {
     ...input,
     type,
@@ -143,19 +162,21 @@ export function buildVideoIdentity({ type = 'movie', id, extra = {}, ...input } 
     season,
     episode,
     year: toPositiveNumber(input.year || normalizedExtra.year || parsed.year),
-    durationMs,
-    fps,
+    durationMs: videoProfile.durationMs || durationMs,
+    fps: videoProfile.fps || fps,
     width,
     height,
-    resolution,
-    videoCodec,
+    resolution: videoProfile.resolution || resolution,
+    videoCodec: videoProfile.codec || videoCodec,
     pixelFormat,
-    hdr,
+    hdr: videoProfile.hdr || hdr,
     audioCodec,
     audioChannels,
-    container,
+    container: videoProfile.container || container,
     releaseFingerprint,
+    timingFingerprint: stableKey(videoProfile.timingSignature),
     parsedRelease: parsed,
+    videoProfile,
     extra: enrichedExtra,
   };
 }
@@ -168,6 +189,7 @@ export function versionKeys(search = {}) {
   if (identity.catalogId && identity.season != null && identity.episode) keys.push(`episode:${identity.catalogId}:s${identity.season}:e${identity.episode}`);
   if (identity.catalogId && !identity.season && !identity.episode) keys.push(`movie:${identity.catalogId}`);
   if (identity.catalogId && identity.releaseFingerprint) keys.push(`release:${identity.catalogId}:${stableKey(identity.releaseFingerprint)}`);
+  if (identity.catalogId && identity.timingFingerprint) keys.push(`timeline:${identity.catalogId}:${identity.timingFingerprint}`);
   return [...new Set(keys)];
 }
 
