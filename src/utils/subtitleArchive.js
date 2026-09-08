@@ -15,6 +15,7 @@ const SUBTITLE_EXTENSIONS = new Set([
 const TIMESTAMP_RE = /(?:\d{1,3}:)?\d{1,2}:\d{2}(?:[,.]\d{1,9})?\s*-->\s*(?:\d{1,3}:)?\d{1,2}:\d{2}(?:[,.]\d{1,9})?/g;
 const ASS_DIALOGUE_RE = /^\s*Dialogue\s*:\s*[^,\r\n]*,\d{1,3}:\d{2}:\d{2}\.\d{1,3},\d{1,3}:\d{2}:\d{2}\.\d{1,3},/gmi;
 const ARABIC_RE = /\p{Script_Extensions=Arabic}/gu;
+const ARABIC_CONTENT_RATIO = 0.18;
 
 function startsWith(bytes, signature) {
   if (bytes.length < signature.length) return false;
@@ -67,6 +68,15 @@ function isSubtitleEntry(name, allowedExtensions = SUBTITLE_EXTENSIONS) {
   const segments = normalized.split('/').filter(Boolean);
   if (segments.some(segment => segment === '__MACOSX' || segment.startsWith('.'))) return false;
   return allowedExtensions.has(extensionOf(normalized));
+}
+
+function arabicContentClass(candidate) {
+  const text = decodeSubtitleBuffer(candidate.buffer).text || '';
+  const arabicCount = (text.match(ARABIC_RE) || []).length;
+  if (!arabicCount) return 0;
+  const letters = (text.match(/\p{L}/gu) || []).length;
+  const arabicRatio = arabicCount / Math.max(1, letters);
+  return arabicRatio >= ARABIC_CONTENT_RATIO ? 2 : 1;
 }
 
 function scoreCandidate(candidate, sourceName = '') {
@@ -170,7 +180,11 @@ function extractZip(input, {
   target.episode = context?.episode ?? target.episode;
   if (context?.type === 'movie') target.year = context.year ?? target.year;
   const timedCandidates = candidates
-    .map(candidate => ({ ...candidate, score: scoreCandidate(candidate, sourceName) }))
+    .map(candidate => ({
+      ...candidate,
+      score: scoreCandidate(candidate, sourceName),
+      arabicContentClass: arabicContentClass(candidate),
+    }))
     .filter(candidate => Number.isFinite(candidate.score));
   const ranked = timedCandidates
     .map(candidate => {
@@ -187,7 +201,10 @@ function extractZip(input, {
       };
     })
     .filter(candidate => Number.isFinite(candidate.score))
-    .sort((left, right) => right.score - left.score || right.match.tier - left.match.tier || (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
+    .sort((left, right) => right.arabicContentClass - left.arabicContentClass
+      || right.match.tier - left.match.tier
+      || right.score - left.score
+      || (left.name < right.name ? -1 : left.name > right.name ? 1 : 0));
   if (!ranked.length) throw httpError(422, 'ZIP archive does not contain a supported subtitle file matching the requested identity');
 
   return {
