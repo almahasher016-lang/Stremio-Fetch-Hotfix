@@ -1,5 +1,6 @@
 import { config as appConfig } from '../config.js';
 import { isArabicLanguage } from './language.js';
+import { prioritizeAccurateSubtitles } from './accuracyFirst.js';
 import {
   normalizedStringSimilarity,
   parseRelease,
@@ -18,6 +19,34 @@ function exists(value) {
 
 function lower(value) {
   return String(value || '').toLowerCase();
+}
+
+function catalogNumber(value) {
+  return String(value || '').toLowerCase().replace(/^tt/, '').replace(/^0+/, '');
+}
+
+function mediaType(value) {
+  const type = lower(value);
+  return ['episode', 'tv', 'series', 'tvshow'].includes(type) ? 'series' : (type === 'movie' ? 'movie' : '');
+}
+
+// Compare structured provider identity and filename identity independently. A score penalty
+// must never make a different work or episode eligible again through a timing-family bonus.
+export function hasSubtitleIdentityConflict(candidate, search = {}) {
+  const target = parseRelease(search.filename || search.extra?.filename || '');
+  const releases = [candidate.releaseName, candidate.fileName].filter(Boolean).map(parseRelease);
+  const type = mediaType(candidate.type || candidate.mediaType);
+  if (type && search.type && type !== mediaType(search.type)) return true;
+  for (const key of ['imdbId', 'tmdbId']) {
+    if (exists(search[key]) && exists(candidate[key]) && catalogNumber(search[key]) !== catalogNumber(candidate[key])) return true;
+  }
+  for (const key of ['season', 'episode']) {
+    const expected = search[key] ?? search.extra?.[key] ?? target[key];
+    const values = [candidate[key], ...releases.map(release => release[key])].filter(exists);
+    if (exists(expected) && values.some(value => !sameNumber(value, expected))) return true;
+    if (search.type === 'movie' && values.some(value => Number(value) > 0)) return true;
+  }
+  return false;
 }
 
 function addReason(reasons, scoreRef, value, reason) {
@@ -178,8 +207,26 @@ export function scoreSubtitle(candidate, search = {}) {
     fpsHint,
     groupHint,
   ].filter(value => exists(value) && String(value).length <= 80);
-  const target = parseRelease([filename || search.query || '', ...releaseHints].join(' '));
+  const target = parseRelease(filename || search.query || '');
+  const hints = parseRelease(releaseHints.join(' '));
+  target.codec ??= hints.codec;
+  target.tokens = new Set([...target.tokens, ...hints.tokens]);
+  for (const { key } of RELEASE_FIELDS) {
+    if (key === 'releaseGroup' && !exists(extraGroup)) continue;
+    if (!exists(target[key]) && exists(hints[key])) target[key] = hints[key];
+  }
+  target.fps = Number(search.fps ?? extraFps) > 0 ? Number(search.fps ?? extraFps) : (target.fps ?? hints.fps);
+  target.season = search.season ?? search.extra?.season ?? target.season;
+  target.episode = search.episode ?? search.extra?.episode ?? target.episode;
+  if (search.type === 'movie') target.year = search.year ?? target.year;
   const release = parseRelease(candidate.releaseName || candidate.fileName || candidate.name || candidate.title || '');
+  const fileRelease = parseRelease(candidate.fileName || '');
+  for (const { key } of RELEASE_FIELDS) {
+    if (!exists(release[key]) && exists(fileRelease[key])) release[key] = fileRelease[key];
+  }
+  release.season = candidate.season ?? release.season;
+  release.episode = candidate.episode ?? release.episode;
+  release.fps = Number(candidate.fps) > 0 ? Number(candidate.fps) : (release.fps ?? fileRelease.fps);
   const releaseMatch = buildReleaseMatch(target, release);
 
   const scoreRef = { value: 0 };
@@ -380,6 +427,7 @@ export function rankAndFilter(results, search = {}, config = {}) {
   const ranked = [];
   for (const item of results) {
     if (!item) continue;
+    if (hasSubtitleIdentityConflict(item, search)) continue;
     if (outputArabicOnly && !isArabicLanguage(item.lang || item.language || item.name || item.releaseName)) continue;
     if (excludeHI && (item.hearingImpaired || item.sdh)) continue;
     if (excludeMachine && (item.machineTranslated || item.automatedTranslated || item.autoTranslated)) continue;
@@ -393,6 +441,7 @@ export function rankAndFilter(results, search = {}, config = {}) {
       parsedRelease: scoring.release,
       releaseMatch: scoring.releaseMatch,
       releaseMatchTier: scoring.releaseMatch.tier,
+      evidenceVideoHash: search.videoHash || null,
     });
   }
 
@@ -411,7 +460,9 @@ export function rankAndFilter(results, search = {}, config = {}) {
   });
 
   const deduped = [];
-  for (const item of ranked) {
+  // Select the best matching member of each duplicate group before discarding alternatives.
+  // Popularity must not erase a same-name subtitle with the correct provider FPS.
+  for (const item of prioritizeAccurateSubtitles(ranked, search)) {
     const key = makeDedupeKey(item);
     const count = seenCounts.get(key) || 0;
     if (count >= maxPerRelease) continue;
@@ -419,5 +470,6 @@ export function rankAndFilter(results, search = {}, config = {}) {
     deduped.push(item);
   }
 
-  return diversifyPlausibleAlternatives(deduped);
+  const selected = new Set(deduped);
+  return diversifyPlausibleAlternatives(ranked.filter(item => selected.has(item)));
 }

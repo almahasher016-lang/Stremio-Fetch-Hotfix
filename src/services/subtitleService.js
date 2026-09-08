@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { acquireRefreshLock, cacheGetEntry, cacheSet, releaseRefreshLock } from '../cache/redis.js';
 import { applyAccuracyPreflight } from './accuracyPreflight.js';
 import * as core from './subtitleServiceCore.js';
+import { buildVideoIdentity } from '../utils/videoIdentity.js';
 
 const inFlight = new Map();
 const waitMs = Math.min(20_000, Math.max(250, Number(process.env.CACHE_SINGLEFLIGHT_WAIT_MS) || 5_000));
@@ -25,8 +26,8 @@ function normalizedFilename(value) {
 function availabilityKeySpecs(search = {}) {
   const type = String(search.type || 'movie').toLowerCase();
   const id = String(search.id || search.imdbId || search.tmdbId || search.query || search.title || '').trim().toLowerCase();
-  const season = Number(search.season || 0) || 0;
-  const episode = Number(search.episode || 0) || 0;
+  const season = search.season ?? '';
+  const episode = search.episode ?? '';
   const videoHash = String(search.videoHash || search.hash || '').trim().toLowerCase();
   const videoSize = String(search.videoSize || search.size || '').trim();
   const filename = normalizedFilename(search.filename);
@@ -98,12 +99,15 @@ function singleflightKey(search) {
     id: search?.id || '',
     imdbId: search?.imdbId || '',
     tmdbId: search?.tmdbId || '',
-    season: search?.season || null,
+    season: search?.season ?? null,
     episode: search?.episode || null,
     videoHash: search?.videoHash || search?.hash || '',
     videoSize: search?.videoSize || search?.size || '',
     filename: search?.filename || '',
     query: search?.query || search?.title || '',
+    hints: search?.extra || {},
+    fps: search?.fps || null,
+    durationMs: search?.durationMs || null,
     release: config.app.version,
   });
   return `cold-search:${digest(identity)}`;
@@ -143,6 +147,7 @@ async function runDistributed(search, key) {
 }
 
 export async function searchSubtitles(search) {
+  search = buildVideoIdentity(search);
   const lkg = await readAvailabilityLkg(search);
   // Final LKG exists to preserve Arabic availability when providers fail. It must not short-circuit
   // normal ranking, otherwise an older merely-acceptable list can hide a newly available exact or

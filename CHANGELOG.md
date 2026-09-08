@@ -1,3 +1,12 @@
+## 4.6.1 - 2026-09-08
+
+- Reject conflicting catalog IDs, media types, and structured or filename season/episode identities before ranking and deduplication; normalize OpenSubtitles episode IDs to their parent series scope.
+- Parse filenames independently of technical hints, retain release groups, and use provider FPS when selecting duplicate candidates.
+- Recompute saved fallback rankings for the current release and discard hash/timeline evidence belonging to other videos.
+- Carry season zero through identities, provider queries, vault/registry lookup and signed playback context.
+- Select ZIP entries using playback episode and release information in both preflight and delivery; reject archives containing only mismatched episodes.
+- Scope search/preflight caches to technical and archive-selection context, and add focused identity, remake, archive and stale-evidence regressions.
+
 ## 4.6.0 - 2026-09-07
 
 - Rank Arabic subtitles by measured cue-timeline compatibility when an English reference is proven by the exact video hash.

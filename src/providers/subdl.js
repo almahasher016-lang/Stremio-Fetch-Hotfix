@@ -61,8 +61,9 @@ export function normalizeSubdlItem(item, expectedLanguage = 'ar', configImpl = c
     lang: normalizeStremioLanguage(language),
     downloads: item.downloads || item.download_count || 0,
     rating: item.rating || 0,
-    season: item.season || item.season_number || null,
-    episode: item.episode || item.episode_number || null,
+    season: item.season ?? item.season_number ?? null,
+    episode: item.episode ?? item.episode_number ?? null,
+    type: item.type || null,
     fps: item.fps || null,
     imdbId: item.imdb_id || null,
     tmdbId: item.tmdb_id || null,
@@ -79,7 +80,7 @@ export function normalizeSubdlItem(item, expectedLanguage = 'ar', configImpl = c
 function exactEpisodePattern(variant = {}) {
   const season = Number(variant.season);
   const episode = Number(variant.episode);
-  if (variant.type !== 'series' || !Number.isInteger(season) || season < 1 || !Number.isInteger(episode) || episode < 1) return null;
+  if (variant.type !== 'series' || variant.season == null || !Number.isInteger(season) || season < 0 || !Number.isInteger(episode) || episode < 1) return null;
   return new RegExp(`(?:^|[^A-Za-z0-9])(?:S0*${season}E0*${episode}|0*${season}x0*${episode})(?:[^0-9]|$)`, 'i');
 }
 

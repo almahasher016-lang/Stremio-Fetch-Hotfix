@@ -37,8 +37,8 @@ function normalizeItem(item, expectedLanguage = 'ar') {
     lang: normalizeStremioLanguage(language),
     downloads: item.downloads || item.download_count || 0,
     rating: item.rating?.total || item.rating || 0,
-    season: item.season || item.season_number || null,
-    episode: item.episode || item.episode_number || null,
+    season: item.season ?? item.season_number ?? null,
+    episode: item.episode ?? item.episode_number ?? null,
     imdbId: item.imdb_id || null,
     tmdbId: item.tmdb_id || null,
     hearingImpaired: Boolean(item.hearingImpaired || item.hearing_impaired || item.sdh),
@@ -91,7 +91,7 @@ export async function searchSubsource(variant) {
     params.set('movieId', String(movieId));
     params.set('language', language);
     params.set('limit', '30');
-    if (variant.season) params.set('season', String(variant.season));
+    if (variant.season != null) params.set('season', String(variant.season));
     if (variant.episode) params.set('episode', String(variant.episode));
     const json = await fetchJson(`${config.subsource.baseUrl}/subtitles?${params.toString()}`, {
       headers: subsourceHeaders(),

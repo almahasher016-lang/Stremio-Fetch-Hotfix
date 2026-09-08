@@ -334,7 +334,7 @@ export class VersionRegistry {
       const directMatch = versionKeys(identity).map(key => state.media[key]).find(Boolean);
       const media = directMatch
         || (identity.videoHash ? Object.values(state.media).find(item => item.videoHash === identity.videoHash && (!identity.videoSize || Number(item.videoSize) === identity.videoSize)) : null)
-        || (identity.catalogId ? Object.values(state.media).find(item => item.catalogId === identity.catalogId && (!identity.season || item.season === identity.season) && (!identity.episode || item.episode === identity.episode)) : null);
+        || (identity.catalogId ? Object.values(state.media).find(item => item.catalogId === identity.catalogId && (identity.season == null || item.season === identity.season) && (!identity.episode || item.episode === identity.episode)) : null);
       if (!media) return identity;
       return buildVideoIdentity({
         ...identity,
@@ -350,7 +350,7 @@ export class VersionRegistry {
         audioCodec: identity.audioCodec || media.audioCodec,
         audioChannels: identity.audioChannels || media.audioChannels,
         container: identity.container || media.container,
-        season: identity.season || media.season,
+        season: identity.season ?? media.season,
         episode: identity.episode || media.episode,
         year: identity.year || media.year,
         extra: {

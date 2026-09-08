@@ -48,7 +48,7 @@ function normalizeMeta(payload, search) {
     imdbId: cleanImdb(meta.imdb_id || meta.imdbId || search.imdbId) || search.imdbId,
     tmdbId: cleanText(meta.moviedb_id || meta.tmdb_id || meta.tmdbId || search.tmdbId) || search.tmdbId,
     year: toNumber(video?.released ? String(video.released).slice(0, 4) : meta.year) || search.year,
-    season: toNumber(video?.season) || search.season,
+    season: video?.season === 0 ? 0 : (toNumber(video?.season) ?? search.season),
     episode: toNumber(video?.episode) || search.episode,
     episodeTitle: cleanText(video?.name || ''),
     durationMs: runtimeMinutes ? runtimeMinutes * 60_000 : search.durationMs,
