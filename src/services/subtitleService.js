@@ -127,6 +127,10 @@ function v5Log(mode, summary, search) {
     counts: summary.counts,
     topDecision: summary.topDecision,
     topProofFloor: summary.topProofFloor,
+    legacyTopDecision: summary.legacyTopDecision,
+    topDisagreesWithLegacy: summary.topDisagreesWithLegacy,
+    legacyTopWouldBeWithheld: summary.legacyTopWouldBeWithheld,
+    legacyTopNotCertified: summary.legacyTopNotCertified,
   }));
 }
 
