@@ -99,6 +99,7 @@ function timingFamilyEvidence(item = {}, search = {}) {
 function timingEvidence(item = {}, search = {}, consensus = {}) {
   const measured = item.actualTimingEvidence || {};
   const exactHashReference = item.timingReferenceEvidence?.exactVideoHash === true;
+  const candidateExactHash = exactHashMatch(item, search);
   const exactTimeline = measured.measured === true
     && measured.exactVideoHash === true
     && measured.verdict === 'aligned';
@@ -112,7 +113,7 @@ function timingEvidence(item = {}, search = {}, consensus = {}) {
   return {
     conflict: hardTimingConflict,
     exactTimeline,
-    exactVideoHashReference: (exactHashReference || family.exactHash) && measured.verdict !== 'incompatible',
+    exactVideoHashReference: (exactHashReference || candidateExactHash || family.exactHash) && measured.verdict !== 'incompatible',
     timelineSimilarity: Number(consensus.timelineSimilarity || 0),
     independentConsensusCount: Number(consensus.independentConsensusCount || 0),
     absoluteBoundsMatched: consensus.absoluteBoundsMatched === true,
