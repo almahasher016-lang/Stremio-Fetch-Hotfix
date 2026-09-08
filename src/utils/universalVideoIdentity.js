@@ -32,9 +32,14 @@ const EDITION_PATTERNS = [
 const VISUAL_RESOLUTION_RE = /\b(8640p|8k|4320p|4k|2160p|1440p|2k|1080[pi]|720[pi]|576[pi]|540p|480[pi]|360p|240p)\b/i;
 const FPS_RE = /(?:^|[\s._-])(120(?:\.0+)?|119\.88|60(?:\.0+)?|59\.94|50(?:\.0+)?|48(?:\.0+)?|47\.952|30(?:\.0+)?|29\.97|25(?:\.0+)?|24(?:\.0+)?|23\.98|23\.976)(?:\s*fps\b|(?=[\s._-]|$))/i;
 const DURATION_CLOCK_RE = /\b(\d{1,2}):(\d{2}):(\d{2})(?:[.,](\d{1,3}))?\b/;
+const MAX_IDENTITY_TEXT = 1024;
+const EDITION_KEYS = new Set(EDITION_PATTERNS.map(([name]) => name));
 
 function text(value) {
-  return String(value ?? '').trim();
+  // Every filename/release hint is external input. Bound it before any regexp,
+  // parser, normalization or fingerprint work so pathological metadata cannot
+  // create regex/resource exhaustion while normal release names remain intact.
+  return String(value ?? '').slice(0, MAX_IDENTITY_TEXT).trim();
 }
 
 function lower(value) {
@@ -190,9 +195,14 @@ function normalizeReleaseGroup(value) {
 }
 
 function detectEditions(raw, parsed) {
-  const found = new Set(Array.isArray(parsed?.editions) ? parsed.editions : []);
+  const safeRaw = text(raw);
+  const found = new Set(
+    (Array.isArray(parsed?.editions) ? parsed.editions : [])
+      .map(item => lower(item))
+      .filter(item => EDITION_KEYS.has(item)),
+  );
   for (const [name, pattern] of EDITION_PATTERNS) {
-    if (pattern.test(raw)) found.add(name);
+    if (pattern.test(safeRaw)) found.add(name);
   }
   return [...found].sort();
 }

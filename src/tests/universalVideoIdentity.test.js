@@ -135,6 +135,18 @@ test('buildVideoIdentity attaches one normalized timeline profile independent of
   assert.ok(identity.timingFingerprint);
 });
 
+test('untrusted identity text is bounded before regex and timeline normalization', () => {
+  const oversized = `Movie.2026.1080p.WEB-DL-GROUP.${'x'.repeat(200_000)}.mkv`;
+  const profile = buildUniversalVideoProfile({
+    filename: oversized,
+    edition: 'extended '.repeat(100_000),
+    parsedRelease: { editions: ['extended', 'attacker-controlled-edition'.repeat(10_000)] },
+  });
+  assert.ok(profile.raw.length <= 1024);
+  assert.deepEqual(profile.editions, ['extended']);
+  assert.ok(profile.timingSignature.length < 1200);
+});
+
 test('exact video hash is the highest universal timeline evidence', () => {
   const compared = compareUniversalVideoProfiles(
     { filename: 'Movie.2026.2160p.WEB-DL.mkv', videoHash: '0123456789abcdef' },
