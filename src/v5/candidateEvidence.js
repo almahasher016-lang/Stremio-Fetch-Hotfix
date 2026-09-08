@@ -78,6 +78,7 @@ function timingEvidence(item = {}, consensus = {}) {
     exactVideoHashReference: exactHashReference && measured.verdict !== 'incompatible',
     timelineSimilarity: Number(consensus.timelineSimilarity || 0),
     independentConsensusCount: Number(consensus.independentConsensusCount || 0),
+    absoluteBoundsMatched: consensus.absoluteBoundsMatched === true,
     releaseTier,
     fpsMatch: matched.includes('fps') || measured.exactVideoHash === true,
   };
