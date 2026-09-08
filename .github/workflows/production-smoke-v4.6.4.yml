@@ -42,7 +42,7 @@ jobs:
             local count
             count="$(jq '.subtitles|length' "$outfile")"
             if [ "$count" -eq 0 ]; then
-              echo "$label returned zero subtitles; this is allowed when no provider has a verified match."
+              echo "$label returned zero subtitles; allowed when no provider has a verified match."
               return 0
             fi
 
@@ -50,21 +50,12 @@ jobs:
             if [ "$limit" -gt 3 ]; then limit=3; fi
 
             for i in $(seq 0 $((limit - 1))); do
-              local url
+              local url out
               url="$(jq -r ".subtitles[$i].url" "$outfile")"
+              out="${outfile%.json}-$i.srt"
               echo "Fetching $label subtitle #$((i+1)): $url"
-              curl -fsS --retry 2 --retry-delay 1 --max-time 20 "$url" -o "${outfile%.json}-$i.srt"
-              python - "${outfile%.json}-$i.srt" <<'PY'
-import re, sys
-p = sys.argv[1]
-text = open(p, 'r', encoding='utf-8', errors='ignore').read()
-arabic = len(re.findall(r'[\u0600-\u06FF]', text))
-letters = len(re.findall(r'[A-Za-z\u0600-\u06FF]', text))
-ratio = arabic / max(1, letters)
-print({'file': p, 'bytes': len(text.encode('utf-8')), 'arabic_chars': arabic, 'arabic_letter_ratio': round(ratio, 3)})
-if arabic < 20 or ratio < 0.18:
-    raise SystemExit(f'Arabic content validation failed for {p}')
-PY
+              curl -fsS --retry 2 --retry-delay 1 --max-time 20 "$url" -o "$out"
+              python -c 'import re,sys; p=sys.argv[1]; text=open(p,"r",encoding="utf-8",errors="ignore").read(); arabic=len(re.findall(r"[\u0600-\u06FF]",text)); letters=len(re.findall(r"[A-Za-z\u0600-\u06FF]",text)); ratio=arabic/max(1,letters); print({"file":p,"bytes":len(text.encode("utf-8")),"arabic_chars":arabic,"arabic_letter_ratio":round(ratio,3)}); sys.exit(0 if arabic>=20 and ratio>=0.18 else 1)' "$out"
             done
           }
 
