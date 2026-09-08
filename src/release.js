@@ -1,4 +1,4 @@
-export const RELEASE_VERSION = '5.0.1';
+export const RELEASE_VERSION = '5.1.0';
 // Keep the add-on ID stable so Stremio treats version bumps as updates.
 export const RELEASE_ID = 'community.m7md-arabic-direct-v233-private';
 export const RELEASE_NAME = `m7md Arabic Resolver v${RELEASE_VERSION}`;
