@@ -172,7 +172,7 @@ test('XZ extraction returns the subtitle and enforces the expansion limit', asyn
   assert.equal(result.entryName, 'Movie.Arabic.srt');
   assert.equal(result.buffer.toString('utf8'), ARABIC_SRT);
 
-  const oversized = await compressXz(strToU8('x'.repeat(100_000))));
+  const oversized = await compressXz(strToU8('x'.repeat(100_000)));
   await assert.rejects(
     extractSubtitlePayload(oversized, { maxDecompressedBytes: 50_000 }),
     error => error?.status === 413,
