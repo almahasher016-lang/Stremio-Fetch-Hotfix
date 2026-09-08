@@ -1,0 +1,121 @@
+name: v51-redos-patch-temp
+
+on:
+  push:
+    branches:
+      - feat/universal-video-identity-v5.1.0
+    paths:
+      - .github/workflows/v51-redos-patch-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: feat/universal-video-identity-v5.1.0
+      - name: Replace polynomial regex paths with bounded linear parsing
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/utils/releaseParser.js')
+          s = p.read_text()
+          anchor = "const EDITION_PATTERNS = [\n"
+          insert = "const MAX_RELEASE_TEXT = 1024;\nconst FILE_EXTENSIONS = new Set(['mkv', 'mp4', 'avi', 'm4v', 'mov', 'srt', 'ass', 'ssa', 'vtt']);\nconst LANGUAGE_SUFFIXES = new Set(['ar', 'ara', 'arabic', 'en', 'eng', 'forced', 'sdh', 'hi']);\n\nfunction boundedText(value) {\n  return String(value ?? '').slice(0, MAX_RELEASE_TEXT);\n}\n\nfunction isWordChar(char) {\n  const code = char.codePointAt(0);\n  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || (code >= 0x0600 && code <= 0x06ff);\n}\n\nfunction isReleaseGroupChar(char, allowDash = false) {\n  const code = char.codePointAt(0);\n  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || char === '.' || char === '_' || (allowDash && char === '-');\n}\n\n"
+          if 'const MAX_RELEASE_TEXT = 1024;' not in s:
+              s = s.replace(anchor, insert + anchor, 1)
+
+          start = s.index('function cleanToken(value) {')
+          end = s.index('\n\nfunction firstMatch', start)
+          new_clean = '''function cleanToken(value) {
+  const input = boundedText(value).toLowerCase();
+  let output = '';
+  let squareDepth = 0;
+  let roundDepth = 0;
+  let pendingSpace = false;
+  for (const char of input) {
+    if (char === '[') { squareDepth++; pendingSpace = true; continue; }
+    if (char === ']' && squareDepth > 0) { squareDepth--; pendingSpace = true; continue; }
+    if (char === '(') { roundDepth++; pendingSpace = true; continue; }
+    if (char === ')' && roundDepth > 0) { roundDepth--; pendingSpace = true; continue; }
+    if (squareDepth > 0 || roundDepth > 0) continue;
+    if (!isWordChar(char)) { pendingSpace = output.length > 0; continue; }
+    if (pendingSpace) { output += ' '; pendingSpace = false; }
+    output += char;
+  }
+  return output.trim();
+}'''
+          s = s[:start] + new_clean + s[end:]
+          s = s.replace("  const match = String(value || '').match(pattern);", "  const match = boundedText(value).match(pattern);", 1)
+          s = s.replace("  const text = String(value || '');\n  if (/\\bremux\\b/i.test(text)) return 'remux';", "  const text = boundedText(value);\n  if (/\\bremux\\b/i.test(text)) return 'remux';", 1)
+          s = s.replace("  const str = String(value || '');\n  let match = str.match(SE_RE);", "  const str = boundedText(value);\n  let match = str.match(SE_RE);", 1)
+
+          start = s.index('function parseReleaseGroup(value) {')
+          end = s.index('\n\nfunction parseEditions', start)
+          new_group = '''function parseReleaseGroup(value) {
+  let str = boundedText(value);
+  const stripSuffix = (allowed) => {
+    const dot = str.lastIndexOf('.');
+    if (dot < 0) return false;
+    const suffix = str.slice(dot + 1).toLowerCase();
+    if (!allowed.has(suffix)) return false;
+    str = str.slice(0, dot);
+    return true;
+  };
+  stripSuffix(FILE_EXTENSIONS);
+  while (stripSuffix(LANGUAGE_SUFFIXES)) {}
+
+  const dash = str.lastIndexOf('-');
+  if (dash >= 0) {
+    let group = str.slice(dash + 1);
+    while (group.endsWith('.') || group.endsWith('_')) group = group.slice(0, -1);
+    if (group.length >= 2 && group.length <= 32 && [...group].every(char => isReleaseGroupChar(char))) {
+      return group.toUpperCase();
+    }
+  }
+
+  const open = str.lastIndexOf('[');
+  const close = open >= 0 ? str.indexOf(']', open + 1) : -1;
+  if (open >= 0 && close > open + 1) {
+    const group = str.slice(open + 1, close);
+    if (group.length >= 2 && group.length <= 32 && [...group].every(char => isReleaseGroupChar(char, true))) {
+      return group.toUpperCase();
+    }
+  }
+  return null;
+}'''
+          s = s[:start] + new_group + s[end:]
+          s = s.replace("  const text = String(value || '');\n  return EDITION_PATTERNS", "  const text = boundedText(value);\n  return EDITION_PATTERNS", 1)
+          s = s.replace("export function parseRelease(value = '') {\n  const text = String(value || '');", "export function parseRelease(value = '') {\n  const text = boundedText(value);", 1)
+          p.write_text(s)
+
+          p = Path('src/utils/videoIdentity.js')
+          s = p.read_text()
+          s = s.replace("const TECHNICAL_BOUNDARY_RE =", "const MAX_IDENTITY_TEXT = 1024;\nconst TECHNICAL_BOUNDARY_RE =", 1)
+          s = s.replace("function cleanText(value) {\n  return String(value || '').trim();\n}", "function cleanText(value) {\n  return String(value ?? '').slice(0, MAX_IDENTITY_TEXT).trim();\n}\n\nfunction normalizeFilenameSeparators(value) {\n  const input = cleanText(value);\n  const lastDot = input.lastIndexOf('.');\n  let base = input;\n  if (lastDot >= 0) {\n    const extension = input.slice(lastDot + 1);\n    if (extension.length >= 1 && extension.length <= 12 && [...extension].every(char => /[a-z0-9]/i.test(char))) {\n      base = input.slice(0, lastDot);\n    }\n  }\n  let output = '';\n  let pendingSpace = false;\n  for (const char of base) {\n    if (char === '.' || char === '_' || char === '-' || /\\s/u.test(char)) {\n      pendingSpace = output.length > 0;\n      continue;\n    }\n    if (pendingSpace) { output += ' '; pendingSpace = false; }\n    output += char;\n  }\n  return output.trim();\n}", 1)
+          start = s.index('function deriveTitleFromFilename(filename, parsed = {}) {')
+          end = s.index('\n\nexport function normalizeStremioExtra', start)
+          new_title = '''function deriveTitleFromFilename(filename, parsed = {}) {
+  let value = normalizeFilenameSeparators(filename);
+  if (!value) return '';
+  const boundary = value.match(TECHNICAL_BOUNDARY_RE);
+  if (boundary?.index > 0) value = value.slice(0, boundary.index).trim();
+  const yearSuffix = parsed.year ? ` ${parsed.year}` : '';
+  if (yearSuffix && value.endsWith(yearSuffix)) value = value.slice(0, -yearSuffix.length).trim();
+  return value;
+}'''
+          s = s[:start] + new_title + s[end:]
+          p.write_text(s)
+
+          test = Path('src/tests/releaseParserSecurity.test.js')
+          test.write_text("""import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport { parseRelease } from '../utils/releaseParser.js';\nimport { buildVideoIdentity } from '../utils/videoIdentity.js';\n\ntest('release parser bounds hostile bracket, suffix and dot inputs', () => {\n  const hostile = `${'['.repeat(100_000)}Movie.2026${'.ar'.repeat(50_000)}${'.'.repeat(100_000)}.mkv`;\n  const parsed = parseRelease(hostile);\n  assert.ok(parsed.raw.length <= 1024);\n  assert.ok(parsed.normalized.length <= 1024);\n});\n\ntest('video title derivation stays bounded and linear for separator floods', () => {\n  const filename = `Movie${' - '.repeat(100_000)}2026.1080p.WEB-DL-GROUP.mkv`;\n  const identity = buildVideoIdentity({ type: 'movie', filename });\n  assert.ok(identity.filename.length <= 1024);\n  assert.ok(identity.title.length <= 1024);\n});\n""")
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/utils/releaseParser.js src/utils/videoIdentity.js src/tests/releaseParserSecurity.test.js
+          git commit -m "fix(security): make release parsing linear and bounded"
+          git push origin HEAD:feat/universal-video-identity-v5.1.0
