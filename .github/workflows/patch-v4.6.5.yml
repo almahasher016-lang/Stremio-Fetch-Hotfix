@@ -1,0 +1,91 @@
+name: patch-v4.6.5
+
+on:
+  push:
+    branches:
+      - fix/upstream-status-v4.6.5
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/upstream-status-v4.6.5
+      - name: Apply upstream status hotfix and release metadata
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const version = '4.6.5';
+
+          function replaceOnce(path, before, after) {
+            let text = fs.readFileSync(path, 'utf8');
+            if (text.includes(after)) return;
+            if (!text.includes(before)) throw new Error(`Expected patch target not found in ${path}`);
+            text = text.replace(before, after);
+            fs.writeFileSync(path, text);
+          }
+
+          replaceOnce(
+            'src/utils/encodingProxy.js',
+            `      if (response.statusCode < 200 || response.statusCode >= 300) {\n        await discardBody(response.body);\n        bodyHandled = true;\n        throw httpError(502, \`Subtitle upstream failed with \${response.statusCode}\`);\n      }`,
+            `      if (response.statusCode < 200 || response.statusCode >= 300) {\n        await discardBody(response.body);\n        bodyHandled = true;\n        const error = httpError(502, \`Subtitle upstream failed with \${response.statusCode}\`);\n        error.code = 'SUBTITLE_UPSTREAM_HTTP';\n        error.upstreamStatus = Number(response.statusCode);\n        throw error;\n      }`,
+          );
+
+          replaceOnce(
+            'src/services/accuracyPreflight.js',
+            `function outcomeFromError(error, elapsedMs = 0) {\n  const status = Number(error?.status || error?.statusCode || 0);\n  const invalidTimedCues = status === 422\n    && /timed cues/i.test(String(error?.message || ''));\n  const deliveryFailure = TERMINAL_DELIVERY_STATUSES.has(status);\n  return {\n    state: invalidTimedCues || deliveryFailure ? 'rejected' : 'unavailable',\n    quality: invalidTimedCues\n      ? { valid: false, score: 0, reasons: ['invalid-timed-cues'] }\n      : null,\n    deliveryFailure,\n    status: status || null,\n    error: String(error?.message || error || 'preflight unavailable').slice(0, 180),\n    elapsedMs: Math.max(0, Math.round(elapsedMs)),\n  };\n}`,
+            `function outcomeFromError(error, elapsedMs = 0) {\n  const status = Number(error?.status || error?.statusCode || 0);\n  const message = String(error?.message || error || 'preflight unavailable');\n  const messageUpstreamStatus = Number(message.match(/Subtitle upstream failed with (\\d{3})/i)?.[1] || 0);\n  const upstreamStatus = Number(error?.upstreamStatus || messageUpstreamStatus || 0);\n  const terminalStatus = upstreamStatus || status;\n  const invalidTimedCues = status === 422\n    && /timed cues/i.test(message);\n  const deliveryFailure = TERMINAL_DELIVERY_STATUSES.has(terminalStatus);\n  return {\n    state: invalidTimedCues || deliveryFailure ? 'rejected' : 'unavailable',\n    quality: invalidTimedCues\n      ? { valid: false, score: 0, reasons: ['invalid-timed-cues'] }\n      : null,\n    deliveryFailure,\n    status: status || null,\n    upstreamStatus: upstreamStatus || null,\n    error: message.slice(0, 180),\n    elapsedMs: Math.max(0, Math.round(elapsedMs)),\n  };\n}`,
+          );
+
+          let tests = fs.readFileSync('src/tests/deliveryFreshnessRegression.test.js', 'utf8');
+          const marker = "test('legacy remote preflight cache without checkedAt is revalidated'";
+          if (!tests.includes("wrapped upstream 404 inside proxy 502")) {
+            const testBlock = `test('wrapped upstream 404 inside proxy 502 is rejected before Stremio output', async () => {\n  let calls = 0;\n  const result = await applyAccuracyPreflight([candidate('wrapped-upstream-404')], { type: 'movie', filename: 'The.Mummy.2026.2160p.UHD.BluRay.REMUX.mkv' }, {\n    cacheGetImpl: async () => null,\n    cacheSetImpl: noCacheWrite,\n    preflightImpl: async () => {\n      calls += 1;\n      const error = new Error('Subtitle upstream failed with 404');\n      error.status = 502;\n      throw error;\n    },\n  });\n\n  assert.equal(calls, 1);\n  assert.deepEqual(result, []);\n});\n\n`;
+            if (!tests.includes(marker)) throw new Error('Regression insertion marker not found');
+            tests = tests.replace(marker, testBlock + marker);
+            fs.writeFileSync('src/tests/deliveryFreshnessRegression.test.js', tests);
+          }
+
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.version = version;
+          fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\n`);
+
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          lock.version = version;
+          if (lock.packages?.['']) lock.packages[''].version = version;
+          fs.writeFileSync('package-lock.json', `${JSON.stringify(lock, null, 2)}\n`);
+
+          let release = fs.readFileSync('src/release.js', 'utf8');
+          release = release.replace(/RELEASE_VERSION = '[^']+'/u, `RELEASE_VERSION = '${version}'`);
+          fs.writeFileSync('src/release.js', release);
+
+          let readme = fs.readFileSync('README.md', 'utf8');
+          readme = readme.replace(/^# m7md Arabic Resolver v[^\n]+/u, `# m7md Arabic Resolver v${version}`);
+          if (!readme.includes(`## ما الجديد في ${version}`)) {
+            const section = `## ما الجديد في ${version}\n\n- إصلاح خطأ إنتاجي مؤكّد: كانت استجابة المصدر الأصلية 403/404/410 تُغلّف كـ 502، فيفشل Accuracy Preflight في تمييزها كمصدر ميت ويعيدها إلى Stremio.\n- حفظ حالة HTTP الأصلية للمصدر في \`upstreamStatus\` مع إبقاء استجابة البروكسي الخارجية 502.\n- دعم التعرف على الحالة الأصلية أيضًا من رسالة الخطأ لحماية المسارات القديمة.\n- إضافة اختبار انحدار مطابق لحالة The Mummy 2026: \`status=502\` مع \`Subtitle upstream failed with 404\` يجب أن يُحذف قبل Stremio output.\n\n`;
+            const markerReadme = '## ما الجديد في 4.6.4';
+            readme = readme.includes(markerReadme) ? readme.replace(markerReadme, `${section}${markerReadme}`) : `${readme.trimEnd()}\n\n${section}`;
+          }
+          fs.writeFileSync('README.md', readme);
+
+          let changelog = fs.readFileSync('CHANGELOG.md', 'utf8');
+          if (!changelog.includes(`## ${version} - 2026-09-08`)) {
+            const entry = `## ${version} - 2026-09-08\n\n- Preserve upstream HTTP status metadata when remote subtitle downloads are wrapped as proxy 502 errors.\n- Treat wrapped upstream 403/404/410 as terminal delivery failures during accuracy preflight instead of temporary fail-open failures.\n- Add a production-shaped regression for the observed The Mummy 2026 failure (proxy 502 carrying upstream 404).\n\n`;
+            changelog = `${entry}${changelog}`;
+          }
+          fs.writeFileSync('CHANGELOG.md', changelog);
+          NODE
+      - name: Commit hotfix
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/utils/encodingProxy.js src/services/accuracyPreflight.js src/tests/deliveryFreshnessRegression.test.js package.json package-lock.json src/release.js README.md CHANGELOG.md
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "fix: preserve upstream HTTP status for dead subtitle rejection"
+          git push origin HEAD:fix/upstream-status-v4.6.5
