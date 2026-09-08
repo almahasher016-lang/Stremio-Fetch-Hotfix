@@ -111,9 +111,19 @@ function styledModeFormat(mode) {
   return match ? match[1] : null;
 }
 
+function v5ProofBadge(item) {
+  const decision = item?.v5Proof?.decision;
+  if (decision === 'certified') return '🛡 V5 Certified';
+  if (decision === 'safe') return '🟢 V5 Safe';
+  if (decision === 'recovery') return '🟡 V5 Recovery';
+  return null;
+}
+
 function qualityBadges(item, mode) {
   if (!config.app.enableQualityBadges) return [];
   const badges = [];
+  const proofBadge = v5ProofBadge(item);
+  if (proofBadge) badges.push(proofBadge);
   if (item.provider === 'vault') badges.push('💾 Personal');
   if (item.provider === 'registry') badges.push('📌 Verified Version');
   if (item.sourceType === 'version-registry-exact-hash') badges.push('🔒 Exact Version');
@@ -127,7 +137,8 @@ function qualityBadges(item, mode) {
   if (item.searchReason === 'hash-first' || item.movieHash) badges.push('🔑 Hash');
   if (item.timingReferenceEvidence?.exactVideoHash) badges.push('🧭 Exact Timeline');
   const timingVerified = Boolean(
-    item.timingReferenceEvidence?.exactVideoHash
+    Number(item.v5Proof?.confidence?.timing || 0) >= 0.995
+    || item.timingReferenceEvidence?.exactVideoHash
     || item.sourceType === 'version-registry-exact-hash'
     || item.sourceType === 'personal-vault-exact-hash'
     || item.releaseMatchTier >= 3
@@ -150,7 +161,7 @@ function subtitleName(item, mode = 'original') {
   if (item.parsedRelease?.quality) parts.push(item.parsedRelease.quality.toUpperCase());
   if (item.parsedRelease?.source) parts.push(item.parsedRelease.source.toUpperCase());
   if (item.provider) parts.push(item.provider);
-  if (Number.isFinite(item.score)) parts.push(`score ${item.score}`);
+  if (Number.isFinite(item.score) && !item.v5Proof) parts.push(`score ${item.score}`);
   return parts.join(' · ');
 }
 
