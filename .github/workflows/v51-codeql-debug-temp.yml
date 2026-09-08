@@ -1,0 +1,29 @@
+name: v51-codeql-debug-temp
+
+on:
+  push:
+    branches:
+      - feat/universal-video-identity-v5.1.0
+    paths:
+      - .github/workflows/v51-codeql-debug-temp.yml
+
+permissions:
+  contents: read
+
+jobs:
+  sarif-debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: feat/universal-video-identity-v5.1.0
+      - uses: github/codeql-action/init@f205ea1c3313d32999d8d6a48b4f6530d4437b38
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@f205ea1c3313d32999d8d6a48b4f6530d4437b38
+        with:
+          output: ../sarif-debug
+          upload: never
+      - name: Print CodeQL SARIF findings
+        run: |
+          find .. -path '*sarif-debug*' -name '*.sarif' -print -exec jq -c '.runs[].results[] | {ruleId,level,message:.message.text,locations:[.locations[]?.physicalLocation | {uri:.artifactLocation.uri,startLine:.region.startLine,endLine:.region.endLine}]}' {} \;
