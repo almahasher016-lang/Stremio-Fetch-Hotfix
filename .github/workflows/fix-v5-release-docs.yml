@@ -1,0 +1,48 @@
+name: fix-v5-release-docs
+
+on:
+  push:
+    branches:
+      - feat/resolver-v5-proof-first
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: contains(github.event.head_commit.message, 'add v5 release docs fixer')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: feat/resolver-v5-proof-first
+          fetch-depth: 0
+      - name: Synchronize README and CHANGELOG
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const readmePath = 'README.md';
+          let readme = fs.readFileSync(readmePath, 'utf8');
+          readme = readme.replace(/^# m7md Arabic Resolver v[^\n]+/m, '# m7md Arabic Resolver v5.0.0');
+          if (!readme.includes('## ما الجديد في 5.0.0')) {
+            const section = `## ما الجديد في 5.0.0\n\n- إضافة **Resolver V5 Proof-First** الذي يفصل قرار الترجمة إلى هوية، لغة، توقيت، صلاحية رابط، وسلامة ملف.\n- أي تعارض فيلم/حلقة، لغة فارسية، رابط نهائي ميت، أو ملف غير صالح يصبح رفضًا نهائيًا لا يمكن للـScore تجاوزه.\n- إضافة قرارات \`CERTIFIED / SAFE / RECOVERY / WITHHOLD / REJECT\` مع أوضاع تشغيل \`strict / balanced / recovery\`.\n- إضافة Temporal Consensus بين مصادر مستقلة مع منع المرايا من احتسابها كمصادر مستقلة، واشتراط حدود زمنية مطلقة قبل التصديق بلا Exact Hash.\n- إضافة Shadow disagreement telemetry وRegression Corpus لحالات The Mummy وSpider-Man والحلقة الخاطئة.\n- إضافة Statistical Precision Gate يمنع ادعاء دقة 99% قبل 500 حالة CERTIFIED مدققة واجتياز Wilson 95% lower bound.\n\n`;
+            readme = readme.replace('## ما الجديد في 4.6.6', `${section}## ما الجديد في 4.6.6`);
+          }
+          fs.writeFileSync(readmePath, readme);
+
+          const changelogPath = 'CHANGELOG.md';
+          let changelog = fs.readFileSync(changelogPath, 'utf8');
+          if (!/^## 5\.0\.0$/m.test(changelog)) {
+            const firstBreak = changelog.indexOf('\n');
+            const section = `\n## 5.0.0\n\n- Resolver V5 Proof-First with independent identity, Arabic-language, timing, delivery, and integrity proof dimensions.\n- Hard rejection for wrong media identity, Persian/Farsi content, terminal dead links, and invalid subtitle files.\n- Exact-hash/exact-timeline authority plus provenance-aware multi-source temporal consensus with absolute-bound validation.\n- Strict/balanced/recovery output policies, V5 proof badges, and legacy disagreement shadow telemetry.\n- Regression corpus covering The Mummy, Spider-Man Persian misclassification, unverified Spider-Man timing, wrong episodes, and exact-hash certification.\n- Statistical 99% precision gate requiring at least 500 audited CERTIFIED cases and a Wilson 95% lower bound >= 99%.\n`;
+            changelog = `${changelog.slice(0, firstBreak + 1)}${section}${changelog.slice(firstBreak + 1)}`;
+          }
+          fs.writeFileSync(changelogPath, changelog);
+          NODE
+          git config user.name 'almahasher016-lang'
+          git config user.email 'almahasher016@gmail.com'
+          git add README.md CHANGELOG.md
+          git commit -m 'docs: synchronize Resolver V5.0.0 release artifacts [skip ci]'
+          git push origin HEAD:feat/resolver-v5-proof-first
