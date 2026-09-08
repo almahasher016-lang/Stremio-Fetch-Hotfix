@@ -1,0 +1,53 @@
+name: qa-v510-production-diagnostic
+
+on:
+  push:
+    branches:
+      - qa/v510-production-smoke
+    paths:
+      - .github/workflows/qa-v510-production-diagnostic.yml
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.18.0
+      - name: Query production identity variants
+        env:
+          BASE_URL: https://pleasing-gentleness-production.up.railway.app
+        run: |
+          node <<'NODE'
+          const B=process.env.BASE_URL;
+          const cases=[
+            ['spider-exact-hash','movie','tt22084616',{filename:'Spider.Man.Brand.New.Day.2026.4k.Th Rong.mkv',videoSize:'16243759197',videoHash:'981bb99030667653'}],
+            ['spider-same-file-no-hash','movie','tt22084616',{filename:'Spider.Man.Brand.New.Day.2026.4k.Th Rong.mkv'}],
+            ['spider-2160-webdl','movie','tt22084616',{filename:'Spider.Man.Brand.New.Day.2026.2160p.WEB-DL.mkv'}],
+            ['spider-vo-2160','movie','tt22084616',{filename:'Spider-Man.Brand.New.Day.2026.VO.2160p.mkv'}],
+            ['spider-catalog-only','movie','tt22084616',{}],
+            ['mummy-old-remux','movie','tt32612507',{filename:'The.Mummy.2026.2160p.UHD.BluRay.REMUX.HEVC.TrueHD.7.1.mkv'}],
+            ['mummy-webdl','movie','tt32612507',{filename:'Lee.Cronins.The.Mummy.2026.1080p.WEB-DL.mkv'}],
+          ];
+          for(const [label,type,id,params] of cases){
+            const u=new URL(`${B}/subtitles/${type}/${id}.json`);
+            for(const [k,v] of Object.entries(params))u.searchParams.set(k,v);
+            const r=await fetch(u,{headers:{'user-agent':'m7md-v510-diagnostic/1.0'}});
+            const j=await r.json();
+            console.log(`\n=== ${label} HTTP ${r.status} count=${j.subtitles?.length||0} ===`);
+            for(const [i,s] of (j.subtitles||[]).entries()){
+              console.log(`#${i+1} ${s.name} | ${s.lang} | ${s.id}`);
+              try{
+                const a=await fetch(s.url,{headers:{'user-agent':'m7md-v510-diagnostic/1.0'}});
+                const t=await a.text();
+                const ar=(t.match(/[\u0600-\u06ff]/gu)||[]).length;
+                const pd=(t.match(/[پچژگکیۀ]/g)||[]).length;
+                console.log(` asset=${a.status} bytes=${Buffer.byteLength(t)} script=${ar} persianDistinct=${pd}`);
+              }catch(e){console.log(` asset-error=${e.message}`)}
+            }
+          }
+          NODE
