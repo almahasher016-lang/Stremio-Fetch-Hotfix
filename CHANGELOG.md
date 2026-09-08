@@ -1,3 +1,10 @@
+## 5.0.1 - 2026-09-08
+
+- Restore valid Arabic subtitle availability by separating timing-family evidence from visual resolution/codec metadata.
+- Normalize BluRay/UHD-BluRay REMUX timing families while preserving WEB/BluRay separation and hard edition/FPS conflicts.
+- Treat conflict-free exact-metadata catalog search provenance as strong identity evidence when providers do not echo IMDb/TMDb per result.
+- Add detailed V5 proof telemetry and regressions for The Devil Wears Prada 2, same-episode WEB-DL resolution variants, title fallback, edition conflicts, and FPS conflicts.
+
 ## 4.6.6 - 2026-09-08
 
 ## 5.0.0

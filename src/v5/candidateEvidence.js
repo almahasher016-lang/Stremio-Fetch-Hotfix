@@ -1,3 +1,6 @@
+import { parseRelease } from '../utils/releaseParser.js';
+import { sourceFamily } from '../utils/timingCompatibility.js';
+
 function lower(value) {
   return String(value || '').trim().toLowerCase();
 }
@@ -7,6 +10,18 @@ function numberEquals(left, right) {
   const a = Number(left);
   const b = Number(right);
   return Number.isFinite(a) && Number.isFinite(b) ? a === b : String(left) === String(right);
+}
+
+function optionalEquals(left, right) {
+  if (left == null || right == null || left === '' || right === '') return null;
+  return lower(left) === lower(right);
+}
+
+function fpsEquals(left, right) {
+  const a = Number(left);
+  const b = Number(right);
+  if (!(a > 0) || !(b > 0)) return null;
+  return Math.abs(a - b) <= 0.02;
 }
 
 function exactHashMatch(item = {}, search = {}) {
@@ -24,6 +39,13 @@ function catalogIdMatch(item = {}, search = {}) {
   const itemTmdb = String(item.tmdbId || item.tmdb_id || '').trim();
   if (targetTmdb && itemTmdb) return targetTmdb === itemTmdb;
   return false;
+}
+
+function catalogSearchAnchored(item = {}, search = {}) {
+  if (lower(item.searchReason) !== 'exact-metadata') return false;
+  const hasImdb = Boolean(search.imdbId || /^tt\d{5,12}$/i.test(String(search.id || '')));
+  const hasTmdb = Boolean(search.tmdbId);
+  return hasImdb || hasTmdb;
 }
 
 function identityConflicts(item = {}, search = {}) {
@@ -61,16 +83,99 @@ function arabicProbability(quality = {}) {
   return Math.min(0.97, Math.max(0.7, arabicRatio));
 }
 
-function timingEvidence(item = {}, consensus = {}) {
+function timingFamilyEvidence(item = {}, search = {}) {
+  const mediaType = lower(search.type) === 'series' ? 'series' : 'movie';
+  const targetRaw = search.filename || search.extra?.filename || search.query || '';
+  const releaseRaw = item.releaseName || item.fileName || item.name || item.title || '';
+  const target = parseRelease(targetRaw);
+  const release = item.parsedRelease || parseRelease(releaseRaw);
+
+  target.source ??= search.extra?.source || search.extra?.videoSource;
+  target.service ??= search.extra?.service || search.extra?.streamingService;
+  target.releaseGroup ??= search.extra?.releaseGroup || search.extra?.release_group;
+  target.edition ??= search.extra?.edition || search.extra?.cut || search.extra?.videoEdition;
+  target.fps = Number(search.fps || search.extra?.fps || search.extra?.frameRate || target.fps) || target.fps;
+  target.season = search.season ?? search.extra?.season ?? target.season;
+  target.episode = search.episode ?? search.extra?.episode ?? target.episode;
+
+  release.source ??= item.source;
+  release.service ??= item.service;
+  release.releaseGroup ??= item.releaseGroup || item.release_group;
+  release.edition ??= item.edition;
+  release.fps = Number(item.fps || release.fps) || release.fps;
+  release.season = item.season ?? release.season;
+  release.episode = item.episode ?? release.episode;
+
+  const targetSourceFamily = sourceFamily(targetRaw) || sourceFamily(target.source);
+  const releaseSourceFamily = sourceFamily(releaseRaw) || sourceFamily(release.source);
+  const sourceMatch = targetSourceFamily && releaseSourceFamily
+    ? targetSourceFamily === releaseSourceFamily
+    : optionalEquals(target.source, release.source);
+  const serviceMatch = optionalEquals(target.service, release.service);
+  const groupMatch = optionalEquals(target.releaseGroup, release.releaseGroup);
+  const editionMatch = optionalEquals(target.edition, release.edition);
+  const fpsMatch = fpsEquals(target.fps, release.fps);
+  const seasonMatch = numberEquals(target.season, release.season);
+  const episodeMatch = numberEquals(target.episode, release.episode);
+
+  // Resolution, codec, HDR and audio are intentionally absent here: those are useful ranking
+  // signals, but a 1080p and 2160p encode from the same distribution timeline can share timing.
+  // Source comparison uses normalized timing families so BluRay REMUX and BluRay encodes remain
+  // compatible while WEB-derived remuxes stay separate from BluRay-derived remuxes.
+  const editionConflict = editionMatch === false;
+  const fpsConflict = fpsMatch === false;
+  const hardConflict = editionConflict || fpsConflict;
+  const exactEpisode = mediaType !== 'series' || (seasonMatch === true && episodeMatch === true);
+
+  const auxiliaryMatches = [serviceMatch, groupMatch, fpsMatch].filter(value => value === true).length;
+  let tier = 0;
+  let stableReleaseFamily = false;
+
+  if (!hardConflict && sourceMatch === true && exactEpisode) {
+    if (mediaType === 'series') {
+      // Episode identity + distribution source is strong timing-family evidence. Different visual
+      // resolutions are allowed because they commonly share the exact episode timeline.
+      stableReleaseFamily = true;
+      tier = auxiliaryMatches > 0 ? 6 : 5;
+    } else if (auxiliaryMatches > 0) {
+      // Movies need one more independent family signal because alternate cuts can share a source.
+      stableReleaseFamily = true;
+      tier = auxiliaryMatches >= 2 ? 6 : 5;
+    } else {
+      tier = 3;
+    }
+  } else if (!hardConflict && sourceMatch === true) {
+    tier = 2;
+  }
+
+  return {
+    stableReleaseFamily,
+    timingFamilyTier: tier,
+    sourceMatch,
+    sourceFamily: releaseSourceFamily || '',
+    targetSourceFamily: targetSourceFamily || '',
+    serviceMatch,
+    releaseGroupMatch: groupMatch,
+    editionMatch,
+    fpsMatch,
+    seasonMatch,
+    episodeMatch,
+    hardConflict,
+  };
+}
+
+function timingEvidence(item = {}, search = {}, consensus = {}) {
   const measured = item.actualTimingEvidence || {};
   const exactHashReference = item.timingReferenceEvidence?.exactVideoHash === true;
   const exactTimeline = measured.measured === true
     && measured.exactVideoHash === true
     && measured.verdict === 'aligned';
-  const releaseTier = Number(item.releaseMatchTier ?? item.releaseMatch?.tier ?? 0) || 0;
+  const legacyReleaseTier = Number(item.releaseMatchTier ?? item.releaseMatch?.tier ?? 0) || 0;
   const matched = Array.isArray(item.releaseMatch?.matched) ? item.releaseMatch.matched : [];
+  const family = timingFamilyEvidence(item, search);
   const hardTimingConflict = measured.verdict === 'incompatible'
-    || (Array.isArray(item.releaseMatch?.mismatched) && item.releaseMatch.mismatched.includes('fps'));
+    || (Array.isArray(item.releaseMatch?.mismatched) && item.releaseMatch.mismatched.includes('fps'))
+    || family.hardConflict;
 
   return {
     conflict: hardTimingConflict,
@@ -79,8 +184,17 @@ function timingEvidence(item = {}, consensus = {}) {
     timelineSimilarity: Number(consensus.timelineSimilarity || 0),
     independentConsensusCount: Number(consensus.independentConsensusCount || 0),
     absoluteBoundsMatched: consensus.absoluteBoundsMatched === true,
-    releaseTier,
-    fpsMatch: matched.includes('fps') || measured.exactVideoHash === true,
+    releaseTier: Math.max(legacyReleaseTier, family.timingFamilyTier),
+    legacyReleaseTier,
+    timingFamilyTier: family.timingFamilyTier,
+    stableReleaseFamily: family.stableReleaseFamily,
+    sourceMatch: family.sourceMatch,
+    sourceFamily: family.sourceFamily,
+    targetSourceFamily: family.targetSourceFamily,
+    serviceMatch: family.serviceMatch,
+    releaseGroupMatch: family.releaseGroupMatch,
+    editionMatch: family.editionMatch,
+    fpsMatch: family.fpsMatch === true || matched.includes('fps') || measured.exactVideoHash === true,
   };
 }
 
@@ -109,6 +223,7 @@ export function buildCandidateEvidence(item = {}, search = {}, consensus = {}, n
       conflicts: identityConflicts(item, search),
       exactVideoHash: exactHashMatch(item, search),
       catalogIdMatch: catalogIdMatch(item, search),
+      catalogSearchAnchored: catalogSearchAnchored(item, search),
       seasonMatch: seasonMatch ?? (mediaType === 'series' ? undefined : true),
       episodeMatch: episodeMatch ?? (mediaType === 'series' ? undefined : true),
       explicitEpisodeMatch: mediaType === 'series' && seasonMatch === true && episodeMatch === true,
@@ -121,7 +236,7 @@ export function buildCandidateEvidence(item = {}, search = {}, consensus = {}, n
       providerArabicCode: ['ar', 'ara', 'arabic'].includes(lower(item.lang || item.language)),
       wrongLanguage: Array.isArray(quality.reasons) && quality.reasons.includes('wrong-language-persian'),
     },
-    timing: timingEvidence(item, consensus),
+    timing: timingEvidence(item, search, consensus),
     delivery: deliveryEvidence(item, now),
     integrity: {
       valid: quality.valid,

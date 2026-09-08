@@ -27,6 +27,21 @@ export function evaluateV5Candidates(results = [], search = {}, { now = Date.now
   return evaluated;
 }
 
+function timingTelemetry(evidence = {}) {
+  return {
+    exactTimeline: evidence.exactTimeline === true,
+    exactVideoHashReference: evidence.exactVideoHashReference === true,
+    stableReleaseFamily: evidence.stableReleaseFamily === true,
+    timingFamilyTier: Number(evidence.timingFamilyTier || 0),
+    legacyReleaseTier: Number(evidence.legacyReleaseTier || 0),
+    sourceMatch: evidence.sourceMatch ?? null,
+    fpsMatch: evidence.fpsMatch === true,
+    independentConsensusCount: Number(evidence.independentConsensusCount || 0),
+    timelineSimilarity: Number(evidence.timelineSimilarity || 0),
+    absoluteBoundsMatched: evidence.absoluteBoundsMatched === true,
+  };
+}
+
 export function summarizeV5Evaluation(evaluated = []) {
   const counts = { certified: 0, safe: 0, recovery: 0, withhold: 0, reject: 0 };
   for (const entry of evaluated) {
@@ -42,6 +57,10 @@ export function summarizeV5Evaluation(evaluated = []) {
     topDecision: v5Top?.proof?.decision || null,
     topCandidateId: v5Top?.candidateId || null,
     topProofFloor: v5Top?.proof?.proofFloor ?? null,
+    topConfidence: v5Top?.proof?.confidence || null,
+    topHardFailures: v5Top?.proof?.hardFailures || [],
+    topReasons: v5Top?.proof?.reasons || [],
+    topTimingEvidence: timingTelemetry(v5Top?.evidence?.timing || {}),
     legacyTopCandidateId: legacyTop?.candidateId || null,
     legacyTopDecision,
     topDisagreesWithLegacy: Boolean(v5Top && legacyTop && v5Top.candidateId !== legacyTop.candidateId),

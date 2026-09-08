@@ -187,3 +187,111 @@ test('V5 hard-rejects terminal delivery failure even with otherwise perfect evid
   assert.equal(entry.proof.decision, 'reject');
   assert.ok(entry.proof.hardFailures.some(failure => failure.dimension === 'delivery'));
 });
+
+test('V5 treats exact-metadata movie provenance plus a stable BluRay family as SAFE without requiring echoed IMDb id', () => {
+  const search = {
+    type: 'movie',
+    imdbId: 'tt33612209',
+    filename: 'The.Devil.Wears.Prada.2.2026.UHD.BluRay.2160p.REMUX-FraMeSToR.mkv',
+  };
+  const [entry] = evaluateV5Candidates([{
+    provider: 'yify',
+    searchReason: 'exact-metadata',
+    fileName: 'The.Devil.Wears.Prada.2.2026.1080p.BluRay.x264-FraMeSToR.srt',
+    lang: 'ara',
+    quality: strongQuality(),
+    accuracyPreflight: freshPreflight(),
+  }], search, { now: NOW });
+
+  assert.equal(entry.evidence.identity.catalogSearchAnchored, true);
+  assert.equal(entry.evidence.timing.stableReleaseFamily, true);
+  assert.equal(entry.proof.decision, 'safe');
+  assert.ok(entry.proof.reasons.includes('identity:catalog-search-anchored'));
+  assert.ok(entry.proof.reasons.includes('timing:stable-release-family'));
+});
+
+test('V5 does not promote title fallback to catalog-anchored identity', () => {
+  const [entry] = evaluateV5Candidates([{
+    provider: 'yify',
+    searchReason: 'title-fallback',
+    fileName: 'The.Devil.Wears.Prada.2.2026.1080p.BluRay.x264-FraMeSToR.srt',
+    lang: 'ara',
+    quality: strongQuality(),
+    accuracyPreflight: freshPreflight(),
+  }], {
+    type: 'movie',
+    imdbId: 'tt33612209',
+    filename: 'The.Devil.Wears.Prada.2.2026.UHD.BluRay.2160p.REMUX-FraMeSToR.mkv',
+  }, { now: NOW });
+
+  assert.equal(entry.evidence.identity.catalogSearchAnchored, false);
+  assert.notEqual(entry.proof.decision, 'safe');
+  assert.notEqual(entry.proof.decision, 'certified');
+});
+
+test('V5 allows 1080p versus 2160p for the same exact series episode WEB-DL timing family', () => {
+  const [entry] = evaluateV5Candidates([{
+    provider: 'opensubtitles',
+    imdbId: 'tt8772296',
+    season: 1,
+    episode: 2,
+    fileName: 'Euphoria.S01E02.2160p.WEB-DL.DDP5.1.H.265.mkv',
+    lang: 'ara',
+    quality: strongQuality(),
+    accuracyPreflight: freshPreflight(),
+  }], {
+    type: 'series',
+    imdbId: 'tt8772296',
+    season: 1,
+    episode: 2,
+    filename: 'Euphoria.S01E02.1080p.WEB-DL.DDP5.1.H.264.mkv',
+  }, { now: NOW });
+
+  assert.equal(entry.evidence.timing.sourceMatch, true);
+  assert.equal(entry.evidence.timing.stableReleaseFamily, true);
+  assert.equal(entry.proof.decision, 'safe');
+  assert.ok(entry.proof.reasons.includes('timing:stable-release-family'));
+});
+
+test('V5 keeps edition conflicts as hard rejects even when search provenance is exact-metadata', () => {
+  const [entry] = evaluateV5Candidates([{
+    provider: 'opensubtitles',
+    searchReason: 'exact-metadata',
+    fileName: 'Movie.2026.1080p.BluRay.Directors.Cut-GROUP.srt',
+    lang: 'ara',
+    releaseMatch: { tier: 1, matched: ['source'], mismatched: ['edition'], missing: [] },
+    quality: strongQuality(),
+    accuracyPreflight: freshPreflight(),
+  }], {
+    type: 'movie',
+    imdbId: 'tt12345',
+    filename: 'Movie.2026.2160p.BluRay.Theatrical-GROUP.mkv',
+  }, { now: NOW });
+
+  assert.equal(entry.proof.decision, 'reject');
+  assert.ok(entry.proof.hardFailures.some(failure => failure.reason === 'identity-conflict:edition'));
+});
+
+test('V5 keeps FPS mismatches as hard timing rejects for the same series episode', () => {
+  const [entry] = evaluateV5Candidates([{
+    provider: 'opensubtitles',
+    imdbId: 'tt8772296',
+    season: 1,
+    episode: 2,
+    fileName: 'Euphoria.S01E02.2160p.WEB-DL.mkv',
+    fps: 25,
+    lang: 'ara',
+    quality: strongQuality(),
+    accuracyPreflight: freshPreflight(),
+  }], {
+    type: 'series',
+    imdbId: 'tt8772296',
+    season: 1,
+    episode: 2,
+    filename: 'Euphoria.S01E02.1080p.WEB-DL.mkv',
+    fps: 23.976,
+  }, { now: NOW });
+
+  assert.equal(entry.proof.decision, 'reject');
+  assert.ok(entry.proof.hardFailures.some(failure => failure.reason === 'timing:hard-conflict'));
+});
