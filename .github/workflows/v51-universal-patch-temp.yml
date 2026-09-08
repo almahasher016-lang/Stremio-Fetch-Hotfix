@@ -1,0 +1,71 @@
+name: v51-universal-patch-temp
+
+on:
+  push:
+    branches:
+      - feat/universal-video-identity-v5.1.0
+    paths:
+      - .github/workflows/v51-universal-patch-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: feat/universal-video-identity-v5.1.0
+      - name: Patch universal identity regressions
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/utils/universalVideoIdentity.js')
+          s = p.read_text()
+          old = """function normalizeReleaseGroup(value) {
+            const raw = text(value).replace(/^[\\[({]+|[\\])}]+$/g, '').replace(/[._]+$/g, '');
+            if (!raw || raw.length > 48) return null;
+            return raw.toUpperCase();
+          }"""
+          new = """function normalizeReleaseGroup(value) {
+            const raw = text(value)
+              .replace(/^[\\[({]+|[\\])}]+$/g, '')
+              .replace(/\\.(?:mkv|mk3d|webm|mp4|m4v|mov|qt|avi|wmv|asf|flv|f4v|ts|m2ts|mts|m2t|mpg|mpeg|mpe|vob|3gp|3g2|ogv|ogg|mxf|rm|rmvb|iso|nut|nsv|divx|amv|y4m)$/i, '')
+              .replace(/[._]+$/g, '');
+            if (!raw || raw.length > 48) return null;
+            return raw.toUpperCase();
+          }"""
+          if old not in s:
+              raise SystemExit('normalizeReleaseGroup block not found')
+          s = s.replace(old, new, 1)
+          old_sig = """  const timingSignature = [
+              sourceFamily || '?', sourceDetail || '?', service || '?', releaseGroup || '?',
+              editions.join('+') || '?', fps || '?', durationMs || '?',
+            ].join('|');"""
+          new_sig = """  // The normalized timeline identity deliberately excludes container, resolution, codec,
+            // HDR/audio and source detail such as UHD-REMUX vs BluRay encode. Those can differ while
+            // the underlying cut/timeline remains identical. Family + service/group + edition/FPS/duration
+            // are the signals that may safely define a reusable timing cache identity.
+            const timingSignature = [
+              sourceFamily || '?', service || '?', releaseGroup || '?',
+              editions.join('+') || '?', fps || '?', durationMs || '?',
+            ].join('|');"""
+          if old_sig not in s:
+              raise SystemExit('timingSignature block not found')
+          s = s.replace(old_sig, new_sig, 1)
+          p.write_text(s)
+
+          p = Path('src/tests/versionRegistry.test.js')
+          s = p.read_text()
+          if 'assert.equal(status.verified, 4);' not in s:
+              raise SystemExit('registry count assertion not found')
+          s = s.replace('assert.equal(status.verified, 4);', 'assert.equal(status.verified, 5);', 1)
+          p.write_text(s)
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/utils/universalVideoIdentity.js src/tests/versionRegistry.test.js
+          git commit -m "fix(v5): normalize timeline cache across video formats"
+          git push origin HEAD:feat/universal-video-identity-v5.1.0
