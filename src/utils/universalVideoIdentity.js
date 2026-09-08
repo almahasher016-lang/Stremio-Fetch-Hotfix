@@ -30,7 +30,7 @@ const EDITION_PATTERNS = [
 ];
 
 const VISUAL_RESOLUTION_RE = /\b(8640p|8k|4320p|4k|2160p|1440p|2k|1080[pi]|720[pi]|576[pi]|540p|480[pi]|360p|240p)\b/i;
-const FPS_RE = /(?:^|[^\d])(120(?:\.0+)?|119\.88|60(?:\.0+)?|59\.94|50(?:\.0+)?|48(?:\.0+)?|47\.952|30(?:\.0+)?|29\.97|25(?:\.0+)?|24(?:\.0+)?|23\.98|23\.976)(?:\s*fps\b|(?=[^\d]|$))/i;
+const FPS_RE = /(?:^|[\s._-])(120(?:\.0+)?|119\.88|60(?:\.0+)?|59\.94|50(?:\.0+)?|48(?:\.0+)?|47\.952|30(?:\.0+)?|29\.97|25(?:\.0+)?|24(?:\.0+)?|23\.98|23\.976)(?:\s*fps\b|(?=[\s._-]|$))/i;
 const DURATION_CLOCK_RE = /\b(\d{1,2}):(\d{2}):(\d{2})(?:[.,](\d{1,3}))?\b/;
 
 function text(value) {
@@ -120,6 +120,22 @@ function normalizeContainer(value) {
   return CONTAINER_ALIASES.get(raw) || raw.slice(0, 24);
 }
 
+function normalizeService(value) {
+  const raw = lower(value).replace(/[ ._-]/g, '');
+  if (!raw) return null;
+  if (['amazon', 'amzn', 'primevideo'].includes(raw)) return 'amazon';
+  if (['netflix', 'nf'].includes(raw)) return 'netflix';
+  if (['disneyplus', 'dsnp'].includes(raw)) return 'disney-plus';
+  if (['appletvplus', 'atvp'].includes(raw)) return 'apple-tv-plus';
+  if (['hmax', 'hbomax', 'max'].includes(raw)) return 'max';
+  if (['hulu'].includes(raw)) return 'hulu';
+  if (['paramountplus', 'pmtp'].includes(raw)) return 'paramount-plus';
+  if (['peacock', 'pcok'].includes(raw)) return 'peacock';
+  if (['crave', 'crav'].includes(raw)) return 'crave';
+  if (['stan'].includes(raw)) return 'stan';
+  return raw.slice(0, 32);
+}
+
 export function detectVideoContainer(filename = '', explicitContainer = '') {
   if (text(explicitContainer)) return normalizeContainer(explicitContainer);
   const clean = text(filename).split(/[?#]/, 1)[0];
@@ -150,8 +166,11 @@ function detectSourceDetail(value = '') {
   if (/\b(?:web\s*remux|webremux|web\s*mux|webmux)\b/.test(raw)) return 'web-remux';
   if (/\b(?:web\s*dl|webdl)\b/.test(raw)) return 'web-dl';
   if (/\b(?:web\s*rip|webrip)\b/.test(raw)) return 'web-rip';
-  if (/\b(?:uhd\s*(?:blu\s*ray|bd).{0,24}remux|bd100.{0,16}remux|bd66.{0,16}remux)\b/.test(raw)) return 'uhd-bluray-remux';
-  if (/\b(?:bd\s*remux|bdremux|blu\s*ray.{0,24}remux|bluray.{0,24}remux)\b/.test(raw)) return 'bluray-remux';
+  const hasRemux = /\bremux\b/.test(raw);
+  const hasUhdBluray = /\b(?:uhd\s*(?:blu\s*ray|bd)|bd100|bd66)\b/.test(raw);
+  const hasBluray = /\b(?:blu\s*ray|bluray|bd\s*(?:remux|mv)|bdremux|bdmv|bd25|bd50|bd66|bd100)\b/.test(raw);
+  if (hasRemux && hasUhdBluray) return 'uhd-bluray-remux';
+  if (hasRemux && hasBluray) return 'bluray-remux';
   if (/\b(?:bd\s*rip|bdrip|br\s*rip|brrip|blu\s*ray|bluray)\b/.test(raw)) return 'bluray';
   if (/\bhdtv\b/.test(raw)) return 'hdtv';
   if (/\bdvd\s*rip|\bdvdrip\b/.test(raw)) return 'dvd-rip';
@@ -237,7 +256,7 @@ export function buildUniversalVideoProfile(source = {}) {
   const releaseGroup = normalizeReleaseGroup(firstDefined([
     source.releaseGroup, source.release_group, extra.releaseGroup, extra.release_group, parsed.releaseGroup,
   ]));
-  const service = lower(firstDefined([source.service, extra.service, extra.streamingService, parsed.service])) || null;
+  const service = normalizeService(firstDefined([source.service, extra.service, extra.streamingService, parsed.service]));
   const editions = detectEditions([
     raw, source.edition, extra.edition, extra.cut, extra.videoEdition,
   ].filter(Boolean).join(' '), parsed);
@@ -356,7 +375,7 @@ export function compareUniversalVideoProfiles(targetInput = {}, candidateInput =
     durationMatch: duration.match,
     durationDeltaMs: duration.deltaMs,
     stableReleaseFamily: !conflicts.length && tier >= 5,
-    // Visual/container differences are intentionally diagnostics only. They never create timing conflicts.
+    // Visual/container differences are diagnostics only. They never create timing conflicts.
     formatDifferences: {
       container: target.container && candidate.container && target.container !== candidate.container,
       resolution: target.resolution && candidate.resolution && target.resolution !== candidate.resolution,
@@ -373,5 +392,6 @@ export function __universalIdentityInternalsForTests() {
     normalizeFps,
     normalizeDurationMs,
     normalizeContainer,
+    normalizeService,
   };
 }
