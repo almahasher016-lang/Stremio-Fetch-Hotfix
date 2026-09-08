@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTimelineConsensus } from '../v5/consensusEngine.js';
+import { buildTimelineConsensus, temporalFingerprintSimilarity } from '../v5/consensusEngine.js';
 import { evaluateV5Candidates } from '../v5/shadowResolver.js';
 
 const NOW = 1_800_000_000_000;
@@ -29,6 +29,10 @@ function freshPreflight(overrides = {}) {
     source: 'live-preflight',
     ...overrides,
   };
+}
+
+function temporalPoints(delta = 0) {
+  return Array.from({ length: 20 }, (_, index) => `${index * 50 + delta}:${20 + (index % 3)}:${5 + (index % 4)}`);
 }
 
 test('V5 certifies an exact-hash Arabic subtitle with measured aligned timeline and fresh delivery', () => {
@@ -96,25 +100,34 @@ test('V5 treats independent providers with the same temporal fingerprint as cons
   assert.equal(consensus.get(c).independentConsensusCount, 2);
 });
 
-test('V5 can certify multi-source consensus only when identity, language, delivery and integrity are also proven', () => {
+test('V5 detects near-identical temporal fingerprints without requiring identical hashes', () => {
+  const left = { hash: 'a', points: temporalPoints(0), durationMs: 7_000_000 };
+  const right = { hash: 'b', points: temporalPoints(0.2), durationMs: 7_002_000 };
+  const similarity = temporalFingerprintSimilarity(left, right);
+  assert.ok(similarity >= 0.985);
+});
+
+test('V5 can certify three-source consensus only when identity, language, delivery and integrity are also proven', () => {
   const base = {
     imdbId: 'ttshow',
     season: 1,
     episode: 2,
     lang: 'ara',
-    releaseMatchTier: 4,
-    releaseMatch: { tier: 4, matched: ['fps'], mismatched: [], missing: [] },
+    releaseMatchTier: 5,
+    releaseMatch: { tier: 5, matched: ['fps'], mismatched: [], missing: [] },
     quality: strongQuality({ fingerprint: { hash: 'episode-timeline', points: [], durationMs: 1 } }),
     accuracyPreflight: freshPreflight(),
   };
   const evaluated = evaluateV5Candidates([
     { ...base, provider: 'opensubtitles', providerId: 'a' },
     { ...base, provider: 'subdl', providerId: 'b' },
+    { ...base, provider: 'subsource', providerId: 'c' },
   ], { type: 'series', imdbId: 'ttshow', season: 1, episode: 2 }, { now: NOW });
 
   assert.equal(evaluated[0].proof.decision, 'certified');
   assert.equal(evaluated[1].proof.decision, 'certified');
-  assert.ok(evaluated[0].evidence.timing.independentConsensusCount >= 2);
+  assert.equal(evaluated[2].proof.decision, 'certified');
+  assert.ok(evaluated[0].evidence.timing.independentConsensusCount >= 3);
 });
 
 test('V5 does not certify Arabic text when timing remains unverified', () => {
