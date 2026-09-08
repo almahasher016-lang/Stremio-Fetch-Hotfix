@@ -4,6 +4,7 @@ import { acquireRefreshLock, cacheGetEntry, cacheSet, releaseRefreshLock } from 
 import { applyAccuracyPreflight } from './accuracyPreflight.js';
 import * as core from './subtitleServiceCore.js';
 import { buildVideoIdentity } from '../utils/videoIdentity.js';
+import { runV5Shadow } from '../v5/shadowResolver.js';
 
 const inFlight = new Map();
 const waitMs = Math.min(20_000, Math.max(250, Number(process.env.CACHE_SINGLEFLIGHT_WAIT_MS) || 5_000));
@@ -113,9 +114,32 @@ function singleflightKey(search) {
   return `cold-search:${digest(identity)}`;
 }
 
+function v5ShadowEnabled() {
+  return ['1', 'true', 'yes', 'on'].includes(String(process.env.RESOLVER_V5_SHADOW || '').toLowerCase());
+}
+
+function observeV5Shadow(results, search) {
+  if (!v5ShadowEnabled()) return;
+  try {
+    const { summary } = runV5Shadow(results, search);
+    console.info('[V5 shadow]', JSON.stringify({
+      mediaType: search.type || 'movie',
+      catalogId: search.imdbId || search.tmdbId || search.id || null,
+      total: summary.total,
+      counts: summary.counts,
+      topDecision: summary.topDecision,
+      topProofFloor: summary.topProofFloor,
+    }));
+  } catch (error) {
+    console.warn('[V5 shadow] evaluation failed:', error?.message || error);
+  }
+}
+
 async function searchCore(search) {
   const outcome = await core.searchSubtitlesWithStatus(search);
-  return { ...outcome, results: await applyAccuracyPreflight(outcome.results, search) };
+  const results = await applyAccuracyPreflight(outcome.results, search);
+  observeV5Shadow(results, search);
+  return { ...outcome, results };
 }
 
 export async function reconcileDegradedAvailability(search, outcome, lkg) {
@@ -126,7 +150,6 @@ export async function reconcileDegradedAvailability(search, outcome, lkg) {
   const merged = core.preserveAccurateCandidates(search, fresh, lkg.value);
   return applyAccuracyPreflight(merged, search);
 }
-
 
 async function runDistributed(search, key) {
   let lock = await acquireRefreshLock(key, config.cache.refreshLockTtlSeconds);
