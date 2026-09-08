@@ -1,3 +1,10 @@
+## 4.6.3 - 2026-09-08
+
+- Add identity-authority gating so explicit episode/catalog evidence outranks generic title fallbacks.
+- Remove subtitle candidates whose live preflight proves terminal HTTP 403/404/410 delivery failure.
+- Keep fail-open behavior for uncertain network outages while never resurrecting terminally unreachable sources.
+- Add regression coverage for identity-unknown series/movie candidates and dead subtitle delivery sources.
+
 ## 4.6.2 - 2026-09-08
 
 - Prefer confirmed Arabic subtitle content before ZIP release-match tiers, while preserving release-family preference between Arabic candidates.

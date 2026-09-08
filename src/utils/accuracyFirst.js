@@ -1,7 +1,28 @@
+import { parseRelease } from './releaseParser.js';
 import { sourceFamily } from './timingCompatibility.js';
 
 function lower(value) {
   return String(value || '').toLowerCase();
+}
+
+function exists(value) {
+  return value !== null && value !== undefined && value !== '';
+}
+
+function sameNumber(a, b) {
+  if (!exists(a) || !exists(b)) return false;
+  return Number(a) === Number(b);
+}
+
+function catalogNumber(value) {
+  return String(value || '').toLowerCase().replace(/^tt/, '').replace(/^0+/, '');
+}
+
+function normalizedMediaType(value) {
+  const type = lower(value);
+  if (['series', 'episode', 'tv', 'tvshow'].includes(type)) return 'series';
+  if (type === 'movie') return 'movie';
+  return '';
 }
 
 const HARD_RELEASE_CONFLICTS = new Set(['season', 'episode', 'edition', 'year', 'fps']);
@@ -29,6 +50,10 @@ function verifiedQualityRank(item) {
 
 function releaseText(item) {
   return item?.releaseName || item?.fileName || item?.name || item?.title || '';
+}
+
+function itemRelease(item) {
+  return item?.parsedRelease || parseRelease(releaseText(item));
 }
 
 function hardConflictCount(item) {
@@ -59,10 +84,79 @@ function actualTimingRank(item) {
   return { classRank, score: Number.isFinite(score) ? score : 0 };
 }
 
+function catalogIdentityMatch(item, search = {}) {
+  if (exists(search.imdbId) && exists(item?.imdbId)
+    && catalogNumber(search.imdbId) === catalogNumber(item.imdbId)) return true;
+  if (exists(search.tmdbId) && exists(item?.tmdbId)
+    && String(search.tmdbId) === String(item.tmdbId)) return true;
+  return false;
+}
+
+function explicitEpisodeIdentityMatch(item, search = {}, target = {}) {
+  const expectedSeason = search.season ?? search.extra?.season ?? target.season;
+  const expectedEpisode = search.episode ?? search.extra?.episode ?? target.episode;
+  if (!exists(expectedSeason) || !exists(expectedEpisode)) return false;
+  const release = itemRelease(item);
+  const seasons = [item?.season, release?.season].filter(exists);
+  const episodes = [item?.episode, release?.episode].filter(exists);
+  return seasons.some(value => sameNumber(value, expectedSeason))
+    && episodes.some(value => sameNumber(value, expectedEpisode));
+}
+
+export function identityAuthorityRank(item, search = {}) {
+  if (evidenceRank(item) > 0) return 6;
+  const type = normalizedMediaType(search.type);
+  if (!type) return 0;
+
+  const target = parseRelease(search?.filename || search?.extra?.filename || search?.query || search?.title || '');
+  const match = meaningfulReleaseMatch(item);
+  const catalogMatch = catalogIdentityMatch(item, search);
+
+  if (type === 'series') {
+    const episodeMatch = explicitEpisodeIdentityMatch(item, search, target);
+    if (catalogMatch && episodeMatch) return 5;
+    if (episodeMatch) return 4;
+    if (item?.searchReason === 'exact-metadata' && (exists(search.imdbId) || exists(search.tmdbId))) return 3;
+    if (
+      match
+      && Number(match.criticalMismatches || 0) === 0
+      && match.matched?.includes('season')
+      && match.matched?.includes('episode')
+    ) return 3;
+    return 0;
+  }
+
+  if (catalogMatch) return 5;
+  if (item?.searchReason === 'exact-metadata' && (exists(search.imdbId) || exists(search.tmdbId))) return 4;
+
+  const release = itemRelease(item);
+  const expectedYear = search.year ?? target.year;
+  const yearMatch = exists(expectedYear) && sameNumber(release?.year, expectedYear);
+  if (match && Number(match.criticalMismatches || 0) === 0) {
+    if (match.exactFingerprint) return 3;
+    if (yearMatch && Number(match.tier || 0) >= 2) return 3;
+    if (item?.searchReason === 'release-fallback' && Number(match.tier || 0) >= 2) return 2;
+  }
+  return 0;
+}
+
+export function preferIdentityAuthority(results = [], search = {}) {
+  if (results.length < 2 || !normalizedMediaType(search.type)) return results;
+  const ranked = results.map(item => ({ item, authority: identityAuthorityRank(item, search) }));
+  const best = ranked.reduce((value, entry) => Math.max(value, entry.authority), 0);
+  const floor = best >= 4 ? 4 : best >= 3 ? 3 : best >= 2 ? 2 : 0;
+  if (!floor) return results;
+  const filtered = ranked.filter(entry => entry.authority >= floor).map(entry => entry.item);
+  return filtered.length ? filtered : results;
+}
+
 export function prioritizeAccurateSubtitles(results = [], search = {}) {
   const targetFamily = sourceFamily(search?.filename || search?.extra?.filename || search?.query || search?.title || '');
 
   return [...results].sort((a, b) => {
+    const authorityDelta = identityAuthorityRank(b, search) - identityAuthorityRank(a, search);
+    if (authorityDelta) return authorityDelta;
+
     const evidenceDelta = evidenceRank(b) - evidenceRank(a);
     if (evidenceDelta) return evidenceDelta;
 
@@ -132,14 +226,14 @@ export function hasStrongTimingEvidence(item, search = {}) {
 }
 
 export function applyPostAccuracyScoreFloor(results = [], search = {}, minScore = Number.NEGATIVE_INFINITY) {
-  const ranked = prioritizeAccurateSubtitles(results, search);
+  const ranked = preferIdentityAuthority(prioritizeAccurateSubtitles(results, search), search);
   const floor = Number(minScore);
   if (!Number.isFinite(floor)) return ranked;
   return ranked.filter(item => Number(item?.score ?? Number.NEGATIVE_INFINITY) >= floor || hasStrongTimingEvidence(item, search));
 }
 
 export function prioritizeAndLimitAccurateSubtitles(results = [], search = {}, limit = Infinity) {
-  const ranked = prioritizeAccurateSubtitles(results, search);
+  const ranked = preferIdentityAuthority(prioritizeAccurateSubtitles(results, search), search);
   const safeLimit = Number(limit);
   if (!Number.isFinite(safeLimit)) return ranked;
   return ranked.slice(0, Math.max(0, Math.floor(safeLimit)));
