@@ -77,14 +77,16 @@ function timingProof(evidence = {}) {
   const similarity = clamp01(evidence.timelineSimilarity);
   const consensus = Math.max(0, Number(evidence.independentConsensusCount) || 0);
   const releaseTier = Math.max(0, Number(evidence.releaseTier) || 0);
+  const absoluteBounds = bool(evidence.absoluteBoundsMatched);
 
-  // Certification without an exact timeline is deliberately expensive: two public providers can
-  // mirror the same upstream subtitle. Require three independent provider families, near-perfect
-  // temporal agreement, and the strongest release-family evidence before crossing the 99.5% floor.
-  if (consensus >= 3 && similarity >= 0.995 && releaseTier >= 5) {
+  // Certification without an exact timeline is deliberately expensive: distinct public providers
+  // can mirror one upstream subtitle, and normalized fingerprints can hide a global offset. Require
+  // three provenance families, near-perfect relative similarity, compatible absolute start/end
+  // bounds, and the strongest release evidence before crossing the certified timing floor.
+  if (absoluteBounds && consensus >= 3 && similarity >= 0.995 && releaseTier >= 5) {
     return { confidence: 0.996, hardFail: false, reasons: ['timing:multi-source-consensus'] };
   }
-  if (consensus >= 2 && similarity >= 0.985 && releaseTier >= 4) {
+  if (absoluteBounds && consensus >= 2 && similarity >= 0.985 && releaseTier >= 4) {
     return { confidence: 0.985, hardFail: false, reasons: ['timing:strong-consensus'] };
   }
   if (releaseTier >= 5 && bool(evidence.fpsMatch)) {
