@@ -5,7 +5,7 @@ import {
   revalidateAvailabilityLkg,
 } from '../services/subtitleService.js';
 
-test('final Arabic LKG has exact, release and catalog scopes without app-version coupling', () => {
+test('final Arabic LKG has exact, timeline, release and catalog scopes without app-version coupling', () => {
   const specs = __availabilityKeySpecsForTests({
     type: 'series',
     id: 'tt11198330:1:7',
@@ -15,9 +15,23 @@ test('final Arabic LKG has exact, release and catalog scopes without app-version
     videoHash: 'f6bdfb5e54ea25bf',
     videoSize: '27228198074',
   });
-  assert.deepEqual(specs.map(item => item.kind), ['exact', 'release', 'catalog']);
+  assert.deepEqual(specs.map(item => item.kind), ['exact', 'timeline', 'release', 'catalog']);
   assert.ok(specs.every(item => item.key.startsWith('arabic-lkg:')));
   assert.ok(specs.every(item => !item.raw.includes('4.3.0')));
+});
+
+test('timeline LKG key is identical across visual/container variants of the same timing family', () => {
+  const a = __availabilityKeySpecsForTests({
+    type: 'movie',
+    id: 'tt33612209',
+    filename: 'The.Devil.Wears.Prada.2.2026.2160p.UHD.BluRay.REMUX-FraMeSToR.mkv',
+  });
+  const b = __availabilityKeySpecsForTests({
+    type: 'movie',
+    id: 'tt33612209',
+    filename: 'The.Devil.Wears.Prada.2.2026.1080p.BluRay.HEVC-FraMeSToR.mp4',
+  });
+  assert.equal(a.find(item => item.kind === 'timeline')?.key, b.find(item => item.kind === 'timeline')?.key);
 });
 
 test('LKG fallback is freshly preflighted before V5 proof evaluation', async () => {
