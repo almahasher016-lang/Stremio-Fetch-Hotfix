@@ -1,0 +1,71 @@
+name: production-smoke-v4.6.5
+
+on:
+  push:
+    branches:
+      - qa/production-smoke-v4.6.5
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify production search and delivered Arabic subtitles
+        shell: bash
+        env:
+          BASE_URL: https://pleasing-gentleness-production.up.railway.app
+        run: |
+          set -euo pipefail
+
+          echo '== Health =='
+          curl -fsS --retry 2 --retry-delay 1 "$BASE_URL/health" -o health.json
+          cat health.json
+          jq -e '.status == "ok" and .version == "4.6.5"' health.json >/dev/null
+
+          check_case() {
+            local label="$1"
+            local endpoint="$2"
+            local filename="$3"
+            local outfile="$4"
+
+            echo "== $label search =="
+            curl -fsS --retry 2 --retry-delay 1 -G \
+              --data-urlencode "filename=$filename" \
+              "$BASE_URL$endpoint" \
+              -o "$outfile"
+
+            jq '{count: (.subtitles|length), names: [.subtitles[].name]}' "$outfile"
+            local count
+            count="$(jq '.subtitles|length' "$outfile")"
+
+            if [ "$count" -eq 0 ]; then
+              echo "$label: zero results; acceptable when every available provider source is unverified or dead."
+              return 0
+            fi
+
+            local limit="$count"
+            if [ "$limit" -gt 3 ]; then limit=3; fi
+            for i in $(seq 0 $((limit - 1))); do
+              local url out
+              url="$(jq -r ".subtitles[$i].url" "$outfile")"
+              out="${outfile%.json}-$i.srt"
+              echo "Fetching $label subtitle #$((i+1)): $url"
+              curl -fsS --retry 2 --retry-delay 1 --max-time 20 "$url" -o "$out"
+              python -c 'import re,sys; p=sys.argv[1]; text=open(p,"r",encoding="utf-8",errors="ignore").read(); arabic=len(re.findall(r"[\u0600-\u06FF]",text)); letters=len(re.findall(r"[A-Za-z\u0600-\u06FF]",text)); ratio=arabic/max(1,letters); print({"file":p,"bytes":len(text.encode("utf-8")),"arabic_chars":arabic,"arabic_letter_ratio":round(ratio,3)}); sys.exit(0 if arabic>=20 and ratio>=0.18 else 1)' "$out"
+            done
+          }
+
+          check_case \
+            'The Mummy 2026' \
+            '/subtitles/movie/tt32612507.json' \
+            'The.Mummy.2026.2160p.UHD.BluRay.REMUX.HEVC.TrueHD.7.1.mkv' \
+            'mummy.json'
+
+          check_case \
+            'Euphoria S01E02' \
+            '/subtitles/series/tt8772296:1:2.json' \
+            'Euphoria.S01E02.1080p.WEB-DL.DDP5.1.H.264.mkv' \
+            'euphoria.json'
