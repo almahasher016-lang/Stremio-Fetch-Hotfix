@@ -1,0 +1,67 @@
+name: v511-preflight-visibility-temp
+
+on:
+  push:
+    branches:
+      - fix/v511-preflight-visibility
+    paths:
+      - .github/workflows/v511-preflight-visibility-temp.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/v511-preflight-visibility
+      - name: Add bounded V5 preflight diagnostics
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/v5/shadowResolver.js')
+          s = p.read_text()
+          needle = "  const legacyTopDecision = legacyTop?.proof?.decision || null;\n  return {"
+          insert = """  const legacyTopDecision = legacyTop?.proof?.decision || null;
+  const topCandidates = evaluated.slice(0, 5).map(entry => {
+    const item = entry?.item || {};
+    const quality = item.accuracyPreflight?.quality || item.quality || {};
+    return {
+      candidateId: entry?.candidateId || null,
+      provider: item.originalProvider || item.provider || null,
+      decision: entry?.proof?.decision || null,
+      preflightState: item.accuracyPreflight?.state || null,
+      preflightSource: item.accuracyPreflight?.source || null,
+      qualityValid: quality?.valid ?? null,
+      qualityScore: quality?.score ?? null,
+      qualityReasons: Array.isArray(quality?.reasons) ? quality.reasons.slice(0, 6) : [],
+      detectedLanguage: quality?.detectedLanguage || null,
+      arabicRatio: quality?.arabicRatio ?? null,
+      cueCount: quality?.cueCount ?? null,
+      deliveryFailure: item.accuracyPreflight?.deliveryFailure === true,
+      releaseName: String(item.releaseName || item.fileName || item.name || '').slice(0, 160),
+    };
+  });
+  return {"""
+          if needle not in s:
+              raise SystemExit('shadow anchor missing')
+          s = s.replace(needle, insert, 1)
+          s = s.replace("    legacyTopNotCertified: Boolean(legacyTop && legacyTopDecision !== 'certified'),\n", "    legacyTopNotCertified: Boolean(legacyTop && legacyTopDecision !== 'certified'),\n    topCandidates,\n", 1)
+          p.write_text(s)
+
+          p = Path('src/services/subtitleService.js')
+          s = p.read_text()
+          needle = "    legacyTopNotCertified: summary.legacyTopNotCertified,\n"
+          if needle not in s:
+              raise SystemExit('service anchor missing')
+          s = s.replace(needle, needle + "    topCandidates: summary.topCandidates,\n", 1)
+          p.write_text(s)
+          PY
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add src/v5/shadowResolver.js src/services/subtitleService.js
+          git commit -m "chore(v5): log bounded preflight rejection details"
+          git push origin HEAD:fix/v511-preflight-visibility
