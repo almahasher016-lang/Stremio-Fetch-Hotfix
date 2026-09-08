@@ -84,17 +84,33 @@ test('release-name evidence alone cannot pretend to be certified timing', () => 
   assert.ok(proof.confidence.timing < 0.995);
 });
 
-test('three-source near-perfect timing consensus can reach certified timing without exact hash', () => {
+test('three-source near-perfect timing consensus can reach certified timing only with absolute bounds', () => {
   const proof = evaluateSubtitleProof(certifiedFixture({
     timing: {
       exactVideoHashReference: false,
       releaseTier: 5,
       independentConsensusCount: 3,
       timelineSimilarity: 0.997,
+      absoluteBoundsMatched: true,
     },
   }));
   assert.equal(proof.decision, PROOF_DECISION.CERTIFIED);
   assert.ok(proof.reasons.includes('timing:multi-source-consensus'));
+});
+
+test('relative consensus without absolute bounds cannot certify timing', () => {
+  const proof = evaluateSubtitleProof(certifiedFixture({
+    timing: {
+      exactVideoHashReference: false,
+      releaseTier: 5,
+      independentConsensusCount: 3,
+      timelineSimilarity: 1,
+      absoluteBoundsMatched: false,
+      fpsMatch: true,
+    },
+  }));
+  assert.equal(proof.decision, PROOF_DECISION.SAFE);
+  assert.ok(!proof.reasons.includes('timing:multi-source-consensus'));
 });
 
 test('two-source consensus remains safe rather than certified', () => {
@@ -104,6 +120,7 @@ test('two-source consensus remains safe rather than certified', () => {
       releaseTier: 5,
       independentConsensusCount: 2,
       timelineSimilarity: 0.997,
+      absoluteBoundsMatched: true,
     },
   }));
   assert.equal(proof.decision, PROOF_DECISION.SAFE);
