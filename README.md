@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v4.6.6
+# m7md Arabic Resolver v5.0.0
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,15 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 5.0.0
+
+- إضافة **Resolver V5 Proof-First** الذي يفصل قرار الترجمة إلى هوية، لغة، توقيت، صلاحية رابط، وسلامة ملف.
+- أي تعارض فيلم/حلقة، لغة فارسية، رابط نهائي ميت، أو ملف غير صالح يصبح رفضًا نهائيًا لا يمكن للـScore تجاوزه.
+- إضافة قرارات `CERTIFIED / SAFE / RECOVERY / WITHHOLD / REJECT` مع أوضاع تشغيل `strict / balanced / recovery`.
+- إضافة Temporal Consensus بين مصادر مستقلة مع منع المرايا من احتسابها كمصادر مستقلة، واشتراط حدود زمنية مطلقة قبل التصديق بلا Exact Hash.
+- إضافة Shadow disagreement telemetry وRegression Corpus لحالات The Mummy وSpider-Man والحلقة الخاطئة.
+- إضافة Statistical Precision Gate يمنع ادعاء دقة 99% قبل 500 حالة CERTIFIED مدققة واجتياز Wilson 95% lower bound.
 
 ## ما الجديد في 4.6.6
 

@@ -1,0 +1,59 @@
+import { buildCandidateEvidence } from './candidateEvidence.js';
+import { buildTimelineConsensus } from './consensusEngine.js';
+import { evaluateSubtitleProof, rankByProof } from './proofEngine.js';
+
+function stableCandidateId(item = {}, index = 0) {
+  return String(item.providerId || item.fileId || item.id || `${item.provider || 'candidate'}:${index}`);
+}
+
+export function evaluateV5Candidates(results = [], search = {}, { now = Date.now() } = {}) {
+  const consensus = buildTimelineConsensus(results);
+  const evaluated = results.map((item, index) => {
+    const evidence = buildCandidateEvidence(item, search, consensus.get(item) || {}, now);
+    const proof = evaluateSubtitleProof(evidence);
+    return {
+      item,
+      legacyRank: index,
+      candidateId: stableCandidateId(item, index),
+      evidence,
+      proof,
+    };
+  });
+
+  evaluated.sort((left, right) => rankByProof(
+    { ...left.item, proof: left.proof },
+    { ...right.item, proof: right.proof },
+  ));
+  return evaluated;
+}
+
+export function summarizeV5Evaluation(evaluated = []) {
+  const counts = { certified: 0, safe: 0, recovery: 0, withhold: 0, reject: 0 };
+  for (const entry of evaluated) {
+    const decision = entry?.proof?.decision;
+    if (decision in counts) counts[decision] += 1;
+  }
+  const legacyTop = evaluated.find(entry => entry.legacyRank === 0) || null;
+  const v5Top = evaluated[0] || null;
+  const legacyTopDecision = legacyTop?.proof?.decision || null;
+  return {
+    total: evaluated.length,
+    counts,
+    topDecision: v5Top?.proof?.decision || null,
+    topCandidateId: v5Top?.candidateId || null,
+    topProofFloor: v5Top?.proof?.proofFloor ?? null,
+    legacyTopCandidateId: legacyTop?.candidateId || null,
+    legacyTopDecision,
+    topDisagreesWithLegacy: Boolean(v5Top && legacyTop && v5Top.candidateId !== legacyTop.candidateId),
+    legacyTopWouldBeWithheld: ['withhold', 'reject'].includes(legacyTopDecision),
+    legacyTopNotCertified: Boolean(legacyTop && legacyTopDecision !== 'certified'),
+  };
+}
+
+export function runV5Shadow(results = [], search = {}, options = {}) {
+  const evaluated = evaluateV5Candidates(results, search, options);
+  return {
+    evaluated,
+    summary: summarizeV5Evaluation(evaluated),
+  };
+}

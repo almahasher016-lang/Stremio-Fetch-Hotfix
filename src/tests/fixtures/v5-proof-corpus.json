@@ -1,0 +1,84 @@
+[
+  {
+    "name": "the-mummy-terminal-upstream-source",
+    "search": { "type": "movie", "imdbId": "tt27075958", "videoHash": "mummy-hash" },
+    "items": [
+      {
+        "provider": "yify",
+        "imdbId": "tt27075958",
+        "movieHash": "mummy-hash",
+        "lang": "ara",
+        "quality": { "valid": true, "cueCount": 900, "coverageRatio": 0.98, "arabicRatio": 0.95, "detectedLanguage": "arabic", "arabicWordHits": 500, "persianWordHits": 0, "persianDistinctiveRatio": 0, "fingerprint": { "hash": "mummy-a", "points": [], "durationMs": 7000000 } },
+        "accuracyPreflight": { "state": "rejected", "deliveryFailure": true, "upstreamStatus": 404, "checkedAt": 1800000000000 },
+        "actualTimingEvidence": { "measured": true, "exactVideoHash": true, "verdict": "aligned" }
+      }
+    ],
+    "expected": ["reject"]
+  },
+  {
+    "name": "spider-man-persian-mislabeled-arabic",
+    "search": { "type": "movie", "imdbId": "tt22084616", "videoHash": "981bb99030667653" },
+    "items": [
+      {
+        "provider": "opensubtitles",
+        "imdbId": "tt22084616",
+        "movieHash": "981bb99030667653",
+        "lang": "ara",
+        "quality": { "valid": false, "reasons": ["wrong-language-persian"], "cueCount": 1000, "coverageRatio": 0.99, "arabicRatio": 0.99, "detectedLanguage": "persian", "arabicWordHits": 0, "persianWordHits": 921, "persianDistinctiveRatio": 0.12, "fingerprint": { "hash": "spider-fa", "points": [], "durationMs": 7200000 } },
+        "accuracyPreflight": { "state": "rejected", "checkedAt": 1800000000000 }
+      }
+    ],
+    "expected": ["reject"]
+  },
+  {
+    "name": "spider-man-arabic-but-timing-unverified",
+    "search": { "type": "movie", "imdbId": "tt22084616", "videoHash": "981bb99030667653" },
+    "items": [
+      {
+        "provider": "opensubtitles",
+        "imdbId": "tt22084616",
+        "lang": "ara",
+        "releaseMatchTier": 3,
+        "quality": { "valid": true, "cueCount": 950, "coverageRatio": 0.99, "arabicRatio": 0.96, "detectedLanguage": "arabic", "arabicWordHits": 1532, "persianWordHits": 1, "persianDistinctiveRatio": 0, "fingerprint": { "hash": "spider-ar", "points": [], "durationMs": 7200000 } },
+        "accuracyPreflight": { "state": "valid", "checkedAt": 1800000000000 }
+      }
+    ],
+    "expected": ["recovery"]
+  },
+  {
+    "name": "series-wrong-episode-never-recovers",
+    "search": { "type": "series", "imdbId": "tt8772296", "season": 1, "episode": 2 },
+    "items": [
+      {
+        "provider": "subdl",
+        "imdbId": "tt8772296",
+        "season": 1,
+        "episode": 3,
+        "score": 9999,
+        "lang": "ara",
+        "quality": { "valid": true, "cueCount": 800, "coverageRatio": 0.98, "arabicRatio": 0.94, "detectedLanguage": "arabic", "arabicWordHits": 450, "persianWordHits": 0, "persianDistinctiveRatio": 0, "fingerprint": { "hash": "wrong-episode", "points": [], "durationMs": 3600000 } },
+        "accuracyPreflight": { "state": "valid", "checkedAt": 1800000000000 }
+      }
+    ],
+    "expected": ["reject"]
+  },
+  {
+    "name": "exact-hash-aligned-arabic-is-certified",
+    "search": { "type": "series", "imdbId": "tt8772296", "season": 1, "episode": 2, "videoHash": "exact-episode-hash" },
+    "items": [
+      {
+        "provider": "opensubtitles",
+        "imdbId": "tt8772296",
+        "season": 1,
+        "episode": 2,
+        "movieHash": "exact-episode-hash",
+        "lang": "ara",
+        "releaseMatchTier": 5,
+        "quality": { "valid": true, "cueCount": 800, "coverageRatio": 0.98, "arabicRatio": 0.94, "detectedLanguage": "arabic", "arabicWordHits": 450, "persianWordHits": 0, "persianDistinctiveRatio": 0, "fingerprint": { "hash": "exact-episode", "points": [], "durationMs": 3600000 } },
+        "accuracyPreflight": { "state": "valid", "checkedAt": 1800000000000 },
+        "actualTimingEvidence": { "measured": true, "exactVideoHash": true, "verdict": "aligned" }
+      }
+    ],
+    "expected": ["certified"]
+  }
+]

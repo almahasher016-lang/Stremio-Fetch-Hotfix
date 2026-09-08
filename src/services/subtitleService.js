@@ -4,6 +4,8 @@ import { acquireRefreshLock, cacheGetEntry, cacheSet, releaseRefreshLock } from 
 import { applyAccuracyPreflight } from './accuracyPreflight.js';
 import * as core from './subtitleServiceCore.js';
 import { buildVideoIdentity } from '../utils/videoIdentity.js';
+import { runV5Shadow } from '../v5/shadowResolver.js';
+import { selectV5Output, v5ModeFromEnvironment } from '../v5/outputPolicy.js';
 
 const inFlight = new Map();
 const waitMs = Math.min(20_000, Math.max(250, Number(process.env.CACHE_SINGLEFLIGHT_WAIT_MS) || 5_000));
@@ -113,6 +115,42 @@ function singleflightKey(search) {
   return `cold-search:${digest(identity)}`;
 }
 
+function v5ShadowEnabled() {
+  return ['1', 'true', 'yes', 'on'].includes(String(process.env.RESOLVER_V5_SHADOW || '').toLowerCase());
+}
+
+function v5Log(mode, summary, search) {
+  console.info(`[V5 ${mode}]`, JSON.stringify({
+    mediaType: search.type || 'movie',
+    catalogId: search.imdbId || search.tmdbId || search.id || null,
+    total: summary.total,
+    counts: summary.counts,
+    topDecision: summary.topDecision,
+    topProofFloor: summary.topProofFloor,
+    legacyTopDecision: summary.legacyTopDecision,
+    topDisagreesWithLegacy: summary.topDisagreesWithLegacy,
+    legacyTopWouldBeWithheld: summary.legacyTopWouldBeWithheld,
+    legacyTopNotCertified: summary.legacyTopNotCertified,
+  }));
+}
+
+function applyV5Policy(results, search) {
+  const mode = v5ModeFromEnvironment();
+  if (!mode && !v5ShadowEnabled()) return results;
+  try {
+    const evaluation = runV5Shadow(results, search);
+    v5Log(mode || 'shadow', evaluation.summary, search);
+    if (!mode) return results;
+    return selectV5Output(evaluation.evaluated, {
+      mode,
+      maxResults: config.providers.topN,
+    });
+  } catch (error) {
+    console.warn('[V5] evaluation failed:', error?.message || error);
+    return mode ? [] : results;
+  }
+}
+
 async function searchCore(search) {
   const outcome = await core.searchSubtitlesWithStatus(search);
   return { ...outcome, results: await applyAccuracyPreflight(outcome.results, search) };
@@ -126,7 +164,6 @@ export async function reconcileDegradedAvailability(search, outcome, lkg) {
   const merged = core.preserveAccurateCandidates(search, fresh, lkg.value);
   return applyAccuracyPreflight(merged, search);
 }
-
 
 async function runDistributed(search, key) {
   let lock = await acquireRefreshLock(key, config.cache.refreshLockTtlSeconds);
@@ -155,7 +192,7 @@ export async function searchSubtitles(search) {
 
   const key = singleflightKey(search);
   const existing = inFlight.get(key);
-  if (existing) return existing;
+  if (existing) return applyV5Policy(await existing, search);
   const pending = (async () => {
     const outcome = await runDistributed(search, key);
     const fresh = outcome.results;
@@ -181,7 +218,7 @@ export async function searchSubtitles(search) {
   })();
   inFlight.set(key, pending);
   try {
-    return await pending;
+    return applyV5Policy(await pending, search);
   } finally {
     if (inFlight.get(key) === pending) inFlight.delete(key);
   }
