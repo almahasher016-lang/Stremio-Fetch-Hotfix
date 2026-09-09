@@ -75,8 +75,12 @@ function yearWindow(identity) {
   const releaseYear = Number(identity.year) || null;
   const catalogYear = Number(identity.catalogYear) || null;
   const values = [releaseYear, catalogYear];
-  if (releaseYear) values.push(releaseYear - 1, releaseYear + 1);
-  if (catalogYear && catalogYear !== releaseYear) values.push(catalogYear - 1, catalogYear + 1);
+  // Adjacent-year probing is deliberately gated on concrete catalog-vs-playback drift evidence.
+  // Without that evidence, widening a common movie title by ±1 could discover another work that
+  // shares the same name. Exact known years and the yearless fallback are sufficient otherwise.
+  if (releaseYear && catalogYear && releaseYear !== catalogYear) {
+    values.push(releaseYear - 1, releaseYear + 1, catalogYear - 1, catalogYear + 1);
+  }
   return unique(values.filter(year => Number.isInteger(year) && year >= 1880 && year <= 2200));
 }
 
