@@ -1,0 +1,138 @@
+name: qa-v511-final-production-smoke
+
+on:
+  push:
+    branches:
+      - qa/v511-final-production-smoke
+    paths:
+      - .github/workflows/qa-v511-final-production-smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.18.0
+      - name: Validate production resolver, Arabic content, and final assets
+        env:
+          BASE_URL: https://pleasing-gentleness-production.up.railway.app
+        run: |
+          node <<'NODE'
+          const BASE = process.env.BASE_URL;
+          const persianDistinctive = /[پچژگکیۀ]/g;
+          const arabicWords = new Set(['في','إلى','على','هذا','هذه','الذي','التي','أنا','نحن','أنت','لكن','هل','كان','ليس','مع','عن','لقد','سوف','الآن','هناك','ماذا','لماذا','كيف','نعم','كلا','إن','أن','لا','هو','هي','هم','هنا','أين']);
+          const persianWords = new Set(['است','نیست','که','برای','این','آن','را','می','یک','خیلی','باید','اگر','چرا','وقتی','شما','هست','نمی','باشه','میشه','کردم','داری','داره','اون','اگه','خودش','چون','شاید']);
+
+          function profile(text) {
+            const tokens = String(text).match(/[\u0600-\u06ff]+/gu) || [];
+            let ar = 0, fa = 0;
+            for (const token of tokens) {
+              if (arabicWords.has(token)) ar++;
+              if (persianWords.has(token)) fa++;
+            }
+            const pd = (String(text).match(persianDistinctive) || []).length;
+            const script = (String(text).match(/[\u0600-\u06ff]/gu) || []).length;
+            return { script, pd, ar, fa };
+          }
+
+          async function getJson(url, label) {
+            const res = await fetch(url, { headers: { accept: 'application/json', 'user-agent': 'm7md-v511-final-smoke/1.0' } });
+            const text = await res.text();
+            console.log(`HTTP ${res.status} ${label}`);
+            if (!res.ok) throw new Error(`${label}: HTTP ${res.status}: ${text.slice(0, 300)}`);
+            try { return JSON.parse(text); }
+            catch { throw new Error(`${label}: invalid JSON: ${text.slice(0, 300)}`); }
+          }
+
+          const health = await getJson(`${BASE}/health`, 'health');
+          if (health.status !== 'ok' || String(health.version) !== '5.1.1') {
+            throw new Error(`health mismatch: ${JSON.stringify(health)}`);
+          }
+          const manifest = await getJson(`${BASE}/manifest.json`, 'manifest');
+          if (String(manifest.version) !== '5.1.1') throw new Error(`manifest version mismatch: ${manifest.version}`);
+          console.log(`PRODUCTION VERSION OK: ${health.version}`);
+
+          const cases = [
+            {
+              name: 'The Mummy 2026 FraMeSToR exact user release',
+              type: 'movie', id: 'tt32612507', requireResult: false,
+              params: {
+                filename: "Lee.Cronin's.The.Mummy.2026.REPACK.UHD.BluRay.2160p.TrueHD.Atmos.7.1.DV.HDR10P.HEVC.HYBRID.REMUX-FraMeSToR.mkv",
+                videoSize: '77097625589', videoHash: 'ddbea4c32716ef98',
+              },
+            },
+            {
+              name: 'The Mummy 2026 CiNEPHiLES exact user release',
+              type: 'movie', id: 'tt32612507', requireResult: false,
+              params: {
+                filename: 'The.Mummy.2026.2160p.UHD.Blu-ray.Remux.DV.HDR.HEVC.TrueHD.Atmos.7.1-CiNEPHiLES.mkv',
+                videoSize: '76739559855', videoHash: 'cc65ff994a0973b0',
+              },
+            },
+            {
+              name: 'Spider-Man Brand New Day exact video identity',
+              type: 'movie', id: 'tt22084616', requireResult: false,
+              params: { filename: 'Spider.Man.Brand.New.Day.2026.4k.Th Rong.mkv', videoSize: '16243759197', videoHash: '981bb99030667653' },
+            },
+            {
+              name: 'The Devil Wears Prada 2',
+              type: 'movie', id: 'tt33612209', requireResult: true,
+              params: { filename: 'The.Devil.Wears.Prada.2.2026.2160p.UHD.BluRay.REMUX-FraMeSToR.mkv', videoHash: '8b9821a5bf6dd20a' },
+            },
+            {
+              name: 'Euphoria S01E02',
+              type: 'series', id: 'tt8772296:1:2', requireResult: true,
+              params: { filename: 'Euphoria.S01E02.1080p.WEB-DL.mkv', season: '1', episode: '2' },
+            },
+            {
+              name: 'Grand Theft Auto VI Extended Look regression',
+              type: 'movie', id: 'tt43749709', requireResult: true,
+              params: { filename: 'Grand Theft Auto VI: Extended Look | 2160p', videoSize: '14115273308', videoHash: '04a5c568e21641b2' },
+            },
+          ];
+
+          const failures = [];
+          for (const tc of cases) {
+            try {
+              const u = new URL(`${BASE}/subtitles/${tc.type}/${tc.id}.json`);
+              for (const [k,v] of Object.entries(tc.params)) u.searchParams.set(k, v);
+              const data = await getJson(u, tc.name);
+              const subs = Array.isArray(data.subtitles) ? data.subtitles : [];
+              console.log(`CASE ${tc.name}: ${subs.length} subtitles`);
+              if (tc.requireResult && !subs.length) throw new Error('required known-good case returned zero subtitles');
+              if (subs.length > 10) throw new Error(`unexpected result overflow: ${subs.length}`);
+
+              for (let i = 0; i < subs.length; i++) {
+                const s = subs[i];
+                console.log(`  #${i+1} name=${JSON.stringify(s.name)} lang=${s.lang} id=${s.id}`);
+                if (!s.url || !/^https:\/\//i.test(s.url)) throw new Error(`#${i+1}: missing absolute asset URL`);
+                if (s.lang && !['ara','ar','arabic'].includes(String(s.lang).toLowerCase())) throw new Error(`#${i+1}: non-Arabic lang=${s.lang}`);
+                const asset = await fetch(s.url, { headers: { accept: 'text/plain,*/*', 'user-agent': 'm7md-v511-final-smoke/1.0' } });
+                const body = await asset.text();
+                const p = profile(body);
+                console.log(`     asset=${asset.status} bytes=${Buffer.byteLength(body)} script=${p.script} arWords=${p.ar} faWords=${p.fa} persianDistinct=${p.pd}`);
+                if (!asset.ok) throw new Error(`#${i+1}: asset HTTP ${asset.status}`);
+                if (Buffer.byteLength(body) < 500) throw new Error(`#${i+1}: subtitle asset too small`);
+                if (!body.includes('-->')) throw new Error(`#${i+1}: subtitle asset has no cue timestamps`);
+                if (p.script < 100) throw new Error(`#${i+1}: insufficient Arabic-script content`);
+                if (p.pd >= 3 || (p.fa >= 8 && p.fa > p.ar * 2)) throw new Error(`#${i+1}: likely Persian/Farsi content`);
+              }
+              console.log(`PASS ${tc.name}${subs.length ? '' : ' (zero accepted: no valid Arabic candidate exposed)'}`);
+            } catch (err) {
+              console.error(`FAIL ${tc.name}: ${err.message}`);
+              failures.push(`${tc.name}: ${err.message}`);
+            }
+          }
+
+          if (failures.length) {
+            console.error('\nSMOKE FAILURES:');
+            for (const f of failures) console.error(`- ${f}`);
+            process.exit(1);
+          }
+          console.log('\nALL FINAL PRODUCTION SMOKES PASSED');
+          NODE
