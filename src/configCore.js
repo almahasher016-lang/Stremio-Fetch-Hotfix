@@ -103,7 +103,7 @@ export function buildConfig(env = process.env) {
       trustProxy: toBool(get('TRUST_PROXY'), true),
     },
     providers: {
-      enabled: csv(get('SUBTITLE_PROVIDERS'), ['opensubtitles', 'subdl', 'subsource', 'yify'])
+      enabled: csv(get('SUBTITLE_PROVIDERS'), ['opensubtitles', 'stremio', 'subdl', 'subsource', 'yify'])
         .map(provider => provider.toLowerCase()),
       searchLanguages: csv(get('PROVIDER_SEARCH_LANGUAGES'), ['ar', 'ara', 'arabic']),
       outputArabicOnly: toBool(get('PROVIDER_OUTPUT_ARABIC_ONLY'), true),
@@ -255,7 +255,11 @@ export function buildConfig(env = process.env) {
     },
     subsource: {
       apiKey: get('SUBSOURCE_API_KEY'),
-      baseUrl: cleanBaseUrl(get('SUBSOURCE_BASE_URL', 'https://api.subsource.net')),
+      baseUrl: cleanBaseUrl(get('SUBSOURCE_BASE_URL', 'https://api.subsource.net/api/v1')),
+    },
+    stremioOpenSubtitles: {
+      enabled: toBool(get('STREMIO_OPENSUBTITLES_ENABLED'), true),
+      baseUrl: cleanBaseUrl(get('STREMIO_OPENSUBTITLES_BASE_URL', 'https://opensubtitles-v3.strem.io')),
     },
     yify: {
       enabled: toBool(get('YIFY_ENABLED'), true),

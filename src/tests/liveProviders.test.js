@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import { searchOpenSubtitles } from '../providers/openSubtitles.js';
 import { searchSubdl } from '../providers/subdl.js';
 import { searchSubsource } from '../providers/subsource.js';
+import { searchStremioOpenSubtitles } from '../providers/stremioOpenSubtitles.js';
 import { searchYify } from '../providers/yify.js';
 
 const LIVE_ENABLED = process.env.RUN_LIVE_PROVIDER_TESTS === '1';
@@ -39,6 +40,11 @@ test('live provider search contracts', {
       name: 'opensubtitles',
       configured: Boolean(config.openSubtitles.apiKey),
       search: searchOpenSubtitles,
+    },
+    {
+      name: 'stremio',
+      configured: Boolean(config.stremioOpenSubtitles.enabled),
+      search: searchStremioOpenSubtitles,
     },
     {
       name: 'subdl',

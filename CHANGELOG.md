@@ -1,3 +1,10 @@
+## 5.1.5 - 2026-09-09
+
+- Add the public Stremio OpenSubtitles v3 provider as a credential-free availability fallback.
+- Normalize only the requested language and bind every result to the exact requested IMDb/episode identity.
+- Restrict provider download URLs to HTTPS hosts under `strem.io` before Accuracy Preflight.
+- Update the default SubSource API base URL to the documented `/api/v1` path.
+
 ## 5.1.4 - 2026-09-09
 
 - تمرير هوية Cinemeta المثرية إلى تقييم V5 بدل تقييم معرّف IMDb كعنوان خام.

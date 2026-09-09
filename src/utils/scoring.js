@@ -59,6 +59,7 @@ function providerPriority(provider) {
   if (name === 'vault') return 900;
   if (name === 'registry') return 1100;
   if (name === 'opensubtitles') return 140;
+  if (name === 'stremio') return 130;
   if (name === 'subdl') return 120;
   if (name === 'subsource') return 85;
   if (name === 'yify') return 35;
