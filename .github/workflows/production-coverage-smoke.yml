@@ -1,0 +1,34 @@
+name: production-coverage-smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/production-coverage-smoke.mjs'
+      - '.github/workflows/production-coverage-smoke.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-coverage-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.18.0
+      - name: Verify known-Arabic movie and series availability in production
+        env:
+          PRODUCTION_BASE_URL: https://pleasing-gentleness-production.up.railway.app
+          SMOKE_ATTEMPTS: '10'
+          SMOKE_RETRY_MS: '20000'
+          SMOKE_TIMEOUT_MS: '25000'
+        run: node scripts/production-coverage-smoke.mjs
