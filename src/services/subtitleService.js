@@ -6,7 +6,7 @@ import { searchDeepRecoveryCandidates } from './deepRecoveryService.js';
 import * as core from './subtitleServiceCore.js';
 import { buildVideoIdentity } from '../utils/videoIdentity.js';
 import { runV5Shadow } from '../v5/shadowResolver.js';
-import { selectV5Output, v5ModeFromEnvironment } from '../v5/outputPolicy.js';
+import { selectV5FailureFallback, selectV5Output, v5ModeFromEnvironment } from '../v5/outputPolicy.js';
 
 const inFlight = new Map();
 const waitMs = Math.min(20_000, Math.max(250, Number(process.env.CACHE_SINGLEFLIGHT_WAIT_MS) || 5_000));
@@ -172,7 +172,9 @@ function applyV5Policy(results, search) {
     });
   } catch (error) {
     console.warn('[V5] evaluation failed:', error?.message || error);
-    return mode ? [] : results;
+    // V5 is an output policy, not the source of candidate availability. If evaluation fails,
+    // preserve preflight survivors while still refusing hard rejects and terminal delivery failures.
+    return selectV5FailureFallback(results);
   }
 }
 
