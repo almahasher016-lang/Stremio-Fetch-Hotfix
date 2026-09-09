@@ -1,3 +1,9 @@
+## 5.1.6 - 2026-09-09
+
+- Prevent a valid teaser, trailer, or other partial subtitle from becoming the sole balanced-mode recovery result when full-length alternatives exist.
+- Return up to three complete RECOVERY candidates for manual choice while continuing to exclude WITHHOLD and REJECT decisions.
+- Add regressions for full-film completeness, bounded rescue output, and genuinely short works.
+
 ## 5.1.5 - 2026-09-09
 
 - Add the public Stremio OpenSubtitles v3 provider as a credential-free availability fallback.
