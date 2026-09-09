@@ -144,7 +144,12 @@ export function buildSubdlParams(variant, expectedLanguage, mode = 'full', confi
     addParam(params, 'film_name', titleFromRelease(variant.query || variant.filename || variant.imdbId || variant.tmdbId));
   }
 
-  addParam(params, 'year', variant.year);
+  // An IMDb/TMDb identifier already fixes the work identity, so combining it with a year can
+  // falsely eliminate a valid result when providers index festival and commercial release years
+  // differently. Keep the year on strict title/file searches, but remove it from authoritative-ID
+  // and explicitly relaxed recovery requests. Returned rows still pass the normal identity gates.
+  const constrainYear = mode !== 'imdb' && mode !== 'tmdb' && !variant.relaxedFallback;
+  if (constrainYear) addParam(params, 'year', variant.year);
   addParam(params, 'season_number', variant.season);
   addParam(params, 'episode_number', variant.episode);
 

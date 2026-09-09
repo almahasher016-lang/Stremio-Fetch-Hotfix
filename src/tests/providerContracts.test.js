@@ -114,6 +114,26 @@ test('SubDL request keeps the documented limit, integration identity, and season
   assert.equal(params.get('unpack'), '1');
   assert.equal(params.get('season_number'), '1');
   assert.equal(params.get('episode_number'), '1');
+  assert.equal(params.get('year'), null);
+});
+
+test('SubDL keeps year on strict title search and drops it for relaxed recovery', () => {
+  const strict = buildSubdlParams({
+    type: 'movie',
+    query: 'Tuner',
+    year: 2025,
+  }, 'ar', 'query', subdlConfig);
+  const relaxed = buildSubdlParams({
+    type: 'movie',
+    query: 'Tuner',
+    year: 2025,
+    relaxedFallback: true,
+  }, 'ar', 'query', subdlConfig);
+
+  assert.equal(strict.get('film_name'), 'Tuner');
+  assert.equal(strict.get('year'), '2025');
+  assert.equal(relaxed.get('film_name'), 'Tuner');
+  assert.equal(relaxed.get('year'), null);
 });
 
 test('SubDL season packs retain only the requested episode and merge file metadata', () => {
