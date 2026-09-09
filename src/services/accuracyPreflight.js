@@ -93,8 +93,6 @@ async function inspectOne(item, search, {
   cacheGetImpl,
   cacheSetImpl,
 } = {}) {
-  // Stored quality proves subtitle content, not that a remote provider URL is still alive.
-  // Only the local personal vault may bypass a fresh delivery check on that basis.
   if (item?.quality?.valid === true && !exactTimingReference(item) && stableLocalSource(item)) {
     return {
       state: 'valid',
@@ -235,8 +233,6 @@ export async function applyAccuracyPreflight(results = [], search = {}, {
   const desiredValid = Math.min(3, Math.max(1, Number(config.providers.topN) || 1), maxInspect);
   let cursor = 0;
 
-  // Inspection is adaptive. A provider label or ranking score must never stop recovery. Continue
-  // through later candidates when the current batch is Persian, non-Arabic, malformed, or dead.
   while (cursor < maxInspect) {
     const size = cursor === 0 ? firstBatchSize : batchSize;
     const batch = ranked.slice(cursor, Math.min(maxInspect, cursor + size));
@@ -292,23 +288,21 @@ export async function applyAccuracyPreflight(results = [], search = {}, {
     };
   });
 
-  // Only inspected candidates can survive preflight. Previously uninspected rows had no `state`
-  // and were therefore accidentally treated as survivors, which could stop deeper recovery.
+  // Only inspected candidates can survive preflight. Soft degradation/outage remains fail-open for
+  // deterministic legacy ordering, but an uninspected row can no longer masquerade as a survivor.
   const deliverable = decorated.filter(item => item.accuracyPreflight?.deliveryFailure !== true);
-  const verified = deliverable.filter(item => item.accuracyPreflight?.state === 'valid');
-  if (verified.length > 0) return prioritizeAccurateSubtitles(verified, search);
+  const nonRejected = deliverable.filter(item => item.accuracyPreflight?.state !== 'rejected');
+  const verified = nonRejected.filter(item => item.accuracyPreflight?.state === 'valid');
+  if (verified.length > 0) return prioritizeAccurateSubtitles(nonRejected, search);
   if (deliverable.length === 0 && decorated.length > 0) return [];
 
-  const softUnavailable = deliverable.filter(item => ['unavailable', 'degraded'].includes(item.accuracyPreflight?.state));
-  if (softUnavailable.length > 0) {
-    return prioritizeAccurateSubtitles(softUnavailable.map(item => ({
+  if (nonRejected.length > 0) {
+    return prioritizeAccurateSubtitles(nonRejected.map(item => ({
       ...item,
       accuracyPreflightFallback: 'verification-unavailable',
     })), search);
   }
 
-  // Preserve rejected evidence for V5 diagnostics and for the post-preflight recovery decision.
-  // These candidates remain hard-rejected by V5; they are never promoted merely for availability.
   return prioritizeAccurateSubtitles(deliverable.map(item => ({
     ...item,
     accuracyPreflightFallback: 'all-candidates-rejected',
