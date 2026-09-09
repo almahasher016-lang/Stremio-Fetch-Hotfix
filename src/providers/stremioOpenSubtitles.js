@@ -46,6 +46,10 @@ export function normalizeStremioOpenSubtitlesItem(item, variant = {}) {
   const fileName = String(item.subtitleFileName || item.fileName || '').trim();
   const releaseName = String(item.movieReleaseName || item.releaseName || fileName).trim();
   const fpsMilli = Number(item.fpsMilli);
+  const requestedImdbId = cleanImdb(variant.imdbId || variant.id || variant.catalogId);
+  const requestedSeason = variant.type === 'series' ? positiveInteger(variant.season) : null;
+  const requestedEpisode = variant.type === 'series' ? positiveInteger(variant.episode) : null;
+
   return {
     provider: 'stremio',
     id: `stremio-osv3-${providerId}`,
@@ -54,9 +58,15 @@ export function normalizeStremioOpenSubtitlesItem(item, variant = {}) {
     releaseName,
     fileName,
     lang: normalizeStremioLanguage(language),
-    imdbId: cleanImdb(variant.imdbId || variant.id || variant.catalogId),
-    season: variant.type === 'series' ? positiveInteger(item.season) || positiveInteger(variant.season) : null,
-    episode: variant.type === 'series' ? positiveInteger(item.episode) || positiveInteger(variant.episode) : null,
+    // Never manufacture work/episode identity from the query. Some provider rows can be polluted
+    // or neighboring results. Only identity explicitly returned by the row belongs on the candidate.
+    imdbId: cleanImdb(item.imdbId || item.imdb_id),
+    season: variant.type === 'series' ? positiveInteger(item.season) : null,
+    episode: variant.type === 'series' ? positiveInteger(item.episode) : null,
+    // Query provenance remains available for diagnostics and proof logic, but is not candidate identity.
+    searchCatalogId: requestedImdbId,
+    searchSeason: requestedSeason,
+    searchEpisode: requestedEpisode,
     type: variant.type === 'series' ? 'series' : 'movie',
     fps: Number.isFinite(fpsMilli) && fpsMilli > 0 ? fpsMilli / 1000 : null,
     hearingImpaired: /(?:^|[. _\-[\]()])(?:sdh|hi)(?:$|[. _\-[\]()])/i.test(`${fileName} ${releaseName}`),
