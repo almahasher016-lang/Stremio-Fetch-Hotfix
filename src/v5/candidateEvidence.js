@@ -11,6 +11,49 @@ function numberEquals(left, right) {
   return Number.isFinite(a) && Number.isFinite(b) ? a === b : String(left) === String(right);
 }
 
+const TITLE_BOUNDARY_RE = /\b(?:19\d{2}|20\d{2}|s\d{1,3}e\d{1,4}|\d{1,3}x\d{1,4}|8640p|4320p|2160p|1440p|1080[pi]?|720[pi]?|576[pi]?|480[pi]?|8k|4k|uhd|web\s*dl|webdl|web\s*rip|webrip|blu\s*ray|bluray|bdremux|bdrip|remux|hdtv|dvdrip|hdcam|telesync|telecine|x264|x265|h264|h265|hevc|avc|av1|vp9|hdr10\+?|hdr|dolby\s*vision|dovi|truehd|dts|ddp|eac3|aac|atmos)\b/i;
+
+function titleTokens(value) {
+  let text = String(value || '')
+    .normalize('NFKC')
+    .replace(/\.[A-Za-z0-9]{2,5}$/i, ' ')
+    .replace(/[._:+/\\()[\]{}-]+/g, ' ')
+    .replace(/['’]/g, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+  const boundary = text.search(TITLE_BOUNDARY_RE);
+  if (boundary > 0) text = text.slice(0, boundary).trim();
+  return [...new Set(text.split(/\s+/).filter(token => token && token !== 's'))];
+}
+
+export function buildTitleIdentityEvidence(item = {}, search = {}) {
+  const target = titleTokens(search.title || search.query || search.filename || search.extra?.filename || '');
+  const candidate = titleTokens(item.releaseName || item.fileName || item.name || item.title || '');
+  if (!target.length || !candidate.length) {
+    return { match: false, targetTokens: target, candidateTokens: candidate, overlap: 0 };
+  }
+
+  const targetSet = new Set(target);
+  const intersection = candidate.filter(token => targetSet.has(token)).length;
+  const shorter = Math.min(target.length, candidate.length);
+  const longer = Math.max(target.length, candidate.length);
+  const shorterCoverage = shorter ? intersection / shorter : 0;
+  const longerCoverage = longer ? intersection / longer : 0;
+  const exact = target.length === candidate.length && intersection === target.length;
+  const singleExact = shorter === 1 && longer === 1 && intersection === 1;
+  const containedPhrase = shorter >= 2 && intersection >= 2 && shorterCoverage >= 0.8;
+  const balancedOverlap = intersection >= 2 && shorterCoverage >= 0.75 && longerCoverage >= 0.5;
+
+  return {
+    match: exact || singleExact || containedPhrase || balancedOverlap,
+    targetTokens: target,
+    candidateTokens: candidate,
+    overlap: Number(shorterCoverage.toFixed(4)),
+  };
+}
+
 function exactHashMatch(item = {}, search = {}) {
   const target = lower(search.videoHash || search.hash);
   if (!target) return false;
@@ -28,11 +71,14 @@ function catalogIdMatch(item = {}, search = {}) {
   return false;
 }
 
-function catalogSearchAnchored(item = {}, search = {}) {
+function catalogSearchAnchored(item = {}, search = {}, titleIdentity = {}) {
   if (lower(item.searchReason) !== 'exact-metadata') return false;
   const hasImdb = Boolean(search.imdbId || /^tt\d{5,12}$/i.test(String(search.id || '')));
   const hasTmdb = Boolean(search.tmdbId);
-  return hasImdb || hasTmdb;
+  // Provider-stage provenance is not identity by itself. Some providers can return a neighboring
+  // title from an IMDb/TMDb-shaped request without echoing the requested catalog id on the row.
+  // In that case we require strong work-title agreement before treating exact-metadata as an anchor.
+  return (hasImdb || hasTmdb) && titleIdentity.match === true;
 }
 
 function identityConflicts(item = {}, search = {}) {
@@ -155,6 +201,7 @@ export function buildCandidateEvidence(item = {}, search = {}, consensus = {}, n
   const releaseMatched = Array.isArray(item.releaseMatch?.matched) ? item.releaseMatch.matched : [];
   const releaseMissing = Array.isArray(item.releaseMatch?.missing) ? item.releaseMatch.missing : [];
   const yearMatch = releaseMatched.includes('year') ? true : (releaseMissing.includes('year') ? null : undefined);
+  const titleIdentity = buildTitleIdentityEvidence(item, search);
 
   return {
     identity: {
@@ -162,12 +209,13 @@ export function buildCandidateEvidence(item = {}, search = {}, consensus = {}, n
       conflicts: identityConflicts(item, search),
       exactVideoHash: exactHashMatch(item, search),
       catalogIdMatch: catalogIdMatch(item, search),
-      catalogSearchAnchored: catalogSearchAnchored(item, search),
+      catalogSearchAnchored: catalogSearchAnchored(item, search, titleIdentity),
       seasonMatch: seasonMatch ?? (mediaType === 'series' ? undefined : true),
       episodeMatch: episodeMatch ?? (mediaType === 'series' ? undefined : true),
       explicitEpisodeMatch: mediaType === 'series' && seasonMatch === true && episodeMatch === true,
       yearMatch,
-      titleMatch: Number(item.releaseMatchTier ?? item.releaseMatch?.tier ?? 0) >= 2,
+      titleMatch: titleIdentity.match,
+      titleOverlap: titleIdentity.overlap,
     },
     language: {
       detectedLanguage: quality.detectedLanguage || '',
