@@ -25,9 +25,10 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24.18.0
-      - name: Verify known-Arabic movie and series availability in production
+      - name: Verify the target commit and known-Arabic availability in production
         env:
           PRODUCTION_BASE_URL: https://pleasing-gentleness-production.up.railway.app
+          EXPECTED_COMMIT: ${{ github.sha }}
           SMOKE_ATTEMPTS: '10'
           SMOKE_RETRY_MS: '20000'
           SMOKE_TIMEOUT_MS: '25000'
