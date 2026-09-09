@@ -41,13 +41,18 @@ function normalizeMeta(payload, search) {
     ...(Array.isArray(meta.aliases) ? meta.aliases : []),
   ].map(cleanText).filter(Boolean);
   const runtimeMinutes = toNumber(video?.runtime || meta.runtime);
+  const catalogYear = toNumber(video?.released ? String(video.released).slice(0, 4) : meta.year);
   return {
     title: cleanText(video?.name || meta.name || meta.title || search.title),
     originalTitle: cleanText(meta.originalName || meta.originalTitle || ''),
     aliases: [...new Set(aliases)],
     imdbId: cleanImdb(meta.imdb_id || meta.imdbId || search.imdbId) || search.imdbId,
     tmdbId: cleanText(meta.moviedb_id || meta.tmdb_id || meta.tmdbId || search.tmdbId) || search.tmdbId,
-    year: toNumber(video?.released ? String(video.released).slice(0, 4) : meta.year) || search.year,
+    // Catalog year identifies the work, while an already-known playback/release year identifies
+    // the file timeline. They can legitimately differ (for example festival/catalog year 2026
+    // while released subtitle files are tagged 2025), so metadata must not overwrite the file year.
+    catalogYear,
+    year: search.year || catalogYear,
     season: video?.season === 0 ? 0 : (toNumber(video?.season) ?? search.season),
     episode: toNumber(video?.episode) || search.episode,
     episodeTitle: cleanText(video?.name || ''),
