@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { selectV5FailureFallback, selectV5Output, v5ModeFromEnvironment } from '../v5/outputPolicy.js';
 
-function entry(decision, id) {
+function entry(decision, id, cueCount = 900) {
   return {
     candidateId: id,
-    item: { id, provider: 'test' },
+    item: { id, provider: 'test', accuracyPreflight: { quality: { cueCount } } },
     evidence: { marker: id },
     proof: { decision, proofFloor: decision === 'certified' ? 0.995 : 0.9 },
   };
@@ -34,15 +34,34 @@ test('V5 balanced mode permits safe but never recovery, withhold or reject', () 
   assert.deepEqual(output.map(item => item.id), ['a', 'b']);
 });
 
-test('V5 balanced mode rescues only the best recovery candidate when safe output is empty', () => {
+test('V5 balanced mode rescues up to three complete recovery candidates when safe output is empty', () => {
   const output = selectV5Output([
     entry('recovery', 'best-recovery'),
     entry('recovery', 'second-recovery'),
+    entry('recovery', 'third-recovery'),
+    entry('recovery', 'fourth-recovery'),
     entry('withhold', 'withheld'),
     entry('reject', 'rejected'),
   ], { mode: 'balanced', maxResults: 10 });
-  assert.deepEqual(output.map(item => item.id), ['best-recovery']);
-  assert.equal(output[0].v5AvailabilityRescue, true);
+  assert.deepEqual(output.map(item => item.id), ['best-recovery', 'second-recovery', 'third-recovery']);
+  assert.ok(output.every(item => item.v5AvailabilityRescue === true));
+});
+
+test('V5 balanced rescue drops a short partial subtitle when full-length alternatives exist', () => {
+  const output = selectV5Output([
+    entry('recovery', 'special-look', 55),
+    entry('recovery', 'full-film-a', 2124),
+    entry('recovery', 'full-film-b', 2195),
+  ], { mode: 'balanced', maxResults: 10 });
+  assert.deepEqual(output.map(item => item.id), ['full-film-a', 'full-film-b']);
+});
+
+test('V5 balanced rescue preserves genuinely short works when no full-length alternative exists', () => {
+  const output = selectV5Output([
+    entry('recovery', 'short-work-a', 55),
+    entry('recovery', 'short-work-b', 61),
+  ], { mode: 'balanced', maxResults: 10 });
+  assert.deepEqual(output.map(item => item.id), ['short-work-a', 'short-work-b']);
 });
 
 test('V5 balanced mode never rescues withhold or reject candidates', () => {
