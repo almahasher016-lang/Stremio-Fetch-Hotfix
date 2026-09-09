@@ -27,6 +27,14 @@ export function selectV5Output(evaluated = [], { mode = MODE.STRICT, maxResults 
   }));
 }
 
+export function selectV5FailureFallback(results = []) {
+  if (!Array.isArray(results)) return [];
+  return results.filter(item => (
+    item?.accuracyPreflight?.state !== 'rejected'
+    && item?.accuracyPreflight?.deliveryFailure !== true
+  ));
+}
+
 export function v5ModeFromEnvironment(env = process.env) {
   const raw = String(env.RESOLVER_V5_MODE || '').trim().toLowerCase();
   if (raw === MODE.STRICT || raw === MODE.BALANCED || raw === MODE.RECOVERY) return raw;
