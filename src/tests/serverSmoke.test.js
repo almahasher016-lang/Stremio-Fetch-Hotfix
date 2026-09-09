@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { config } from '../config.js';
 
 const repositoryRoot = fileURLToPath(new URL('../..', import.meta.url));
+const testCommit = '0123456789abcdef0123456789abcdef01234567';
 
 async function waitForServer(child) {
   await new Promise((resolve, reject) => {
@@ -39,6 +40,7 @@ test('server exposes the release, administration dashboard, and maintenance acti
       ADMIN_AUTH_RATE_LIMIT_WINDOW_MS: '60000',
       PUBLIC_BASE_URL: 'https://addon.example',
       ADMIN_ALLOWED_ORIGINS: 'https://admin.example',
+      RAILWAY_GIT_COMMIT_SHA: testCommit.toUpperCase(),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -53,7 +55,12 @@ test('server exposes the release, administration dashboard, and maintenance acti
   const headers = { 'x-admin-token': adminToken };
   const healthResponse = await fetch(`${baseUrl}/health`);
   assert.equal(healthResponse.status, 200);
-  assert.deepEqual(await healthResponse.json(), { status: 'ok', version: config.app.version, ai: false });
+  assert.deepEqual(await healthResponse.json(), {
+    status: 'ok',
+    version: config.app.version,
+    commit: testCommit,
+    ai: false,
+  });
 
   const faviconResponse = await fetch(`${baseUrl}/favicon.ico`);
   assert.equal(faviconResponse.status, 204);
@@ -96,6 +103,7 @@ test('server exposes the release, administration dashboard, and maintenance acti
   assert.equal(adminResponse.status, 200);
   const admin = await adminResponse.json();
   assert.equal(admin.version, config.app.version);
+  assert.equal(admin.commit, testCommit);
   assert.equal(admin.limiters.yify.maxConcurrent, config.providers.maxConcurrentPerProvider);
   assert.equal(admin.breakers.yify.state, 'closed');
   assert.ok(Number.isFinite(admin.memory.heapUsedMB));
