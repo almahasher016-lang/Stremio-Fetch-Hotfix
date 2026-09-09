@@ -11,6 +11,9 @@ test('configuration prefers explicit environment values and ships no credentials
   assert.equal(defaults.openSubtitles.apiKey, '');
   assert.equal(defaults.subdl.apiKey, '');
   assert.equal(defaults.subsource.apiKey, '');
+  assert.equal(defaults.subsource.baseUrl, 'https://api.subsource.net/api/v1');
+  assert.equal(defaults.stremioOpenSubtitles.enabled, true);
+  assert.equal(defaults.stremioOpenSubtitles.baseUrl, 'https://opensubtitles-v3.strem.io');
   assert.equal(defaults.cache.redisUrl, '');
   assert.equal(defaults.cache.staleWhileRevalidate, false);
   assert.equal(defaults.ui.testUiEnabled, true);

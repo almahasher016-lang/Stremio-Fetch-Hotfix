@@ -22,17 +22,17 @@ test('does not schedule movie-only providers for series requests', () => {
   for (const stage of plan) assert.equal(stage.providers.includes('movieOnly'), false);
 });
 
-test('does not let an unconfigured SubSource consume the YIFY fallback slot', () => {
+test('does not let an unconfigured SubSource consume a working provider slot', () => {
   assert.equal(providerDefinitions.subsource.configured(), false);
   const plan = createSearchPlan(
     { type: 'movie', id: 'tt1375666' },
     providerDefinitions,
     config.providers.enabled,
-    { maxProvidersPerStage: 3 },
+    { maxProvidersPerStage: 4 },
   );
   const metadataStage = plan.find(stage => stage.name === 'exact-metadata');
   assert.ok(metadataStage);
-  assert.deepEqual(metadataStage.providers, ['opensubtitles', 'subdl', 'yify']);
+  assert.deepEqual(metadataStage.providers, ['opensubtitles', 'stremio', 'subdl', 'yify']);
 });
 
 test('exact-hash stage uses hash identity without weaker filename or metadata constraints', () => {
