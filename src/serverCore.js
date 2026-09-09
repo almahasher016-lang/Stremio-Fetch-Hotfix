@@ -34,6 +34,7 @@ validateRuntimeConfig(config);
 const app = express();
 const manifestJson = createManifest();
 const manifestBuf = Buffer.from(JSON.stringify(manifestJson));
+const deployedCommit = String(process.env.RAILWAY_GIT_COMMIT_SHA || '').trim().toLowerCase() || null;
 
 if (config.server.trustProxy) app.set('trust proxy', 1);
 app.disable('x-powered-by');
@@ -176,7 +177,7 @@ app.get(['/manifest', '/Manifest', '/Manifest.json'], (_req, res) => {
 
 app.get('/health', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache, max-age=5');
-  res.json({ status: 'ok', version: config.app.version, ai: false });
+  res.json({ status: 'ok', version: config.app.version, commit: deployedCommit, ai: false });
 });
 
 app.get('/admin.html', (_req, res) => sendHtmlResponse(res, adminPageHtml(), {
@@ -190,6 +191,7 @@ app.get('/api/admin/health', async (req, res, next) => {
     res.json({
       status: 'ok',
       version: config.app.version,
+      commit: deployedCommit,
       uptime: process.uptime(),
       ai: false,
       telemetry: getTelemetryStatus(),
