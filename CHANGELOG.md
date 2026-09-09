@@ -1,3 +1,9 @@
+## 5.1.7 - 2026-09-09
+
+- Apply relative completeness filtering before every V5 output mode, including SAFE and CERTIFIED selections.
+- Prevent a short promotional subtitle from surviving merely because its source family matches the requested video.
+- Add a production-shaped regression for a 55-cue special look beside 2,195- and 2,124-cue feature subtitles.
+
 ## 5.1.6 - 2026-09-09
 
 - Prevent a valid teaser, trailer, or other partial subtitle from becoming the sole balanced-mode recovery result when full-length alternatives exist.
