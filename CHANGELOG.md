@@ -1,3 +1,9 @@
+## 5.1.3 - 2026-09-09
+
+- منع فشل تقييم V5 من إرجاع قائمة فارغة عند وجود مرشحين اجتازوا مسار Accuracy Preflight.
+- إبقاء الترجمات ذات الحالة `rejected` وروابط `deliveryFailure` خارج مسار fallback الآمن.
+- تشغيل V5 في Railway بوضع `balanced` مع تعطيل وضع `shadow`.
+
 ## 5.1.2 - 2026-09-09
 
 - Harden V5 identity authority after production smoke exposed a cross-title `Supergirl.2026` result for `Spider-Man: Brand New Day 2026`.
