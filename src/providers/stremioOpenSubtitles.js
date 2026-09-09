@@ -1,6 +1,7 @@
 import { config } from '../config.js';
 import { fetchJson } from '../utils/http.js';
 import { isArabicLanguage, isEnglishLanguage, normalizeStremioLanguage } from '../utils/language.js';
+import { parseRelease } from '../utils/releaseParser.js';
 
 function cleanImdb(value) {
   const match = String(value || '').match(/tt\d{5,12}/i);
@@ -45,6 +46,7 @@ export function normalizeStremioOpenSubtitlesItem(item, variant = {}) {
   if (!providerId) return null;
   const fileName = String(item.subtitleFileName || item.fileName || '').trim();
   const releaseName = String(item.movieReleaseName || item.releaseName || fileName).trim();
+  const releaseIdentity = parseRelease(releaseName || fileName);
   const fpsMilli = Number(item.fpsMilli);
   const requestedImdbId = cleanImdb(variant.imdbId || variant.id || variant.catalogId);
   const requestedSeason = variant.type === 'series' ? positiveInteger(variant.season) : null;
@@ -59,10 +61,11 @@ export function normalizeStremioOpenSubtitlesItem(item, variant = {}) {
     fileName,
     lang: normalizeStremioLanguage(language),
     // Never manufacture work/episode identity from the query. Some provider rows can be polluted
-    // or neighboring results. Only identity explicitly returned by the row belongs on the candidate.
+    // or neighboring results. Only identity explicitly returned by the row or encoded in its own
+    // release name belongs on the candidate.
     imdbId: cleanImdb(item.imdbId || item.imdb_id),
-    season: variant.type === 'series' ? positiveInteger(item.season) : null,
-    episode: variant.type === 'series' ? positiveInteger(item.episode) : null,
+    season: variant.type === 'series' ? positiveInteger(item.season) || releaseIdentity.season : null,
+    episode: variant.type === 'series' ? positiveInteger(item.episode) || releaseIdentity.episode : null,
     // Query provenance remains available for diagnostics and proof logic, but is not candidate identity.
     searchCatalogId: requestedImdbId,
     searchSeason: requestedSeason,
