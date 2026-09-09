@@ -1,4 +1,5 @@
 const baseUrl = String(process.env.PRODUCTION_BASE_URL || 'https://pleasing-gentleness-production.up.railway.app').replace(/\/+$/, '');
+const expectedCommit = String(process.env.EXPECTED_COMMIT || '').trim().toLowerCase();
 const attempts = Math.max(1, Math.min(20, Number(process.env.SMOKE_ATTEMPTS) || 8));
 const retryMs = Math.max(1_000, Math.min(60_000, Number(process.env.SMOKE_RETRY_MS) || 20_000));
 const timeoutMs = Math.max(2_000, Math.min(60_000, Number(process.env.SMOKE_TIMEOUT_MS) || 25_000));
@@ -24,31 +25,74 @@ function sleep(ms) {
   });
 }
 
-async function fetchCase(item) {
+async function fetchJson(path) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new DOMException('Smoke request timeout', 'AbortError')), timeoutMs);
   timer.unref?.();
   try {
-    const response = await fetch(`${baseUrl}${item.path}`, {
+    const response = await fetch(`${baseUrl}${path}`, {
       signal: controller.signal,
       headers: { 'user-agent': 'm7md-production-coverage-smoke/1.0' },
     });
-    const body = await response.json().catch(() => ({}));
-    const subtitles = Array.isArray(body?.subtitles) ? body.subtitles : [];
     return {
-      ok: response.ok && subtitles.length > 0,
-      status: response.status,
-      count: subtitles.length,
-      tiers: [...new Set(subtitles.map(row => row?.availabilityTier).filter(Boolean))],
-      names: subtitles.slice(0, 3).map(row => row?.name || row?.id || 'unnamed'),
+      response,
+      body: await response.json().catch(() => ({})),
     };
   } finally {
     clearTimeout(timer);
   }
 }
 
+async function fetchDeploymentIdentity() {
+  const { response, body } = await fetchJson('/health');
+  return {
+    ok: response.ok,
+    status: response.status,
+    version: body?.version || null,
+    commit: String(body?.commit || '').trim().toLowerCase() || null,
+  };
+}
+
+async function fetchCase(item) {
+  const { response, body } = await fetchJson(item.path);
+  const subtitles = Array.isArray(body?.subtitles) ? body.subtitles : [];
+  return {
+    ok: response.ok && subtitles.length > 0,
+    status: response.status,
+    count: subtitles.length,
+    tiers: [...new Set(subtitles.map(row => row?.availabilityTier).filter(Boolean))],
+    names: subtitles.slice(0, 3).map(row => row?.name || row?.id || 'unnamed'),
+  };
+}
+
 let last = [];
+let lastDeployment = null;
 for (let attempt = 1; attempt <= attempts; attempt += 1) {
+  try {
+    lastDeployment = await fetchDeploymentIdentity();
+  } catch (error) {
+    lastDeployment = {
+      ok: false,
+      status: 0,
+      version: null,
+      commit: null,
+      error: error?.message || String(error),
+    };
+  }
+
+  const deploymentMatches = !expectedCommit || lastDeployment.commit === expectedCommit;
+  if (!lastDeployment.ok || !deploymentMatches) {
+    console.log(JSON.stringify({
+      attempt,
+      baseUrl,
+      state: 'waiting-for-target-deployment',
+      expectedCommit: expectedCommit || null,
+      deployment: lastDeployment,
+    }, null, 2));
+    if (attempt < attempts) await sleep(retryMs);
+    continue;
+  }
+
   last = [];
   for (const item of cases) {
     try {
@@ -59,10 +103,20 @@ for (let attempt = 1; attempt <= attempts; attempt += 1) {
     }
   }
 
-  console.log(JSON.stringify({ attempt, baseUrl, results: last }, null, 2));
+  console.log(JSON.stringify({
+    attempt,
+    baseUrl,
+    expectedCommit: expectedCommit || null,
+    deployment: lastDeployment,
+    results: last,
+  }, null, 2));
   if (last.every(result => result.ok)) process.exit(0);
   if (attempt < attempts) await sleep(retryMs);
 }
 
-console.error('Production coverage smoke failed: at least one known-Arabic title returned no usable subtitle.');
+if (expectedCommit && lastDeployment?.commit !== expectedCommit) {
+  console.error(`Production coverage smoke failed: target commit ${expectedCommit} was not observed in production.`);
+} else {
+  console.error('Production coverage smoke failed: at least one known-Arabic title returned no usable subtitle.');
+}
 process.exit(1);
