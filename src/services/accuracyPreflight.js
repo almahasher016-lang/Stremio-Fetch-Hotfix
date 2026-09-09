@@ -206,6 +206,11 @@ function measuredTimingEvidence(plan = {}) {
   };
 }
 
+export function hasVerifiedAccuracyCandidate(results = []) {
+  return results.some(item => item?.accuracyPreflight?.state === 'valid'
+    && (item?.quality?.valid === true || item?.accuracyPreflight?.quality?.valid === true));
+}
+
 export async function applyAccuracyPreflight(results = [], search = {}, {
   preflightImpl = preflightSubtitleCandidate,
   referencePreflightImpl = preflightTimingReferenceCandidate,
@@ -218,30 +223,45 @@ export async function applyAccuracyPreflight(results = [], search = {}, {
   }
 
   const inspected = new Map();
+  const inspectedItems = [];
   const exactHashTimingAvailable = config.timingEvidence.enabled
     && ranked.some(item => exactTimingReference(item));
   const timingTargetCount = exactHashTimingAvailable
     ? Math.min(config.timingEvidence.topN, ranked.length)
     : 0;
-  const targetCount = Math.max(config.accuracyPreflight.topN, timingTargetCount);
-  const targets = ranked.slice(0, Math.min(targetCount, ranked.length));
-  await Promise.all(targets.map(async item => {
-    const key = candidateKey(item, search);
-    const outcome = await inspectOne(item, search, { preflightImpl, cacheGetImpl, cacheSetImpl });
-    inspected.set(key, outcome);
-  }));
+  const batchSize = Math.max(1, config.accuracyPreflight.topN);
+  const firstBatchSize = Math.max(batchSize, timingTargetCount);
+  const maxInspect = Math.min(ranked.length, Math.max(batchSize, Number(config.providers.maxProviderItems) || ranked.length));
+  const desiredValid = Math.min(3, Math.max(1, Number(config.providers.topN) || 1), maxInspect);
+  let cursor = 0;
+
+  // Inspection is adaptive. A provider label or ranking score must never stop recovery. Continue
+  // through later candidates when the current batch is Persian, non-Arabic, malformed, or dead.
+  while (cursor < maxInspect) {
+    const size = cursor === 0 ? firstBatchSize : batchSize;
+    const batch = ranked.slice(cursor, Math.min(maxInspect, cursor + size));
+    if (!batch.length) break;
+    await Promise.all(batch.map(async item => {
+      const key = candidateKey(item, search);
+      const outcome = await inspectOne(item, search, { preflightImpl, cacheGetImpl, cacheSetImpl });
+      inspected.set(key, outcome);
+    }));
+    inspectedItems.push(...batch);
+    cursor += batch.length;
+    const validCount = [...inspected.values()].filter(outcome => outcome?.state === 'valid').length;
+    if (validCount >= desiredValid) break;
+  }
 
   const exactReference = config.timingEvidence.enabled
-    ? targets.map(item => exactTimingReference(item)).find(Boolean)
+    ? inspectedItems.map(item => exactTimingReference(item)).find(Boolean)
     : null;
   const referenceOutcome = exactReference
     ? await inspectTimingReference(exactReference, { referencePreflightImpl, cacheGetImpl, cacheSetImpl })
     : null;
 
-  const decorated = ranked.map(item => {
+  const decorated = inspectedItems.map(item => {
     const outcome = inspected.get(candidateKey(item, search));
-    if (!outcome) return item;
-    const measuredQuality = outcome.quality
+    const measuredQuality = outcome?.quality
       ? { ...(item.quality || {}), ...outcome.quality }
       : item.quality;
     let timing = null;
@@ -272,18 +292,25 @@ export async function applyAccuracyPreflight(results = [], search = {}, {
     };
   });
 
-  // A 403/404/410 observed while resolving the real provider source is a delivery failure, not
-  // merely missing quality evidence. Never return that source to Stremio or resurrect it via fail-open.
+  // Only inspected candidates can survive preflight. Previously uninspected rows had no `state`
+  // and were therefore accidentally treated as survivors, which could stop deeper recovery.
   const deliverable = decorated.filter(item => item.accuracyPreflight?.deliveryFailure !== true);
-  const survivors = deliverable.filter(item => item.accuracyPreflight?.state !== 'rejected');
-  if (survivors.length > 0) return prioritizeAccurateSubtitles(survivors, search);
+  const verified = deliverable.filter(item => item.accuracyPreflight?.state === 'valid');
+  if (verified.length > 0) return prioritizeAccurateSubtitles(verified, search);
   if (deliverable.length === 0 && decorated.length > 0) return [];
 
-  // Content-quality rejection still fails open to preserve Arabic availability, but terminally
-  // unreachable sources have already been removed above. Delivery-time quality gates remain active.
-  const failOpen = (deliverable.length ? deliverable : ranked).map(item => ({
+  const softUnavailable = deliverable.filter(item => ['unavailable', 'degraded'].includes(item.accuracyPreflight?.state));
+  if (softUnavailable.length > 0) {
+    return prioritizeAccurateSubtitles(softUnavailable.map(item => ({
+      ...item,
+      accuracyPreflightFallback: 'verification-unavailable',
+    })), search);
+  }
+
+  // Preserve rejected evidence for V5 diagnostics and for the post-preflight recovery decision.
+  // These candidates remain hard-rejected by V5; they are never promoted merely for availability.
+  return prioritizeAccurateSubtitles(deliverable.map(item => ({
     ...item,
     accuracyPreflightFallback: 'all-candidates-rejected',
-  }));
-  return failOpen;
+  })), search);
 }
