@@ -1,0 +1,80 @@
+[
+  {
+    "name": "exact movie identity",
+    "search": { "type": "movie", "imdbId": "tt1234567", "filename": "Movie.2025.1080p.WEB-DL.mkv" },
+    "candidate": { "type": "movie", "imdbId": "tt1234567", "releaseName": "Movie.2025.1080p.WEB-DL" },
+    "hardConflict": false
+  },
+  {
+    "name": "catalog and release year drift is not a work conflict",
+    "search": { "type": "movie", "imdbId": "tt33296751", "year": 2025, "catalogYear": 2026, "filename": "Tuner.2025.BluRay.REMUX-GRP.mkv" },
+    "candidate": { "type": "movie", "imdbId": "tt33296751", "releaseName": "Tuner.2026.WEB-DL.1080p-OTHER" },
+    "hardConflict": false
+  },
+  {
+    "name": "source family drift is not a work conflict",
+    "search": { "type": "movie", "imdbId": "tt1234567", "filename": "Movie.2025.BluRay.REMUX-GRP.mkv" },
+    "candidate": { "type": "movie", "imdbId": "tt1234567", "releaseName": "Movie.2025.WEBRip.x265-OTHER" },
+    "hardConflict": false
+  },
+  {
+    "name": "edition drift is not a work conflict",
+    "search": { "type": "movie", "imdbId": "tt1234567", "filename": "Movie.2025.Theatrical.BluRay.mkv" },
+    "candidate": { "type": "movie", "imdbId": "tt1234567", "releaseName": "Movie.2025.Directors.Cut.BluRay" },
+    "hardConflict": false
+  },
+  {
+    "name": "fps drift is not a work conflict",
+    "search": { "type": "movie", "imdbId": "tt1234567", "filename": "Movie.2025.23.976fps.WEB-DL.mkv", "fps": 23.976 },
+    "candidate": { "type": "movie", "imdbId": "tt1234567", "releaseName": "Movie.2025.25fps.WEB-DL", "fps": 25 },
+    "hardConflict": false
+  },
+  {
+    "name": "different imdb work is rejected",
+    "search": { "type": "movie", "imdbId": "tt1234567", "filename": "Movie.2025.WEB-DL.mkv" },
+    "candidate": { "type": "movie", "imdbId": "tt7654321", "releaseName": "Movie.2025.WEB-DL" },
+    "hardConflict": true
+  },
+  {
+    "name": "different tmdb work is rejected",
+    "search": { "type": "movie", "tmdbId": "100", "filename": "Movie.2025.WEB-DL.mkv" },
+    "candidate": { "type": "movie", "tmdbId": "200", "releaseName": "Movie.2025.WEB-DL" },
+    "hardConflict": true
+  },
+  {
+    "name": "series candidate cannot leak into movie",
+    "search": { "type": "movie", "imdbId": "tt1234567", "filename": "Movie.2025.WEB-DL.mkv" },
+    "candidate": { "type": "series", "imdbId": "tt1234567", "season": 1, "episode": 1, "releaseName": "Movie.S01E01.WEB-DL" },
+    "hardConflict": true
+  },
+  {
+    "name": "correct series episode remains eligible across release families",
+    "search": { "type": "series", "imdbId": "tt0944947", "season": 1, "episode": 2, "filename": "Game.of.Thrones.S01E02.BluRay.mkv" },
+    "candidate": { "type": "series", "imdbId": "tt0944947", "season": 1, "episode": 2, "releaseName": "Game.of.Thrones.S01E02.WEB-DL" },
+    "hardConflict": false
+  },
+  {
+    "name": "wrong series episode is rejected",
+    "search": { "type": "series", "imdbId": "tt0944947", "season": 1, "episode": 2, "filename": "Game.of.Thrones.S01E02.BluRay.mkv" },
+    "candidate": { "type": "series", "imdbId": "tt0944947", "season": 1, "episode": 3, "releaseName": "Game.of.Thrones.S01E03.WEB-DL" },
+    "hardConflict": true
+  },
+  {
+    "name": "wrong series season is rejected",
+    "search": { "type": "series", "imdbId": "tt0944947", "season": 1, "episode": 2, "filename": "Game.of.Thrones.S01E02.BluRay.mkv" },
+    "candidate": { "type": "series", "imdbId": "tt0944947", "season": 2, "episode": 2, "releaseName": "Game.of.Thrones.S02E02.WEB-DL" },
+    "hardConflict": true
+  },
+  {
+    "name": "episode mismatch in release name is rejected even without structured fields",
+    "search": { "type": "series", "imdbId": "tt0944947", "season": 1, "episode": 2, "filename": "Game.of.Thrones.S01E02.BluRay.mkv" },
+    "candidate": { "type": "series", "imdbId": "tt0944947", "releaseName": "Game.of.Thrones.S01E09.WEB-DL" },
+    "hardConflict": true
+  },
+  {
+    "name": "missing release year remains eligible",
+    "search": { "type": "movie", "imdbId": "tt1234567", "year": 2025, "filename": "Movie.2025.WEB-DL.mkv" },
+    "candidate": { "type": "movie", "imdbId": "tt1234567", "releaseName": "Movie.WEB-DL.1080p-GROUP" },
+    "hardConflict": false
+  }
+]

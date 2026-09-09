@@ -62,6 +62,44 @@ function verifiedUsable(results) {
   return usable(results) && hasVerifiedAccuracyCandidate(results);
 }
 
+// Discovery and filtering are separate responsibilities. Core mergeResults intentionally applies
+// normal quality preferences; exhaustive recovery must first preserve every discovered candidate so
+// a last-resort row is not discarded before live preflight and V5 can inspect it.
+export function mergeCandidatePool(...groups) {
+  const output = [];
+  const seen = new Set();
+  for (const group of groups) {
+    for (const item of group || []) {
+      if (!item) continue;
+      const key = item.download || item.url || `${item.provider}:${item.providerId || item.fileId || item.id || ''}`;
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      output.push(item);
+    }
+  }
+  return output;
+}
+
+function logCoverage(coverage, search) {
+  if (!coverage) return;
+  console.info('[coverage]', JSON.stringify({
+    mediaType: search.type || 'movie',
+    catalogId: search.imdbId || search.tmdbId || search.id || null,
+    ...coverage,
+  }));
+}
+
+function outcomeCoverageComplete(outcome = {}) {
+  if (outcome.coverage) return outcome.coverage.status === 'complete';
+  return outcome.cycleStatus === 'complete' || outcome.cycleStatus === 'cached';
+}
+
+function outcomeDegraded(outcome = {}) {
+  return outcome.cycleStatus === 'degraded'
+    || outcome.cycleStatus === 'failed'
+    || (outcome.coverage && outcome.coverage.status !== 'complete');
+}
+
 async function readAvailabilityLkg(search) {
   const specific = [];
   const catalog = [];
@@ -187,19 +225,20 @@ async function searchCore(search) {
   }
 
   // Strict ranking happens before content inspection. If every strict candidate turns out to be
-  // Persian, non-Arabic, malformed or dead, the old resolver stopped here. Deep recovery is
-  // intentionally post-preflight: broaden metadata/title/release/provider search only after live
-  // evidence proves that the current pool is unusable.
+  // Persian, non-Arabic, malformed or dead, exhaustive recovery now searches every eligible
+  // provider and safe identity variant before a zero result can be considered authoritative.
   const recovered = await searchDeepRecoveryCandidates(search);
-  if (!usable(recovered)) return { ...outcome, results: checked };
-  const merged = core.mergeResults(outcome.results, recovered);
+  const coverage = recovered?.coverage || null;
+  logCoverage(coverage, search);
+  if (!usable(recovered)) return { ...outcome, results: checked, coverage, recoveryExpanded: true };
+  const merged = mergeCandidatePool(outcome.results, recovered);
   checked = await applyAccuracyPreflight(merged, search);
-  return { ...outcome, results: checked, recoveryExpanded: true };
+  return { ...outcome, results: checked, coverage, recoveryExpanded: true };
 }
 
 export async function reconcileDegradedAvailability(search, outcome, lkg) {
   const fresh = Array.isArray(outcome?.results) ? outcome.results : [];
-  if (outcome?.cycleStatus !== 'degraded' || !usable(fresh) || !lkg?.hit || !usable(lkg.value)) {
+  if (!outcomeDegraded(outcome) || !usable(fresh) || !lkg?.hit || !usable(lkg.value)) {
     return fresh;
   }
   const merged = core.mergeResults(fresh, lkg.value);
@@ -239,11 +278,11 @@ export async function searchSubtitles(input) {
     const outcome = await runDistributed(search, key);
     const fresh = outcome.results;
     if (verifiedUsable(fresh)) {
-      if (outcome.cycleStatus === 'complete') {
+      if (outcomeCoverageComplete(outcome)) {
         await writeAvailabilityLkg(search, fresh, 'replace');
         return fresh;
       }
-      if (outcome.cycleStatus === 'degraded') {
+      if (outcomeDegraded(outcome)) {
         if (lkg?.hit && usable(lkg.value)) {
           const reconciled = await reconcileDegradedAvailability(search, outcome, lkg);
           if (verifiedUsable(reconciled)) await writeAvailabilityLkg(search, reconciled, 'merge');
