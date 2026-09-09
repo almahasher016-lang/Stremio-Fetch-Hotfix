@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { selectV5Output, v5ModeFromEnvironment } from '../v5/outputPolicy.js';
+import { selectV5FailureFallback, selectV5Output, v5ModeFromEnvironment } from '../v5/outputPolicy.js';
 
 function entry(decision, id) {
   return {
@@ -50,4 +50,18 @@ test('unknown V5 mode is disabled rather than silently weakening strictness', ()
   assert.equal(v5ModeFromEnvironment({ RESOLVER_V5_MODE: 'balanced' }), 'balanced');
   assert.equal(v5ModeFromEnvironment({ RESOLVER_V5_MODE: 'recovery' }), 'recovery');
   assert.equal(v5ModeFromEnvironment({ RESOLVER_V5_MODE: 'anything-else' }), null);
+});
+
+test('V5 failure fallback preserves preflight survivors without leaking rejected or dead candidates', () => {
+  const output = selectV5FailureFallback([
+    { id: 'valid', accuracyPreflight: { state: 'valid' } },
+    { id: 'unavailable', accuracyPreflight: { state: 'unavailable' } },
+    { id: 'rejected', accuracyPreflight: { state: 'rejected' } },
+    { id: 'dead', accuracyPreflight: { state: 'valid', deliveryFailure: true } },
+  ]);
+  assert.deepEqual(output.map(item => item.id), ['valid', 'unavailable']);
+});
+
+test('V5 failure fallback is defensive for invalid input', () => {
+  assert.deepEqual(selectV5FailureFallback(null), []);
 });
