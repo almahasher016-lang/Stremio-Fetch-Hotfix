@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v5.1.2
+# m7md Arabic Resolver v5.1.3
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,10 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 5.1.3
+
+- يحافظ مسار V5 عند تعطل التقييم على نتائج Accuracy Preflight السليمة والمتعذرة مؤقتًا، مع استمرار حجب الترجمات المرفوضة وروابط التسليم الميتة.
 
 ## ما الجديد في 5.1.2
 
@@ -350,4 +354,3 @@ Subtitle-list responses are now client `no-store`, while positive Arabic search 
 ### v4.3.0 Final Arabic availability
 
 A post-preflight, version-independent Redis Last-Known-Good layer now protects the final Arabic list. Accuracy Preflight can still remove a bad candidate when another candidate survives, but it cannot turn a non-empty Arabic provider result into an empty Stremio list. Hard-rejection decisions are release-versioned and expire quickly, preventing stale false rejections from surviving deploys.
-
