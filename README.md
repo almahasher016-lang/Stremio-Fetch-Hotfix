@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v5.1.1
+# m7md Arabic Resolver v5.1.2
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,14 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 5.1.2
+
+- تشديد **Identity Authority** بعد أن كشف Smoke الإنتاج نتيجة `Supergirl.2026` داخل طلب `Spider-Man: Brand New Day 2026`.
+- لم يعد وصول المرشح من مرحلة `exact-metadata` كافيًا لإثبات هوية الفيلم إذا لم يُعد المزود IMDb/TMDb/Hash مطابقًا داخل النتيجة.
+- إضافة مطابقة مستقلة لعنوان العمل قبل السنة والوسوم التقنية؛ `WEB-DL/1080p/2026` لم تعد قادرة على رفع ثقة فيلم مختلف.
+- إبقاء المطابقة المرنة للعناوين الصحيحة ذات البادئات، مثل `Lee Cronin's The Mummy` مقابل `The Mummy`.
+- إضافة اختبارات انحدار تمنع Cross-Title leakage وتحافظ على التطابق الصحيح ورفض Catalog ID الخاطئ.
 
 ## ما الجديد في 5.1.1
 
