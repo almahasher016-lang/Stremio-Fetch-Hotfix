@@ -1,3 +1,4 @@
+import { availabilityTier } from '../services/coverageEngine.js';
 import { PROOF_DECISION } from './proofEngine.js';
 
 const MODE = Object.freeze({
@@ -54,6 +55,7 @@ export function selectV5Output(evaluated = [], { mode = MODE.STRICT, maxResults 
   }
   return selected.map(entry => ({
     ...entry.item,
+    availabilityTier: availabilityTier(entry.item, entry.proof?.decision),
     v5Proof: entry.proof,
     v5Evidence: entry.evidence,
     ...(availabilityRescue ? { v5AvailabilityRescue: true } : {}),
