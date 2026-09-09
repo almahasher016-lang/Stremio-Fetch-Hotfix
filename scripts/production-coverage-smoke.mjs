@@ -15,6 +15,7 @@ const cases = [
   {
     name: 'Game of Thrones S01E01 catalog episode',
     path: '/subtitles/series/tt0944947:1:1.json',
+    forbidden: [/frozen[ ._-]*planet/i],
   },
 ];
 
@@ -31,16 +32,20 @@ async function fetchCase(item) {
   try {
     const response = await fetch(`${baseUrl}${item.path}`, {
       signal: controller.signal,
-      headers: { 'user-agent': 'm7md-production-coverage-smoke/1.0' },
+      headers: { 'user-agent': 'm7md-production-coverage-smoke/1.1' },
     });
     const body = await response.json().catch(() => ({}));
     const subtitles = Array.isArray(body?.subtitles) ? body.subtitles : [];
+    const pollutedRows = subtitles.filter(row => (item.forbidden || [])
+      .some(pattern => pattern.test(JSON.stringify(row))));
     return {
-      ok: response.ok && subtitles.length > 0,
+      ok: response.ok && subtitles.length > 0 && pollutedRows.length === 0,
       status: response.status,
       count: subtitles.length,
+      pollutedCount: pollutedRows.length,
       tiers: [...new Set(subtitles.map(row => row?.availabilityTier).filter(Boolean))],
-      names: subtitles.slice(0, 3).map(row => row?.name || row?.id || 'unnamed'),
+      names: subtitles.slice(0, 5).map(row => row?.name || row?.releaseName || row?.id || 'unnamed'),
+      pollutedNames: pollutedRows.map(row => row?.name || row?.releaseName || row?.id || 'unnamed'),
     };
   } finally {
     clearTimeout(timer);
@@ -55,7 +60,7 @@ for (let attempt = 1; attempt <= attempts; attempt += 1) {
       const result = await fetchCase(item);
       last.push({ name: item.name, ...result });
     } catch (error) {
-      last.push({ name: item.name, ok: false, status: 0, count: 0, error: error?.message || String(error) });
+      last.push({ name: item.name, ok: false, status: 0, count: 0, pollutedCount: 0, error: error?.message || String(error) });
     }
   }
 
@@ -64,5 +69,5 @@ for (let attempt = 1; attempt <= attempts; attempt += 1) {
   if (attempt < attempts) await sleep(retryMs);
 }
 
-console.error('Production coverage smoke failed: at least one known-Arabic title returned no usable subtitle.');
+console.error('Production coverage smoke failed: a known-Arabic title returned no usable subtitle or leaked a forbidden wrong-series result.');
 process.exit(1);
