@@ -1,3 +1,9 @@
+## 5.1.8 - 2026-09-09
+
+- Stop combining authoritative IMDb/TMDb identifiers with a provider year constraint that can differ between festival and commercial releases.
+- Preserve year-qualified strict title searches, then remove the year only during identity-gated deep recovery.
+- Add regressions for strict and relaxed SubDL year handling, shaped by the zero-result Tuner case.
+
 ## 5.1.7 - 2026-09-09
 
 - Apply relative completeness filtering before every V5 output mode, including SAFE and CERTIFIED selections.
