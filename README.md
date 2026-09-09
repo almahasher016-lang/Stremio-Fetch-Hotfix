@@ -1,4 +1,4 @@
-# m7md Arabic Resolver v5.1.3
+# m7md Arabic Resolver v5.1.4
 
 إضافة Stremio شخصية لجلب الترجمات العربية وفحصها وتحويلها إلى SRT بدون ذكاء اصطناعي.
 
@@ -9,6 +9,11 @@
 <https://pleasing-gentleness-production.up.railway.app/manifest.json>
 
 معرّف الإضافة ثابت. بعد نشر Railway أغلق Stremio وافتحه مجددًا ليعيد قراءة Manifest.
+
+## ما الجديد في 5.1.4
+
+- إثراء طلب Stremio بعنوان العمل وسنته قبل تقييم V5 حتى لا تُحجب الترجمات الصحيحة عند وصول معرّف IMDb فقط.
+- إنقاذ أفضل مرشح `RECOVERY` واحد في وضع `balanced` عندما لا توجد نتيجة `SAFE` أو `CERTIFIED`، مع استمرار حجب `WITHHOLD` و`REJECT`.
 
 ## ما الجديد في 5.1.3
 
