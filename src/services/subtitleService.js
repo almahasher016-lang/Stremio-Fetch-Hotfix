@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { acquireRefreshLock, cacheGetEntry, cacheSet, releaseRefreshLock } from '../cache/redis.js';
 import { applyAccuracyPreflight, hasVerifiedAccuracyCandidate } from './accuracyPreflight.js';
 import { searchDeepRecoveryCandidates } from './deepRecoveryService.js';
+import { resolveMetadata } from './metadataResolver.js';
 import * as core from './subtitleServiceCore.js';
 import { buildVideoIdentity } from '../utils/videoIdentity.js';
 import { runV5Shadow } from '../v5/shadowResolver.js';
@@ -223,8 +224,10 @@ async function runDistributed(search, key) {
   }
 }
 
-export async function searchSubtitles(search) {
-  search = buildVideoIdentity(search);
+export async function searchSubtitles(input) {
+  // V5 must judge the same canonical title/year identity used by the provider search. Stremio often
+  // sends only an IMDb id; without metadata enrichment valid provider rows look identity-unknown.
+  const search = await resolveMetadata(buildVideoIdentity(input));
   const lkg = await readAvailabilityLkg(search);
   // Final LKG exists to preserve verified Arabic availability when providers fail. It must not
   // short-circuit normal ranking, otherwise an older acceptable list can hide a newly exact result.

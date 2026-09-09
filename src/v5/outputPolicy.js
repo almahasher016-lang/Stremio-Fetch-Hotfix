@@ -19,11 +19,20 @@ function allowedDecisions(mode) {
 export function selectV5Output(evaluated = [], { mode = MODE.STRICT, maxResults = 10 } = {}) {
   const allowed = allowedDecisions(mode);
   const limit = Math.max(0, Math.min(50, Number(maxResults) || 0));
-  const selected = evaluated.filter(entry => allowed.has(entry?.proof?.decision)).slice(0, limit);
+  let selected = evaluated.filter(entry => allowed.has(entry?.proof?.decision)).slice(0, limit);
+  let availabilityRescue = false;
+  if (mode === MODE.BALANCED && limit > 0 && selected.length === 0) {
+    // Preserve availability without weakening the normal balanced result set: rescue only the
+    // highest-ranked RECOVERY candidate, never WITHHOLD or REJECT. RECOVERY already requires
+    // strong identity, proven Arabic, fresh delivery and valid subtitle integrity.
+    selected = evaluated.filter(entry => entry?.proof?.decision === PROOF_DECISION.RECOVERY).slice(0, 1);
+    availabilityRescue = selected.length > 0;
+  }
   return selected.map(entry => ({
     ...entry.item,
     v5Proof: entry.proof,
     v5Evidence: entry.evidence,
+    ...(availabilityRescue ? { v5AvailabilityRescue: true } : {}),
   }));
 }
 

@@ -34,6 +34,25 @@ test('V5 balanced mode permits safe but never recovery, withhold or reject', () 
   assert.deepEqual(output.map(item => item.id), ['a', 'b']);
 });
 
+test('V5 balanced mode rescues only the best recovery candidate when safe output is empty', () => {
+  const output = selectV5Output([
+    entry('recovery', 'best-recovery'),
+    entry('recovery', 'second-recovery'),
+    entry('withhold', 'withheld'),
+    entry('reject', 'rejected'),
+  ], { mode: 'balanced', maxResults: 10 });
+  assert.deepEqual(output.map(item => item.id), ['best-recovery']);
+  assert.equal(output[0].v5AvailabilityRescue, true);
+});
+
+test('V5 balanced mode never rescues withhold or reject candidates', () => {
+  const output = selectV5Output([
+    entry('withhold', 'withheld'),
+    entry('reject', 'rejected'),
+  ], { mode: 'balanced', maxResults: 10 });
+  assert.deepEqual(output, []);
+});
+
 test('V5 recovery mode remains bounded and never emits withhold or reject', () => {
   const output = selectV5Output([
     entry('certified', 'a'),
