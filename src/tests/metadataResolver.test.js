@@ -85,6 +85,48 @@ test('concurrent metadata lookups share one fetch without sharing request identi
   assert.equal(exactRelease.filename, exactFilename);
 });
 
+test('catalog year never overrides the playback release year', async () => {
+  clearMetadataCache();
+  const resolved = await resolveMetadata({
+    type: 'movie',
+    id: 'tt33296751',
+    filename: 'Tuner.2025.BluRay.1080p.TrueHD.Atmos.7.1.AVC.REMUX-FraMeSToR.mkv',
+  }, {
+    fetchJsonImpl: async () => ({
+      meta: {
+        id: 'tt33296751',
+        imdb_id: 'tt33296751',
+        name: 'Tuner',
+        year: 2026,
+      },
+    }),
+  });
+
+  assert.equal(resolved.year, 2025);
+  assert.equal(resolved.catalogYear, 2026);
+  assert.equal(resolved.parsedRelease.year, 2025);
+});
+
+test('catalog year is used when playback has no release year', async () => {
+  clearMetadataCache();
+  const resolved = await resolveMetadata({
+    type: 'movie',
+    id: 'tt33296751',
+  }, {
+    fetchJsonImpl: async () => ({
+      meta: {
+        id: 'tt33296751',
+        imdb_id: 'tt33296751',
+        name: 'Tuner',
+        year: 2026,
+      },
+    }),
+  });
+
+  assert.equal(resolved.year, 2026);
+  assert.equal(resolved.catalogYear, 2026);
+});
+
 test('cached series metadata resolves each requested episode independently', async () => {
   clearMetadataCache();
   let calls = 0;
