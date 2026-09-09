@@ -1,0 +1,48 @@
+name: v512-release-sync-temp
+on:
+  push:
+    branches:
+      - fix/v5.1.2-identity-authority
+    paths:
+      - .github/workflows/v512-release-sync-temp.yml
+permissions:
+  contents: write
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          ref: fix/v5.1.2-identity-authority
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 24.18.0
+      - run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - name: Sync README and changelog
+        shell: python
+        run: |
+          from pathlib import Path
+
+          readme = Path('README.md')
+          text = readme.read_text()
+          text = text.replace('# m7md Arabic Resolver v5.1.1', '# m7md Arabic Resolver v5.1.2', 1)
+          marker = '## ما الجديد في 5.1.1'
+          section = '''## ما الجديد في 5.1.2\n\n- تشديد **Identity Authority** بعد أن كشف Smoke الإنتاج نتيجة `Supergirl.2026` داخل طلب `Spider-Man: Brand New Day 2026`.\n- لم يعد وصول المرشح من مرحلة `exact-metadata` كافيًا لإثبات هوية الفيلم إذا لم يُعد المزود IMDb/TMDb/Hash مطابقًا داخل النتيجة.\n- إضافة مطابقة مستقلة لعنوان العمل قبل السنة والوسوم التقنية؛ `WEB-DL/1080p/2026` لم تعد قادرة على رفع ثقة فيلم مختلف.\n- إبقاء المطابقة المرنة للعناوين الصحيحة ذات البادئات، مثل `Lee Cronin's The Mummy` مقابل `The Mummy`.\n- إضافة اختبارات انحدار تمنع Cross-Title leakage وتحافظ على التطابق الصحيح ورفض Catalog ID الخاطئ.\n\n'''
+          if marker in text and '## ما الجديد في 5.1.2' not in text:
+              text = text.replace(marker, section + marker, 1)
+          readme.write_text(text)
+
+          changelog = Path('CHANGELOG.md')
+          text = changelog.read_text()
+          section = '''## 5.1.2 - 2026-09-09\n\n- Harden V5 identity authority after production smoke exposed a cross-title `Supergirl.2026` result for `Spider-Man: Brand New Day 2026`.\n- Require strong work-title agreement before exact-metadata provenance can stand in for a provider row that does not echo IMDb/TMDb/hash identity.\n- Separate work-title matching from technical release-family similarity so year/source/resolution cannot promote the wrong movie.\n- Preserve creator-prefixed/canonical-title compatibility while keeping explicit catalog mismatches as hard rejects.\n- Add regressions for cross-title leakage, correct metadata fallback, creator-prefixed titles, and explicit wrong catalog IDs.\n\n'''
+          if not text.startswith('## 5.1.2 - 2026-09-09'):
+              text = section + text
+          changelog.write_text(text)
+      - name: Commit synchronized release files
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package-lock.json README.md CHANGELOG.md
+          git diff --cached --quiet && exit 0
+          git commit -m "chore(release): synchronize v5.1.2 metadata"
+          git push origin HEAD:fix/v5.1.2-identity-authority
