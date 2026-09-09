@@ -56,6 +56,15 @@ test('V5 balanced rescue drops a short partial subtitle when full-length alterna
   assert.deepEqual(output.map(item => item.id), ['full-film-a', 'full-film-b']);
 });
 
+test('V5 balanced output drops a safe partial subtitle when a full safe subtitle exists', () => {
+  const output = selectV5Output([
+    entry('safe', 'full-film', 2195),
+    entry('safe', 'special-look', 55),
+    entry('recovery', 'full-recovery', 2124),
+  ], { mode: 'balanced', maxResults: 10 });
+  assert.deepEqual(output.map(item => item.id), ['full-film']);
+});
+
 test('V5 balanced rescue preserves genuinely short works when no full-length alternative exists', () => {
   const output = selectV5Output([
     entry('recovery', 'short-work-a', 55),
