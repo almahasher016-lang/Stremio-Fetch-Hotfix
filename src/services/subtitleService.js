@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { config } from '../config.js';
 import { acquireRefreshLock, cacheGetEntry, cacheSet, releaseRefreshLock } from '../cache/redis.js';
-import { applyAccuracyPreflight } from './accuracyPreflight.js';
+import { applyAccuracyPreflight, hasVerifiedAccuracyCandidate } from './accuracyPreflight.js';
+import { searchDeepRecoveryCandidates } from './deepRecoveryService.js';
 import * as core from './subtitleServiceCore.js';
 import { buildVideoIdentity } from '../utils/videoIdentity.js';
 import { runV5Shadow } from '../v5/shadowResolver.js';
@@ -56,6 +57,10 @@ function usable(results) {
   return Array.isArray(results) && results.length > 0;
 }
 
+function verifiedUsable(results) {
+  return usable(results) && hasVerifiedAccuracyCandidate(results);
+}
+
 async function readAvailabilityLkg(search) {
   const specific = [];
   const catalog = [];
@@ -79,14 +84,17 @@ async function readAvailabilityLkg(search) {
 }
 
 async function writeAvailabilityLkg(search, results, mode = 'merge') {
-  if (!usable(results)) return;
+  // The Final LKG is a verified availability cache, not a candidate cache. Never persist rows that
+  // merely exist: at least one subtitle must have passed a live Accuracy Preflight as valid.
+  if (!verifiedUsable(results)) return;
+  const verifiedResults = results.filter(item => item?.accuracyPreflight?.state === 'valid');
   const writes = availabilityKeySpecs(search).map(async spec => {
     const current = await cacheGetEntry(spec.key, { allowStale: true, preferShared: true });
     const preserved = mode === 'replace'
-      ? core.preserveAccurateCandidates(search, results)
+      ? core.preserveAccurateCandidates(search, verifiedResults)
       : (current?.hit && usable(current.value)
-        ? core.preserveAccurateCandidates(search, results, current.value)
-        : core.preserveAccurateCandidates(search, results));
+        ? core.preserveAccurateCandidates(search, verifiedResults, current.value)
+        : core.preserveAccurateCandidates(search, verifiedResults));
     if (!usable(preserved)) return;
     await cacheSet(
       spec.key,
@@ -102,8 +110,6 @@ export async function revalidateAvailabilityLkg(search, lkg, { preflight = apply
   if (!lkg?.hit || !usable(lkg.value)) return [];
   // LKG preserves candidate identity, not delivery/integrity truth. Remote links and archives can
   // change after caching, so every fallback must be freshly preflighted before V5 can judge it.
-  // This prevents a provider outage from turning previously valid cached candidates into false
-  // integrity:invalid-subtitle / delivery:unverified rejects merely because proof metadata is stale.
   const checked = await preflight(lkg.value, search);
   return Array.isArray(checked) ? checked : [];
 }
@@ -172,7 +178,20 @@ function applyV5Policy(results, search) {
 
 async function searchCore(search) {
   const outcome = await core.searchSubtitlesWithStatus(search);
-  return { ...outcome, results: await applyAccuracyPreflight(outcome.results, search) };
+  let checked = await applyAccuracyPreflight(outcome.results, search);
+  if (!config.resolver.recoveryEnabled || hasVerifiedAccuracyCandidate(checked)) {
+    return { ...outcome, results: checked };
+  }
+
+  // Strict ranking happens before content inspection. If every strict candidate turns out to be
+  // Persian, non-Arabic, malformed or dead, the old resolver stopped here. Deep recovery is
+  // intentionally post-preflight: broaden metadata/title/release/provider search only after live
+  // evidence proves that the current pool is unusable.
+  const recovered = await searchDeepRecoveryCandidates(search);
+  if (!usable(recovered)) return { ...outcome, results: checked };
+  const merged = core.mergeResults(outcome.results, recovered);
+  checked = await applyAccuracyPreflight(merged, search);
+  return { ...outcome, results: checked, recoveryExpanded: true };
 }
 
 export async function reconcileDegradedAvailability(search, outcome, lkg) {
@@ -180,7 +199,7 @@ export async function reconcileDegradedAvailability(search, outcome, lkg) {
   if (outcome?.cycleStatus !== 'degraded' || !usable(fresh) || !lkg?.hit || !usable(lkg.value)) {
     return fresh;
   }
-  const merged = core.preserveAccurateCandidates(search, fresh, lkg.value);
+  const merged = core.mergeResults(fresh, lkg.value);
   return applyAccuracyPreflight(merged, search);
 }
 
@@ -205,9 +224,8 @@ async function runDistributed(search, key) {
 export async function searchSubtitles(search) {
   search = buildVideoIdentity(search);
   const lkg = await readAvailabilityLkg(search);
-  // Final LKG exists to preserve Arabic availability when providers fail. It must not short-circuit
-  // normal ranking, otherwise an older merely-acceptable list can hide a newly available exact or
-  // timing-compatible subtitle. The version-scoped search cache remains the normal fast path.
+  // Final LKG exists to preserve verified Arabic availability when providers fail. It must not
+  // short-circuit normal ranking, otherwise an older acceptable list can hide a newly exact result.
 
   const key = singleflightKey(search);
   const existing = inFlight.get(key);
@@ -215,7 +233,7 @@ export async function searchSubtitles(search) {
   const pending = (async () => {
     const outcome = await runDistributed(search, key);
     const fresh = outcome.results;
-    if (usable(fresh)) {
+    if (verifiedUsable(fresh)) {
       if (outcome.cycleStatus === 'complete') {
         await writeAvailabilityLkg(search, fresh, 'replace');
         return fresh;
@@ -223,7 +241,7 @@ export async function searchSubtitles(search) {
       if (outcome.cycleStatus === 'degraded') {
         if (lkg?.hit && usable(lkg.value)) {
           const reconciled = await reconcileDegradedAvailability(search, outcome, lkg);
-          await writeAvailabilityLkg(search, reconciled, 'merge');
+          if (verifiedUsable(reconciled)) await writeAvailabilityLkg(search, reconciled, 'merge');
           return reconciled;
         }
         // A degraded first-ever search is useful for the current request, but it is not
@@ -232,9 +250,10 @@ export async function searchSubtitles(search) {
       }
       return fresh;
     }
+
     if (lkg?.hit && usable(lkg.value)) {
       const revalidated = await revalidateAvailabilityLkg(search, lkg);
-      if (usable(revalidated)) {
+      if (verifiedUsable(revalidated)) {
         await writeAvailabilityLkg(search, revalidated, 'replace');
         return revalidated;
       }

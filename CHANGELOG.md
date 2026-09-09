@@ -1,3 +1,13 @@
+## 5.1.1 - 2026-09-09
+
+- Add post-preflight deep recovery so mislabeled/non-Arabic/Persian/broken first candidates trigger a broader provider search instead of terminating recovery early.
+- Paginate OpenSubtitles safely across advertised pages with bounded deduplication and `MAX_PROVIDER_ITEMS` enforcement.
+- Make Accuracy Preflight adaptive across candidate batches and never treat uninspected rows as survivors.
+- Keep multiple same-release candidates through deep recovery until content inspection identifies the actually valid Arabic file.
+- Persist only live-verified valid candidates into Final LKG and revalidate fallback availability before reuse.
+- Treat movie-specific YIFY 404/410 as authoritative empty results instead of provider outages or stale-LKG triggers.
+- Add regressions for deep candidate inspection, OpenSubtitles pagination, YIFY not-found handling, and uninspected-candidate leakage.
+
 ## 5.1.0 - 2026-09-08
 
 - Add Universal Video Identity + Timeline Matcher with format-agnostic container and release normalization.

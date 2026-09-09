@@ -2,6 +2,8 @@ import { config } from '../config.js';
 import { fetchJson } from '../utils/http.js';
 import { isArabicLanguage, isEnglishLanguage, normalizeStremioLanguage, providerLanguageParam } from '../utils/language.js';
 
+const MAX_SEARCH_PAGES = 5;
+
 function osHeaders(extra = {}) {
   const headers = {
     'Api-Key': config.openSubtitles.apiKey,
@@ -19,6 +21,23 @@ function cleanImdb(value) {
 
 function addParam(params, key, value) {
   if (value !== undefined && value !== null && value !== '') params.set(key, String(value));
+}
+
+function responseTotalPages(payload = {}, currentPage = 1) {
+  const raw = payload.total_pages
+    ?? payload.totalPages
+    ?? payload.pagination?.total_pages
+    ?? payload.pagination?.totalPages
+    ?? payload.meta?.total_pages
+    ?? payload.meta?.totalPages
+    ?? currentPage;
+  const total = Number(raw);
+  if (!Number.isFinite(total) || total < 1) return currentPage;
+  return Math.max(currentPage, Math.floor(total));
+}
+
+function candidateKey(item = {}) {
+  return String(item.fileId || item.providerId || item.id || item.download || '');
 }
 
 export function normalizeOpenSubtitlesItem(item, expectedLanguage = 'ar', variant = {}) {
@@ -66,7 +85,7 @@ export function normalizeOpenSubtitlesItem(item, expectedLanguage = 'ar', varian
   };
 }
 
-export function buildOpenSubtitlesRequest(variant) {
+export function buildOpenSubtitlesRequest(variant, { page = 1 } = {}) {
   const params = new URLSearchParams();
   const expectedLanguage = isEnglishLanguage(variant.language) ? 'en' : 'ar';
   addParam(params, 'languages', providerLanguageParam(expectedLanguage, 'opensubtitles'));
@@ -80,6 +99,7 @@ export function buildOpenSubtitlesRequest(variant) {
   addParam(params, 'episode_number', variant.episode);
   addParam(params, 'moviehash', variant.videoHash || variant.hash);
   addParam(params, 'moviebytesize', variant.videoSize);
+  addParam(params, 'page', Math.max(1, Math.floor(Number(page) || 1)));
   addParam(
     params,
     'hearing_impaired',
@@ -104,13 +124,31 @@ export function parseOpenSubtitlesResponse(payload, expectedLanguage = 'ar', var
 
 export async function searchOpenSubtitles(variant, { fetchJsonImpl = fetchJson } = {}) {
   if (!config.openSubtitles.apiKey) return [];
-  const request = buildOpenSubtitlesRequest(variant);
-  const json = await fetchJsonImpl(request.url, {
-    headers: request.headers,
-    signal: variant.signal,
-    trustedOrigin: config.openSubtitles.baseUrl,
-  });
-  return parseOpenSubtitlesResponse(json, request.expectedLanguage, variant);
+  const maxItems = Math.max(1, Number(config.providers.maxProviderItems) || 1);
+  const output = [];
+  const seen = new Set();
+  let page = 1;
+  let totalPages = 1;
+
+  do {
+    const request = buildOpenSubtitlesRequest(variant, { page });
+    const json = await fetchJsonImpl(request.url, {
+      headers: request.headers,
+      signal: variant.signal,
+      trustedOrigin: config.openSubtitles.baseUrl,
+    });
+    totalPages = Math.min(MAX_SEARCH_PAGES, responseTotalPages(json, page));
+    for (const item of parseOpenSubtitlesResponse(json, request.expectedLanguage, variant)) {
+      const key = candidateKey(item);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      output.push(item);
+      if (output.length >= maxItems) break;
+    }
+    page += 1;
+  } while (output.length < maxItems && page <= totalPages && page <= MAX_SEARCH_PAGES);
+
+  return output.slice(0, maxItems);
 }
 
 export function buildOpenSubtitlesDownloadBody(fileId, { subFormat = 'srt' } = {}) {
