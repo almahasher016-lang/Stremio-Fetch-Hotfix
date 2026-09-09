@@ -121,6 +121,13 @@ async function storeLastKnownGood(imdbId, rows, cacheSetImpl) {
   }
 }
 
+function statusCode(error) {
+  const direct = Number(error?.statusCode || error?.status || 0);
+  if (direct) return direct;
+  const match = String(error?.message || '').match(/HTTP\s+(\d{3})/i);
+  return Number(match?.[1] || 0);
+}
+
 export async function searchYify(variant, {
   fetchTextImpl = fetchText,
   cacheGetEntryImpl = cacheGetEntry,
@@ -163,6 +170,13 @@ export async function searchYify(variant, {
       }
     } catch (error) {
       if (variant.signal?.aborted || error?.name === 'AbortError') throw error;
+      // A movie-specific 404/410 means YIFY has no page for this title. It is an authoritative
+      // empty result, not a provider outage, and must not trip retries/circuit breakers or revive
+      // stale LKG rows for a title that is currently absent upstream.
+      if ([404, 410].includes(statusCode(error))) {
+        anySuccessfulFetch = true;
+        return [];
+      }
       lastError = error;
     }
   }
