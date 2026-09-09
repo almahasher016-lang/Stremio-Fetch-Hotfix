@@ -1,3 +1,11 @@
+## 5.1.2 - 2026-09-09
+
+- Harden V5 identity authority after production smoke exposed a cross-title `Supergirl.2026` result for `Spider-Man: Brand New Day 2026`.
+- Require strong work-title agreement before exact-metadata provenance can stand in for a provider row that does not echo IMDb/TMDb/hash identity.
+- Separate work-title matching from technical release-family similarity so year/source/resolution cannot promote the wrong movie.
+- Preserve creator-prefixed/canonical-title compatibility while keeping explicit catalog mismatches as hard rejects.
+- Add regressions for cross-title leakage, correct metadata fallback, creator-prefixed titles, and explicit wrong catalog IDs.
+
 ## 5.1.1 - 2026-09-09
 
 - Add post-preflight deep recovery so mislabeled/non-Arabic/Persian/broken first candidates trigger a broader provider search instead of terminating recovery early.
