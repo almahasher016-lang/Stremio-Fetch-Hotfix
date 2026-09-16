@@ -1,3 +1,10 @@
+## 5.2.1 - 2026-09-16
+
+- Discover BluRay subtitles by full playback filename through guarded SubDL v2 search with v1 fallback (#84).
+- Hash candidate IDs before V5 production logging to prevent leaking credential-bearing identifiers (#85). Rotate the previously exposed SubDL key separately.
+- Synchronize published Stremio version and package/release metadata; keep the add-on ID stable.
+- Issue #82 remains open: no verified timing match for the reproduced BluRay releases.
+
 ## 5.2.0 - 2026-09-16
 
 - Preserve successful SubDL candidates across later search failures and carry provider-returned catalog identity into unpacked episodes.
