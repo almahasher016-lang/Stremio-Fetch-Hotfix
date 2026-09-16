@@ -1,3 +1,10 @@
+## 5.2.2 - 2026-09-16
+
+- Require actual exact-hash-reference aligned cue measurements and numeric residual bounds before V5 CERTIFIED/SAFE; metadata/consensus alone remain RECOVERY or WITHHOLD.
+- Continue bounded timing discovery past source-family/hash hints and clearly label every unverified subtitle.
+- Distinguish Arabic coverage from release verification in V5 summary and preserve three actual BluRay incidents as regression fixtures.
+- Preserve installed add-on ID. Issue #82 remains OPEN until actual playback timing is verified.
+
 ## 5.2.1 - 2026-09-16
 
 - Discover BluRay subtitles by full playback filename through guarded SubDL v2 search with v1 fallback (#84).
