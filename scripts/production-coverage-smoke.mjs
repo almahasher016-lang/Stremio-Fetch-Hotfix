@@ -10,6 +10,14 @@ const cases = [
     path: '/subtitles/movie/tt33296751/filename=Tuner.2025.BluRay.1080p.TrueHD.Atmos.7.1.AVC.REMUX-FraMeSToR.mkv&videoSize=27543009236&videoHash=e9893332dc323e8d.json',
   },
   {
+    name: 'House of the Dragon S02E02 HYPERION BluRay playback',
+    path: '/subtitles/series/tt11198330:2:2/filename=House.of.the.Dragon.S02E02.MULTI.VFI.2160p.UHD.BluRay.Remux.DV.HDR.TrueHD.Atmos.7.1.HEVC-HYPERION.mkv&videoSize=37943411040&videoHash=f7c275740ef40e95.json',
+  },
+  {
+    name: 'House of the Dragon S02E02 FraMeSToR-KiNGSMAN BluRay playback',
+    path: '/subtitles/series/tt11198330:2:2/filename=House.of.the.Dragon.S02E02.2160p.UHD.BluRay.REMUX.DV.HDR.HEVC-FraMeSToR-KiNGSMAN.mkv&videoSize=37559489003&videoHash=cff4ef4781b1412a.json',
+  },
+  {
     name: 'The Shawshank Redemption catalog movie',
     path: '/subtitles/movie/tt0111161.json',
   },
@@ -56,12 +64,17 @@ async function fetchDeploymentIdentity() {
 async function fetchCase(item) {
   const { response, body } = await fetchJson(item.path);
   const subtitles = Array.isArray(body?.subtitles) ? body.subtitles : [];
+  const names = subtitles.map(row => String(row?.name || row?.id || 'unnamed'));
+  // Availability is NOT a synchronization claim. Release/timing proof requires examining
+  // the corresponding V5 decision and evidence in Railway's runtime logs.
   return {
     ok: response.ok && subtitles.length > 0,
     status: response.status,
     count: subtitles.length,
     tiers: [...new Set(subtitles.map(row => row?.availabilityTier).filter(Boolean))],
-    names: subtitles.slice(0, 3).map(row => row?.name || row?.id || 'unnamed'),
+    namedCertifiedOrSafeCount: names.filter(name => /V5 (?:Certified|Safe)/.test(name)).length,
+    recoveryBadgeCount: names.filter(name => /V5 Recovery/.test(name)).length,
+    names: names.slice(0, 3),
   };
 }
 
@@ -108,6 +121,8 @@ for (let attempt = 1; attempt <= attempts; attempt += 1) {
     baseUrl,
     expectedCommit: expectedCommit || null,
     deployment: lastDeployment,
+    coverageOnly: true,
+    warning: 'Nonempty subtitle responses do not prove matching BluRay release or synchronized timing; inspect V5 runtime proof.',
     results: last,
   }, null, 2));
   if (last.every(result => result.ok)) process.exit(0);
