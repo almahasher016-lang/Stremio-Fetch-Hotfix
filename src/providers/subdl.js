@@ -144,6 +144,11 @@ export function buildSubdlParams(variant, expectedLanguage, mode = 'full', confi
     const safeFileName = sanitizeForSubdl(variant.filename, { maxLength: 200 });
     if (safeFileName) addParam(params, 'file_name', safeFileName);
     else addParam(params, 'film_name', titleFromRelease(variant.query || variant.filename || variant.imdbId || variant.tmdbId));
+  } else if (mode === 'query' && variant.reason === 'coverage-source-family' && variant.query) {
+    // Search the requested distribution as a filename. A film_name search strips BluRay/WEB
+    // tokens and variant.title takes precedence over variant.query, otherwise making this
+    // recovery stage indistinguishable from a generic title search.
+    addParam(params, 'file_name', sanitizeForSubdl(variant.query, { maxLength: 200 }));
   } else {
     addParam(params, 'film_name', titleFromRelease(variant.title || variant.query || variant.filename));
   }
