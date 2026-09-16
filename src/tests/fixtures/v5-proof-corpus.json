@@ -76,7 +76,7 @@
         "releaseMatchTier": 5,
         "quality": { "valid": true, "cueCount": 800, "coverageRatio": 0.98, "arabicRatio": 0.94, "detectedLanguage": "arabic", "arabicWordHits": 450, "persianWordHits": 0, "persianDistinctiveRatio": 0, "fingerprint": { "hash": "exact-episode", "points": [], "durationMs": 3600000 } },
         "accuracyPreflight": { "state": "valid", "checkedAt": 1800000000000 },
-        "actualTimingEvidence": { "measured": true, "exactVideoHash": true, "verdict": "aligned" }
+        "actualTimingEvidence": { "measured": true, "exactVideoHash": true, "verdict": "aligned", "offsetMs": 100, "residualMedianMs": 100, "residualP90Ms": 180, "anchorCoverage": 0.9 }
       }
     ],
     "expected": ["certified"]
