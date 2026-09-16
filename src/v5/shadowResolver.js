@@ -1,9 +1,18 @@
+import { createHash } from 'node:crypto';
 import { buildCandidateEvidence } from './candidateEvidence.js';
 import { buildTimelineConsensus } from './consensusEngine.js';
 import { evaluateSubtitleProof, rankByProof } from './proofEngine.js';
 
 function stableCandidateId(item = {}, index = 0) {
   return String(item.providerId || item.fileId || item.id || `${item.provider || 'candidate'}:${index}`);
+}
+
+// Candidate IDs are opaque upstream data. Some legacy providers use authenticated URLs
+// as IDs when the upstream omits a numeric file ID. Never print those raw values, even
+// when they originate in an older cached entry. Preserve deterministic correlation only.
+function telemetryCandidateId(value) {
+  if (value == null || value === '') return null;
+  return `sha256:${createHash('sha256').update(String(value)).digest('hex').slice(0, 24)}`;
 }
 
 export function evaluateV5Candidates(results = [], search = {}, { now = Date.now() } = {}) {
@@ -66,7 +75,7 @@ export function summarizeV5Evaluation(evaluated = []) {
     const item = entry?.item || {};
     const quality = item.accuracyPreflight?.quality || item.quality || {};
     return {
-      candidateId: entry?.candidateId || null,
+      candidateId: telemetryCandidateId(entry?.candidateId),
       provider: item.originalProvider || item.provider || null,
       decision: entry?.proof?.decision || null,
       preflightState: item.accuracyPreflight?.state || null,
@@ -85,13 +94,13 @@ export function summarizeV5Evaluation(evaluated = []) {
     total: evaluated.length,
     counts,
     topDecision: v5Top?.proof?.decision || null,
-    topCandidateId: v5Top?.candidateId || null,
+    topCandidateId: telemetryCandidateId(v5Top?.candidateId),
     topProofFloor: v5Top?.proof?.proofFloor ?? null,
     topConfidence: v5Top?.proof?.confidence || null,
     topHardFailures: v5Top?.proof?.hardFailures || [],
     topReasons: v5Top?.proof?.reasons || [],
     topTimingEvidence: timingTelemetry(v5Top?.evidence?.timing || {}),
-    legacyTopCandidateId: legacyTop?.candidateId || null,
+    legacyTopCandidateId: telemetryCandidateId(legacyTop?.candidateId),
     legacyTopDecision,
     topDisagreesWithLegacy: Boolean(v5Top && legacyTop && v5Top.candidateId !== legacyTop.candidateId),
     legacyTopWouldBeWithheld: ['withhold', 'reject'].includes(legacyTopDecision),
