@@ -1,0 +1,64 @@
+name: One-time v5.2.2 metadata sync
+on:
+  push:
+    branches:
+      - fix/issue-82-proof-first-hardening
+    paths:
+      - .github/workflows/release-522-sync-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  synchronize:
+    if: github.repository == 'almahasher016-lang/Stremio-Fetch-Hotfix'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: fix/issue-82-proof-first-hardening
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24.18.0
+      - name: Synchronize release metadata without modifying dependencies
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const old = '5.2.1';
+          const version = '5.2.2';
+          const read = path => readFileSync(path, 'utf8');
+          const write = (path, value) => writeFileSync(path, value);
+          assert.match(read('src/release.js'), /RELEASE_VERSION = '5\.2\.2'/);
+          assert.match(read('src/tests/releaseVersion.test.js'), /assert\.equal\(RELEASE_VERSION, '5\.2\.2'\)/);
+          assert.ok(read('docs/release-5.2.2.md').includes('البلاغ #82'));
+          const pkg = JSON.parse(read('package.json'));
+          const lock = JSON.parse(read('package-lock.json'));
+          assert.equal(pkg.version, old);
+          assert.equal(lock.version, old);
+          assert.equal(lock.packages[''].version, old);
+          pkg.version = version;
+          lock.version = version;
+          lock.packages[''].version = version;
+          write('package.json', `${JSON.stringify(pkg, null, 2)}\n`);
+          write('package-lock.json', `${JSON.stringify(lock, null, 2)}\n`);
+          let readme = read('README.md');
+          assert.ok(readme.startsWith(`# m7md Arabic Resolver v${old}\n`));
+          readme = readme.replace(`# m7md Arabic Resolver v${old}\n`, `# m7md Arabic Resolver v${version}\n`);
+          const marker = `## ما الجديد في ${old}`;
+          assert.ok(readme.includes(marker));
+          readme = readme.replace(marker, `## ما الجديد في ${version}\n\n- تقوية V5: لا CERTIFIED أو SAFE دون قياس توقيت مرجعي حقيقي مرتبط بالبصمة؛ أسماء الإصدار والإجماع قرائن لا إثبات.\n- استمرار البحث المحدود عند ظهور ترجمة من نفس عائلة الفيديو بلا قياس، وعدم اعتماد النتائج الاحتياطية بوصفها متزامنة.\n- تحذير واضح من عدم إثبات التوقيت وفصل توفر الترجمة عن ثبوت توقيتها في التقييم.\n- تثبيت حالات البلوراي الثلاث للبلاغ #82 دون ادعاء حل تزامنها أو إغلاق البلاغ.\n\n${marker}`);
+          write('README.md', readme);
+          const changelog = read('CHANGELOG.md');
+          assert.ok(changelog.startsWith(`## ${old} - `));
+          write('CHANGELOG.md', `## ${version} - 2026-09-16\n\n- Require actual exact-hash-reference aligned cue measurements and numeric residual bounds before V5 CERTIFIED/SAFE; metadata/consensus alone remain RECOVERY or WITHHOLD.\n- Continue bounded timing discovery past source-family/hash hints and clearly label every unverified subtitle.\n- Distinguish Arabic coverage from release verification in V5 summary and preserve three actual BluRay incidents as regression fixtures.\n- Preserve installed add-on ID. Issue #82 remains OPEN until actual playback timing is verified.\n\n${changelog}`);
+          NODE
+      - name: Commit synchronized metadata and remove one-time workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json README.md CHANGELOG.md
+          git rm .github/workflows/release-522-sync-once.yml
+          git commit -m 'chore(release): synchronize v5.2.2 package and published metadata'
+          git push origin HEAD:fix/issue-82-proof-first-hardening
