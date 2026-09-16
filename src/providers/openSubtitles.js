@@ -50,7 +50,7 @@ export function normalizeOpenSubtitlesItem(item, expectedLanguage = 'ar', varian
 
   const fileId = firstFile.file_id || firstFile.fileId || attr.file_id || item.file_id;
   const movieHash = attr.moviehash || attr.movie_hash || attr.feature_details?.moviehash || null;
-  const matchedByHash = Boolean(attr.moviehash_match || attr.movie_hash_match)
+  const matchedByHash = [attr.moviehash_match, attr.movie_hash_match].some(value => value === true || value === 1 || value === 'true' || value === '1')
     || Boolean(variant.videoHash && movieHash && String(movieHash).toLowerCase() === String(variant.videoHash).toLowerCase());
   const feature = attr.feature_details || {};
   const isEpisode = String(feature.feature_type).toLowerCase() === 'episode';
@@ -122,7 +122,7 @@ export function parseOpenSubtitlesResponse(payload, expectedLanguage = 'ar', var
     .slice(0, config.providers.maxProviderItems);
 }
 
-export async function searchOpenSubtitles(variant, { fetchJsonImpl = fetchJson } = {}) {
+async function searchPages(variant, fetchJsonImpl) {
   if (!config.openSubtitles.apiKey) return [];
   const maxItems = Math.max(1, Number(config.providers.maxProviderItems) || 1);
   const output = [];
@@ -149,6 +149,27 @@ export async function searchOpenSubtitles(variant, { fetchJsonImpl = fetchJson }
   } while (output.length < maxItems && page <= totalPages && page <= MAX_SEARCH_PAGES);
 
   return output.slice(0, maxItems);
+}
+
+export async function searchOpenSubtitles(variant, { fetchJsonImpl = fetchJson } = {}) {
+  const results = await searchPages(variant, fetchJsonImpl);
+  const hash = variant.videoHash || variant.hash;
+  // Some Stremio streams report the season/torrent size instead of the selected file size.
+  // Retry only the hash lookup without that optional constraint; do not invent a corrected size.
+  if (!config.openSubtitles.apiKey || !hash || !variant.videoSize || results.some(item => item.matchedByHash)) return results;
+  try {
+    const recovered = await searchPages({ ...variant, videoSize: null }, fetchJsonImpl);
+    const seen = new Set();
+    return [...recovered, ...results].filter(item => {
+      const key = candidateKey(item);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    }).slice(0, config.providers.maxProviderItems);
+  } catch (error) {
+    if (variant.signal?.aborted || error?.name === 'AbortError' || !results.length) throw error;
+    return results;
+  }
 }
 
 export function buildOpenSubtitlesDownloadBody(fileId, { subFormat = 'srt' } = {}) {

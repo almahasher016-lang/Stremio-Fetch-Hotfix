@@ -40,18 +40,19 @@ function attachCoverage(items, coverage) {
   return output;
 }
 
-async function runProvider(providerName, variant, ledger) {
+async function runProvider(providerName, variant, ledger, signal) {
   const provider = providerDefinitions[providerName];
   if (!provider?.search || !provider.configured()) return [];
   recordCoverageAttempt(ledger, providerName);
   const controller = new AbortController();
+  const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   const timer = setTimeout(() => controller.abort(new DOMException('Deep recovery deadline exceeded', 'AbortError')), config.resolver.stageDeadlineMs);
   timer.unref?.();
   try {
-    const results = await withRetry(() => provider.search({ ...variant, language: 'ar', signal: controller.signal }), {
+    const results = await withRetry(() => provider.search({ ...variant, language: 'ar', signal: requestSignal }), {
       retries: config.providers.retries,
       baseMs: config.providers.retryBaseMs,
-      signal: controller.signal,
+      signal: requestSignal,
       shouldRetry: error => error?.name !== 'AbortError'
         && (!error?.statusCode || error.statusCode >= 500 || error.statusCode === 429),
     });
@@ -71,11 +72,11 @@ async function runProvider(providerName, variant, ledger) {
   }
 }
 
-async function runStage(stage, ledger) {
+async function runStage(stage, ledger, signal) {
   recordCoverageStage(ledger, stage.name);
   const tasks = [];
   for (const providerName of stage.providers || []) {
-    for (const variant of stage.variants || []) tasks.push(runProvider(providerName, variant, ledger));
+    for (const variant of stage.variants || []) tasks.push(runProvider(providerName, variant, ledger, signal));
   }
   const groups = await Promise.all(tasks);
   return groups.flat();
@@ -104,7 +105,7 @@ export function rankCoverageCandidates(items = [], search = {}, { rescueMode = f
   return ordered.slice(0, config.providers.maxProviderItems);
 }
 
-export async function searchDeepRecoveryCandidates(input = {}) {
+export async function searchDeepRecoveryCandidates(input = {}, { signal } = {}) {
   if (!config.resolver.recoveryEnabled) return attachCoverage([], null);
   const initial = await versionRegistry.hydrateIdentity(buildVideoIdentity(input));
   const search = await resolveMetadata(initial);
@@ -120,7 +121,11 @@ export async function searchDeepRecoveryCandidates(input = {}) {
   });
 
   const raw = [];
-  for (const stage of plan) raw.push(...await runStage(stage, ledger));
+  let interrupted = false;
+  for (const stage of plan) {
+    if (signal?.aborted) { interrupted = true; break; }
+    raw.push(...await runStage(stage, ledger, signal));
+  }
   const unique = dedupe(raw);
 
   let ranked = rankCoverageCandidates(unique, search);
@@ -141,5 +146,9 @@ export async function searchDeepRecoveryCandidates(input = {}) {
     rankedCandidateCount: results.length,
     rescueMode,
   });
+  if (interrupted || signal?.aborted) {
+    coverage.status = 'degraded';
+    coverage.zeroResultState = results.length ? 'candidates-found' : 'search-incomplete';
+  }
   return attachCoverage(results, coverage);
 }

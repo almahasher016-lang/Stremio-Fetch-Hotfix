@@ -161,6 +161,8 @@ function subtitleName(item, mode = 'original') {
   if (item.parsedRelease?.quality) parts.push(item.parsedRelease.quality.toUpperCase());
   if (item.parsedRelease?.source) parts.push(item.parsedRelease.source.toUpperCase());
   if (item.provider) parts.push(item.provider);
+  const releaseLabel = String(item.releaseName || item.fileName || '').replace(/[\r\n\t]+/g, ' ').trim();
+  if (releaseLabel) parts.push(releaseLabel.slice(0, 160));
   if (Number.isFinite(item.score) && !item.v5Proof) parts.push(`score ${item.score}`);
   return parts.join(' · ');
 }

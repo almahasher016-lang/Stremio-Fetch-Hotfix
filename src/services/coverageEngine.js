@@ -121,6 +121,21 @@ export function createExhaustiveCoveragePlan(search = {}, providerDefinitions = 
   });
 
   const extraStages = [];
+  const sourceFamily = identity.videoProfile?.sourceFamily;
+  const sourceQuery = sourceFamily === 'bluray' ? 'BluRay' : sourceFamily === 'web' ? 'WEB' : null;
+  if (sourceQuery && identity.title) {
+    const episodeTitle = seriesEpisodeQueries(identity)[0];
+    const query = `${episodeTitle || identity.title} ${sourceQuery}`;
+    // A full REMUX filename can be too restrictive, while popular title-only results
+    // can fill the provider's result cap with a different distribution timeline.
+    plan.splice(Math.min(1, plan.length), 0, {
+      name: 'coverage-source-family',
+      providers,
+      variants: [coverageVariant('coverage-source-family', identity, {
+        query, filename: '', videoHash: null, videoSize: null, year: null,
+      })],
+    });
+  }
   if (identity.imdbId || identity.tmdbId) {
     extraStages.push({
       name: 'coverage-metadata-yearless',

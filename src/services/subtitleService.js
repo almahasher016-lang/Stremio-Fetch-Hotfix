@@ -3,6 +3,7 @@ import { config } from '../config.js';
 import { acquireRefreshLock, cacheGetEntry, cacheSet, releaseRefreshLock } from '../cache/redis.js';
 import { applyAccuracyPreflight, hasVerifiedAccuracyCandidate } from './accuracyPreflight.js';
 import { searchDeepRecoveryCandidates } from './deepRecoveryService.js';
+import { needsTimingDiscovery } from './timingDiscovery.js';
 import { resolveMetadata } from './metadataResolver.js';
 import * as core from './subtitleServiceCore.js';
 import { buildVideoIdentity } from '../utils/videoIdentity.js';
@@ -182,6 +183,10 @@ function v5Log(mode, summary, search) {
   console.info(`[V5 ${mode}]`, JSON.stringify({
     mediaType: search.type || 'movie',
     catalogId: search.imdbId || search.tmdbId || search.id || null,
+    season: search.season ?? null,
+    episode: search.episode ?? null,
+    playbackSource: search.videoProfile?.sourceFamily || null,
+    videoSize: search.videoSize || null,
     total: summary.total,
     counts: summary.counts,
     topDecision: summary.topDecision,
@@ -217,22 +222,36 @@ function applyV5Policy(results, search) {
   }
 }
 
-async function searchCore(search) {
-  const outcome = await core.searchSubtitlesWithStatus(search);
-  let checked = await applyAccuracyPreflight(outcome.results, search);
-  if (!config.resolver.recoveryEnabled || hasVerifiedAccuracyCandidate(checked)) {
+export async function searchCore(search, {
+  coreSearch = core.searchSubtitlesWithStatus,
+  preflight = applyAccuracyPreflight,
+  recover = searchDeepRecoveryCandidates,
+  readCache = cacheGetEntry,
+  writeCache = cacheSet,
+} = {}) {
+  const outcome = await coreSearch(search);
+  let checked = await preflight(outcome.results, search);
+  const timingRecovery = hasVerifiedAccuracyCandidate(checked) && needsTimingDiscovery(checked, search);
+  if (!config.resolver.recoveryEnabled || (hasVerifiedAccuracyCandidate(checked) && !timingRecovery)) {
     return { ...outcome, results: checked };
   }
 
-  // Strict ranking happens before content inspection. If every strict candidate turns out to be
-  // Persian, non-Arabic, malformed or dead, exhaustive recovery now searches every eligible
-  // provider and safe identity variant before a zero result can be considered authoritative.
-  const recovered = await searchDeepRecoveryCandidates(search);
+  // Expand both unavailable Arabic and valid Arabic from an unproven playback timeline.
+  // A WEB subtitle must not stop BluRay discovery merely because its text is well formed.
+  const recoveryKey = `timing-discovery:${singleflightKey(search)}`;
+  const cached = timingRecovery ? await readCache(recoveryKey) : null;
+  // Keep a bounded discovery result, not a proof verdict. Recheck the files below on every use.
+  const recovered = cached?.hit && Array.isArray(cached.value?.results)
+    ? Object.assign([...cached.value.results], { coverage: cached.value.coverage })
+    : await recover(search, timingRecovery ? { signal: AbortSignal.timeout(8_000) } : {});
   const coverage = recovered?.coverage || null;
+  if (timingRecovery && !cached?.hit && coverage?.status === 'complete') {
+    await writeCache(recoveryKey, { results: [...recovered], coverage }, 120, 0);
+  }
   logCoverage(coverage, search);
   if (!usable(recovered)) return { ...outcome, results: checked, coverage, recoveryExpanded: true };
   const merged = mergeCandidatePool(outcome.results, recovered);
-  checked = await applyAccuracyPreflight(merged, search);
+  checked = await preflight(merged, search);
   return { ...outcome, results: checked, coverage, recoveryExpanded: true };
 }
 

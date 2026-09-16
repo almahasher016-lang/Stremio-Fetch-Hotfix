@@ -117,6 +117,10 @@ async function requestSubdl(params, signal, { fetchJsonImpl = fetchJson, configI
     trustedOrigin: configImpl.subdl.baseUrl,
   });
   if (json && json.status === false) {
+    // A missing title is an empty search, not a provider outage.
+    if (/^(?:can't|cannot) find (?:movie or tv|movie|tv)\.?$/i.test(String(json.error || '').trim())) {
+      return { status: true, subtitles: [] };
+    }
     const err = new Error(`SubDL: ${json.error || 'API returned status=false'}`);
     err.statusCode = 400;
     throw err;
@@ -141,7 +145,7 @@ export function buildSubdlParams(variant, expectedLanguage, mode = 'full', confi
     if (safeFileName) addParam(params, 'file_name', safeFileName);
     else addParam(params, 'film_name', titleFromRelease(variant.query || variant.filename || variant.imdbId || variant.tmdbId));
   } else {
-    addParam(params, 'film_name', titleFromRelease(variant.query || variant.filename || variant.imdbId || variant.tmdbId));
+    addParam(params, 'film_name', titleFromRelease(variant.title || variant.query || variant.filename));
   }
 
   // An IMDb/TMDb identifier already fixes the work identity, so combining it with a year can
@@ -171,14 +175,27 @@ export async function searchSubdl(variant, { fetchJsonImpl = fetchJson, configIm
 
   const all = [];
   const seen = new Set();
+  let lastError = null;
+  let successfulRequests = 0;
   for (const mode of modes) {
     try {
+      const params = buildSubdlParams(variant, expectedLanguage, mode, configImpl);
+      if (!['imdb_id', 'tmdb_id', 'file_name', 'film_name'].some(key => params.has(key))) continue;
       const json = await requestSubdl(
-        buildSubdlParams(variant, expectedLanguage, mode, configImpl),
+        params,
         variant.signal,
         { fetchJsonImpl, configImpl },
       );
-      const rows = Array.isArray(json?.subtitles) ? json.subtitles : Array.isArray(json?.results) ? json.results : [];
+      successfulRequests += 1;
+      // results contains catalog entries, not subtitles. The first entry identifies the
+      // subtitle collection, including episode files unpacked from a season archive.
+      const catalog = Array.isArray(json?.results) ? json.results[0] : null;
+      const rows = (Array.isArray(json?.subtitles) ? json.subtitles : []).map(item => ({
+        ...item,
+        imdb_id: item.imdb_id || catalog?.imdb_id || null,
+        tmdb_id: item.tmdb_id || catalog?.tmdb_id || null,
+        type: item.type || catalog?.type || null,
+      }));
       for (const item of expandSubdlSubtitles(rows, expectedLanguage, variant, configImpl)) {
         const key = item.md5 || item.download || item.releaseName || item.id;
         if (key && !seen.has(key)) {
@@ -190,8 +207,9 @@ export async function searchSubdl(variant, { fetchJsonImpl = fetchJson, configIm
     } catch (err) {
       if (variant.signal?.aborted || err?.name === 'AbortError') throw err;
       // Try the next search shape. The outer service will log only if all shapes fail.
-      if (mode === modes[modes.length - 1]) throw err;
+      lastError = err;
     }
   }
+  if (!all.length && !successfulRequests && lastError) throw lastError;
   return all.slice(0, configImpl.providers.maxProviderItems);
 }
