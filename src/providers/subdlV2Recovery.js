@@ -2,6 +2,7 @@ import { config } from '../config.js';
 import { fetchJson } from '../utils/http.js';
 import { isArabicLanguage, isEnglishLanguage } from '../utils/language.js';
 import { expandSubdlSubtitles, searchSubdl } from './subdl.js';
+import { searchSubdlBluRaySeasonPack } from './subdlSeasonPackRecovery.js';
 
 function cleanFilename(value) {
   return String(value || '')
@@ -100,6 +101,20 @@ export async function searchSubdlV2Filename(variant, {
 export async function searchSubdlWithV2Recovery(variant, options = {}) {
   const configImpl = options.configImpl || config;
   if (!configImpl.subdl.apiKey) return [];
+
+  // SubDL can index a full-season BluRay archive without indexing each episode
+  // separately. Run one bounded, season-only catalog query for this recovery stage,
+  // then extract ONLY an explicitly identified SxxExx child from unpack_files.
+  if (variant.type === 'series' && variant.reason === 'coverage-source-family') {
+    try {
+      const seasonPack = await searchSubdlBluRaySeasonPack(variant, options);
+      if (seasonPack.length) return seasonPack;
+    } catch (error) {
+      if (variant.signal?.aborted || error?.name === 'AbortError') throw error;
+      // Provider/account errors must not eliminate existing v2/v1 coverage.
+    }
+  }
+
   let discovered = [];
   if (variant.filename) {
     try {
