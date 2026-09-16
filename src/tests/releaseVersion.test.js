@@ -6,7 +6,7 @@ import { config } from '../config.js';
 
 test('Stremio advertises the current patch release without changing its installation identity', () => {
   const manifest = createManifest();
-  assert.equal(RELEASE_VERSION, '5.2.1');
+  assert.equal(RELEASE_VERSION, '5.2.2');
   assert.equal(config.app.version, RELEASE_VERSION);
   assert.equal(manifest.version, RELEASE_VERSION);
   assert.equal(manifest.name, RELEASE_NAME);

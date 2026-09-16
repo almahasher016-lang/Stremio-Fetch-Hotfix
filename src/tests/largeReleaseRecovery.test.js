@@ -19,6 +19,10 @@ const candidate = (source, id = source) => ({
   releaseName: `House.of.the.Dragon.S02E02.${source}`, download: `https://example.test/${id}.srt`,
   quality, accuracyPreflight: { state: 'valid', quality, checkedAt: Date.now() },
 });
+const alignedTiming = {
+  measured: true, exactVideoHash: true, verdict: 'aligned',
+  offsetMs: 100, residualMedianMs: 100, residualP90Ms: 200, anchorCoverage: 0.9,
+};
 const subdlConfig = {
   subdl: { apiKey: 'test', baseUrl: 'https://api.subdl.test/subtitles', downloadBaseUrl: 'https://dl.subdl.test' },
   providers: { maxProviderItems: 60, searchFullSeason: true },
@@ -79,13 +83,13 @@ test('a false string from a provider is never exact-hash proof', () => {
   assert.equal(normalizeOpenSubtitlesItem({ attributes: { language: 'ar', moviehash_match: 'false', files: [{ file_id: 1 }] } }).matchedByHash, false);
 });
 
-test('BluRay playback keeps searching past Arabic WEB candidates for movies and series', () => {
+test('BluRay playback keeps searching past Arabic WEB and BluRay metadata without measured proof', () => {
   assert.equal(needsTimingDiscovery([candidate('WEB-DL')], search), true);
-  assert.equal(needsTimingDiscovery([candidate('1080p.BluRay')], search), false);
+  assert.equal(needsTimingDiscovery([candidate('1080p.BluRay')], search), true);
   const movie = buildVideoIdentity({ type: 'movie', id: 'tt1375666', filename: 'Inception.2010.2160p.BluRay.REMUX.mkv', videoSize: 64_424_509_440 });
   const row = { ...candidate('WEB-DL'), imdbId: movie.imdbId, season: null, episode: null, releaseName: 'Inception.2010.WEB-DL' };
   assert.equal(needsTimingDiscovery([row], movie), true);
-  assert.equal(needsTimingDiscovery([{ ...row, releaseName: 'Inception.2010.1080p.BluRay' }], movie), false);
+  assert.equal(needsTimingDiscovery([{ ...row, releaseName: 'Inception.2010.1080p.BluRay' }], movie), true);
 });
 
 test('wrong episode and incompatible FPS do not stop timing discovery', () => {
@@ -138,10 +142,20 @@ test('post-preflight searches beyond mismatched text, caches discovery and reche
   assert.equal(checked.filter(ids => ids.includes('BluRay')).length, 2);
 });
 
-test('matching BluRay candidate avoids unnecessary deep recovery', async () => {
+test('matching BluRay metadata without measured timing still triggers bounded deep recovery', async () => {
   let recovered = false;
   await searchCore(search, {
     coreSearch: async () => ({ results: [candidate('BluRay')], cycleStatus: 'complete' }),
+    preflight: async rows => rows,
+    recover: async (_search, options) => { assert.ok(options.signal); recovered = true; return []; },
+  });
+  assert.equal(recovered, true);
+});
+
+test('strongly measured BluRay timeline avoids unnecessary deep recovery', async () => {
+  let recovered = false;
+  await searchCore(search, {
+    coreSearch: async () => ({ results: [{ ...candidate('BluRay'), actualTimingEvidence: alignedTiming }], cycleStatus: 'complete' }),
     preflight: async rows => rows,
     recover: async () => { recovered = true; return []; },
   });

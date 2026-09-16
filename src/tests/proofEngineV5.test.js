@@ -4,149 +4,109 @@ import { evaluateSubtitleProof, PROOF_DECISION, rankByProof } from '../v5/proofE
 
 function certifiedFixture(overrides = {}) {
   return {
-    identity: {
-      mediaType: 'movie',
-      catalogIdMatch: true,
-      yearMatch: true,
-      ...overrides.identity,
-    },
-    language: {
-      detectedLanguage: 'arabic',
-      arabicProbability: 0.999,
-      ...overrides.language,
-    },
+    identity: { mediaType: 'movie', catalogIdMatch: true, yearMatch: true, ...overrides.identity },
+    language: { detectedLanguage: 'arabic', arabicProbability: 0.999, ...overrides.language },
     timing: {
       exactVideoHashReference: true,
+      measured: true,
+      measuredExactVideoHash: true,
+      measuredVerdict: 'aligned',
+      offsetMs: 100,
+      residualMedianMs: 100,
+      residualP90Ms: 200,
+      anchorCoverage: 0.9,
       ...overrides.timing,
     },
-    delivery: {
-      reachable: true,
-      fresh: true,
-      ...overrides.delivery,
-    },
-    integrity: {
-      valid: true,
-      cueCount: 900,
-      coverageRatio: 0.98,
-      ...overrides.integrity,
-    },
+    delivery: { reachable: true, fresh: true, ...overrides.delivery },
+    integrity: { valid: true, cueCount: 900, coverageRatio: 0.98, ...overrides.integrity },
   };
 }
 
-test('V5 certifies only when every proof dimension clears the strict floor', () => {
+test('V5 certifies only an exact-hash-reference measured timeline with strict residuals and all gates', () => {
   const proof = evaluateSubtitleProof(certifiedFixture());
   assert.equal(proof.decision, PROOF_DECISION.CERTIFIED);
   assert.equal(proof.certified, true);
   assert.ok(proof.proofFloor >= 0.995);
 });
 
-test('wrong episode is a hard reject even if every other dimension is perfect', () => {
-  const proof = evaluateSubtitleProof(certifiedFixture({
-    identity: {
-      mediaType: 'series',
-      catalogIdMatch: true,
-      seasonMatch: true,
-      episodeMatch: false,
-      conflicts: ['episode'],
-    },
-  }));
+test('wrong episode is a hard reject despite perfect timing', () => {
+  const proof = evaluateSubtitleProof(certifiedFixture({ identity: {
+    mediaType: 'series', catalogIdMatch: true, seasonMatch: true, episodeMatch: false, conflicts: ['episode'],
+  } }));
   assert.equal(proof.decision, PROOF_DECISION.REJECT);
   assert.ok(proof.hardFailures.some(item => item.reason === 'identity-conflict:episode'));
 });
 
-test('Persian subtitle is a hard reject even with exact timing and a live URL', () => {
-  const proof = evaluateSubtitleProof(certifiedFixture({
-    language: {
-      detectedLanguage: 'persian',
-      arabicProbability: 0.999,
-    },
-  }));
+test('Persian is a hard reject with measured timing and a live URL', () => {
+  const proof = evaluateSubtitleProof(certifiedFixture({ language: {
+    detectedLanguage: 'persian', arabicProbability: 0.999,
+  } }));
   assert.equal(proof.decision, PROOF_DECISION.REJECT);
   assert.equal(proof.confidence.language, 0);
 });
 
-test('dead delivery cannot be rescued by a high legacy score', () => {
-  const proof = evaluateSubtitleProof(certifiedFixture({
-    delivery: { terminalFailure: true },
-  }));
+test('dead delivery cannot be rescued by measured timing', () => {
+  const proof = evaluateSubtitleProof(certifiedFixture({ delivery: { terminalFailure: true } }));
   assert.equal(proof.decision, PROOF_DECISION.REJECT);
 });
 
-test('release-name evidence alone cannot pretend to be certified timing', () => {
-  const proof = evaluateSubtitleProof(certifiedFixture({
-    timing: {
-      exactVideoHashReference: false,
-      releaseTier: 5,
-      fpsMatch: true,
-    },
-  }));
+test('release-family and exact hash metadata alone remain explicitly unverified', () => {
+  const proof = evaluateSubtitleProof(certifiedFixture({ timing: {
+    exactTimeline: false,
+    exactVideoHashReference: true,
+    releaseTier: 5,
+    fpsMatch: true,
+    measured: false,
+  } }));
+  assert.equal(proof.decision, PROOF_DECISION.RECOVERY);
+  assert.ok(proof.reasons.includes('timing:unverified'));
+});
+
+test('three-source consensus with identical absolute bounds cannot certify without video timing', () => {
+  const proof = evaluateSubtitleProof(certifiedFixture({ timing: {
+    measured: false,
+    releaseTier: 5,
+    independentConsensusCount: 3,
+    timelineSimilarity: 1,
+    absoluteBoundsMatched: true,
+  } }));
+  assert.equal(proof.decision, PROOF_DECISION.RECOVERY);
+  assert.ok(proof.confidence.timing < 0.94);
+});
+
+test('null, absent and nonfinite residuals cannot be interpreted as zero', () => {
+  for (const missing of [null, undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const proof = evaluateSubtitleProof(certifiedFixture({ timing: { residualMedianMs: missing } }));
+    assert.equal(proof.decision, PROOF_DECISION.RECOVERY);
+  }
+});
+
+test('strict reference misses but measured-compatible evidence can be SAFE', () => {
+  const proof = evaluateSubtitleProof(certifiedFixture({ timing: {
+    offsetMs: 900, residualMedianMs: 800, residualP90Ms: 1800,
+  } }));
   assert.equal(proof.decision, PROOF_DECISION.SAFE);
-  assert.ok(proof.confidence.timing < 0.995);
+  assert.ok(proof.reasons.includes('timing:measured-reference-compatible'));
 });
 
-test('three-source near-perfect timing consensus can reach certified timing only with absolute bounds', () => {
-  const proof = evaluateSubtitleProof(certifiedFixture({
-    timing: {
-      exactVideoHashReference: false,
-      releaseTier: 5,
-      independentConsensusCount: 3,
-      timelineSimilarity: 0.997,
-      absoluteBoundsMatched: true,
-    },
-  }));
-  assert.equal(proof.decision, PROOF_DECISION.CERTIFIED);
-  assert.ok(proof.reasons.includes('timing:multi-source-consensus'));
+test('measured but drifting evidence remains unverified', () => {
+  const proof = evaluateSubtitleProof(certifiedFixture({ timing: {
+    offsetMs: 100, residualMedianMs: 2100, residualP90Ms: 4100,
+  } }));
+  assert.equal(proof.decision, PROOF_DECISION.RECOVERY);
 });
 
-test('relative consensus without absolute bounds cannot certify timing', () => {
-  const proof = evaluateSubtitleProof(certifiedFixture({
-    timing: {
-      exactVideoHashReference: false,
-      releaseTier: 5,
-      independentConsensusCount: 3,
-      timelineSimilarity: 1,
-      absoluteBoundsMatched: false,
-      fpsMatch: true,
-    },
-  }));
-  assert.equal(proof.decision, PROOF_DECISION.SAFE);
-  assert.ok(!proof.reasons.includes('timing:multi-source-consensus'));
-});
-
-test('two-source consensus remains safe rather than certified', () => {
-  const proof = evaluateSubtitleProof(certifiedFixture({
-    timing: {
-      exactVideoHashReference: false,
-      releaseTier: 5,
-      independentConsensusCount: 2,
-      timelineSimilarity: 0.997,
-      absoluteBoundsMatched: true,
-    },
-  }));
-  assert.equal(proof.decision, PROOF_DECISION.SAFE);
-  assert.ok(proof.confidence.timing < 0.995);
-});
-
-test('provider Arabic label alone is withheld from certified output', () => {
-  const proof = evaluateSubtitleProof(certifiedFixture({
-    language: {
-      detectedLanguage: '',
-      arabicProbability: 0,
-      providerArabicCode: true,
-    },
-  }));
+test('provider Arabic label alone cannot be certified', () => {
+  const proof = evaluateSubtitleProof(certifiedFixture({ language: {
+    detectedLanguage: '', arabicProbability: 0, providerArabicCode: true,
+  } }));
   assert.notEqual(proof.decision, PROOF_DECISION.CERTIFIED);
   assert.ok(proof.confidence.language < 0.98);
 });
 
-test('proof ranking is lexicographic: certified beats a larger legacy score', () => {
+test('proof ranking is lexicographic: measured certified beats larger legacy score', () => {
   const certified = { score: 100, proof: evaluateSubtitleProof(certifiedFixture()) };
-  const recovery = {
-    score: 5000,
-    proof: evaluateSubtitleProof(certifiedFixture({
-      timing: { exactVideoHashReference: false, releaseTier: 2 },
-    })),
-  };
+  const recovery = { score: 5000, proof: evaluateSubtitleProof(certifiedFixture({ timing: { measured: false } })) };
   const ranked = [recovery, certified].sort(rankByProof);
   assert.equal(ranked[0], certified);
 });

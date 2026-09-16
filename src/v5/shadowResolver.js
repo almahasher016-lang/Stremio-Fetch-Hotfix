@@ -7,9 +7,7 @@ function stableCandidateId(item = {}, index = 0) {
   return String(item.providerId || item.fileId || item.id || `${item.provider || 'candidate'}:${index}`);
 }
 
-// Candidate IDs are opaque upstream data. Some legacy providers use authenticated URLs
-// as IDs when the upstream omits a numeric file ID. Never print those raw values, even
-// when they originate in an older cached entry. Preserve deterministic correlation only.
+// Upstream IDs sometimes include credential-bearing URLs: hash them before logging.
 function telemetryCandidateId(value) {
   if (value == null || value === '') return null;
   return `sha256:${createHash('sha256').update(String(value)).digest('hex').slice(0, 24)}`;
@@ -19,6 +17,18 @@ export function evaluateV5Candidates(results = [], search = {}, { now = Date.now
   const consensus = buildTimelineConsensus(results);
   const evaluated = results.map((item, index) => {
     const evidence = buildCandidateEvidence(item, search, consensus.get(item) || {}, now);
+    const timing = item.actualTimingEvidence || {};
+    // A metadata hash or cross-provider timeline resemblance must not become cue timing proof.
+    evidence.timing = {
+      ...evidence.timing,
+      measured: timing.measured === true,
+      measuredExactVideoHash: timing.exactVideoHash === true,
+      measuredVerdict: timing.verdict || null,
+      offsetMs: timing.offsetMs ?? null,
+      residualMedianMs: timing.residualMedianMs ?? null,
+      residualP90Ms: timing.residualP90Ms ?? null,
+      anchorCoverage: timing.anchorCoverage ?? null,
+    };
     const proof = evaluateSubtitleProof(evidence);
     return {
       item,
@@ -28,7 +38,6 @@ export function evaluateV5Candidates(results = [], search = {}, { now = Date.now
       proof,
     };
   });
-
   evaluated.sort((left, right) => rankByProof(
     { ...left.item, proof: left.proof },
     { ...right.item, proof: right.proof },
@@ -40,6 +49,12 @@ function timingTelemetry(evidence = {}) {
   return {
     exactTimeline: evidence.exactTimeline === true,
     exactVideoHashReference: evidence.exactVideoHashReference === true,
+    measured: evidence.measured === true,
+    measuredVerdict: evidence.measuredVerdict || null,
+    offsetMs: evidence.offsetMs ?? null,
+    residualMedianMs: evidence.residualMedianMs ?? null,
+    residualP90Ms: evidence.residualP90Ms ?? null,
+    anchorCoverage: evidence.anchorCoverage ?? null,
     stableReleaseFamily: evidence.stableReleaseFamily === true,
     compatibility: evidence.compatibility || 'unknown',
     timingFamilyTier: Number(evidence.timingFamilyTier || 0),
@@ -93,6 +108,9 @@ export function summarizeV5Evaluation(evaluated = []) {
   return {
     total: evaluated.length,
     counts,
+    // Availability of Arabic and independently verified timing are disjoint metrics.
+    coverageOK: counts.certified + counts.safe + counts.recovery > 0,
+    releaseVerified: counts.certified + counts.safe > 0,
     topDecision: v5Top?.proof?.decision || null,
     topCandidateId: telemetryCandidateId(v5Top?.candidateId),
     topProofFloor: v5Top?.proof?.proofFloor ?? null,
@@ -111,8 +129,5 @@ export function summarizeV5Evaluation(evaluated = []) {
 
 export function runV5Shadow(results = [], search = {}, options = {}) {
   const evaluated = evaluateV5Candidates(results, search, options);
-  return {
-    evaluated,
-    summary: summarizeV5Evaluation(evaluated),
-  };
+  return { evaluated, summary: summarizeV5Evaluation(evaluated) };
 }
