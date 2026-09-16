@@ -1,0 +1,66 @@
+{
+  "issue": 82,
+  "capturedAt": "2026-09-16",
+  "groundTruth": "Actual video/audio or a verified synchronized reference is not available; no correct Arabic subtitle has been proven.",
+  "rootCause": "Arabic discovery returned unverified WEB/HDTV candidates for BluRay playbacks; availability smoke passed but no candidate had independently measured matching playback timing. Search could also stop on source-family/hash metadata alone and V5 previously promoted unmeasured hash/consensus/release hints.",
+  "acceptance": {
+    "coverageIsNotSynchronization": true,
+    "certifiedRequiresMeasuredExactReference": true,
+    "sameSourceFamilyDoesNotStopDiscovery": true,
+    "doNotCloseIssueUntilActualPlaybackVerified": true
+  },
+  "cases": [
+    {
+      "id": "tuner-2025-bluray-framestor",
+      "video": {
+        "type": "movie",
+        "imdbId": "tt33296751",
+        "filename": "Tuner.2025.BluRay.1080p.TrueHD.Atmos.7.1.AVC.REMUX-FraMeSToR.mkv",
+        "videoSize": 27543009236,
+        "videoHash": "e9893332dc323e8d",
+        "durationMs": null,
+        "fps": null
+      },
+      "observedIncorrectlyAssumedMatch": "Tuner.2025.1080p.WEBRip.x264.AAC5.1-[YTS.GG - YTS.BZ]",
+      "observedSubtitleStatus": "Arabic language and file integrity valid; WEB timing for BluRay unverified, not independently proven wrong.",
+      "expectedCorrectSubtitle": null,
+      "expected": { "allowUnmeasuredCertified": false, "allowUnmeasuredSafe": false, "continueDiscovery": true, "fallbackLabel": "Timing Unverified" }
+    },
+    {
+      "id": "hotd-s02e02-hyperion",
+      "video": {
+        "type": "series",
+        "imdbId": "tt11198330",
+        "season": 2,
+        "episode": 2,
+        "filename": "House.of.the.Dragon.S02E02.MULTI.VFI.2160p.UHD.BluRay.Remux.DV.HDR.TrueHD.Atmos.7.1.HEVC-HYPERION.mkv",
+        "videoSize": 37943411040,
+        "videoHash": "f7c275740ef40e95",
+        "durationMs": null,
+        "fps": null
+      },
+      "observedIncorrectlyAssumedMatch": "WEBRip/WEB/HDTV episode subtitles (exact release unrecorded)",
+      "observedSubtitleStatus": "Arabic available but timeline unverified for target BluRay.",
+      "expectedCorrectSubtitle": null,
+      "expected": { "allowUnmeasuredCertified": false, "allowUnmeasuredSafe": false, "continueDiscovery": true, "fallbackLabel": "Timing Unverified" }
+    },
+    {
+      "id": "hotd-s02e02-framestor-kingsman",
+      "video": {
+        "type": "series",
+        "imdbId": "tt11198330",
+        "season": 2,
+        "episode": 2,
+        "filename": "House.of.the.Dragon.S02E02.2160p.UHD.BluRay.REMUX.DV.HDR.HEVC-FraMeSToR-KiNGSMAN.mkv",
+        "videoSize": 37559489003,
+        "videoHash": "cff4ef4781b1412a",
+        "durationMs": null,
+        "fps": null
+      },
+      "observedIncorrectlyAssumedMatch": "WEBRip/WEB/HDTV episode subtitles (exact release unrecorded)",
+      "observedSubtitleStatus": "Arabic available but timeline unverified for target BluRay.",
+      "expectedCorrectSubtitle": null,
+      "expected": { "allowUnmeasuredCertified": false, "allowUnmeasuredSafe": false, "continueDiscovery": true, "fallbackLabel": "Timing Unverified" }
+    }
+  ]
+}
