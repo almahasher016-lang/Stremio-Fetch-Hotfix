@@ -26,20 +26,39 @@ test('explicit wrong year is a hard identity conflict unless exact hash proves t
   assert.equal(hasHardIdentityConflict(exact, search), false);
 });
 
-test('normal Stremio original option carries exact-hash timeline reference into encoding token', () => {
-  const result = {
-    id:'ar-1', provider:'opensubtitles', providerId:'123',
-    download:'/downloads/opensubtitles/123.srt', lang:'ara', score:1000,
-    timingReferenceEvidence:{ exactVideoHash:true, matchScore:900 },
-    referenceSyncMode:'exact-hash-stable',
-    referenceSubtitle:{
-      id:'en-1', provider:'opensubtitles', providerId:'456',
-      download:'/downloads/opensubtitles/456.srt', lang:'eng', releaseName:'Movie.2026.WEB-DL',
-    },
-  };
-  const [option] = toStremioSubtitles([result], 'https://example.test', { type:'movie', videoHash:'abc', filename:'Movie.2026.WEB-DL.mkv' });
+const referenceCandidate = {
+  id:'ar-1', provider:'opensubtitles', providerId:'123',
+  download:'/downloads/opensubtitles/123.srt', lang:'ara', score:1000,
+  timingReferenceEvidence:{ exactVideoHash:true, matchScore:900 },
+  referenceSyncMode:'exact-hash-stable',
+  referenceSubtitle:{
+    id:'en-1', provider:'opensubtitles', providerId:'456',
+    download:'/downloads/opensubtitles/456.srt', lang:'eng', releaseName:'Movie.2026.WEB-DL',
+  },
+};
+
+function originalToken(item) {
+  const [option] = toStremioSubtitles([item], 'https://example.test', { type:'movie', videoHash:'abc', filename:'Movie.2026.WEB-DL.mkv' });
   assert.ok(option?.url?.includes('/assets/encoding/'));
   const token = option.url.split('/assets/encoding/')[1].replace(/\.srt$/, '');
-  const payload = verifyEncodingToken(token);
+  return { payload: verifyEncodingToken(token), name: option.name };
+}
+
+test('unmeasured reference never enters an original subtitle delivery token or hides warning', () => {
+  const { payload, name } = originalToken(referenceCandidate);
+  assert.equal(payload.reference, undefined);
+  assert.match(name, /Timing Unverified/);
+});
+
+test('normal original option carries exact-hash reference after V5 verifies measured alignment', () => {
+  const measured = { ...referenceCandidate,
+    v5Proof: { decision: 'certified', confidence: { timing: 0.9999 } },
+    actualTimingEvidence: {
+      measured: true, exactVideoHash: true, verdict: 'aligned',
+      offsetMs: 50, residualMedianMs: 80, residualP90Ms: 120, anchorCoverage: 0.9,
+    },
+  };
+  const { payload, name } = originalToken(measured);
   assert.equal(payload.reference?.exactVideoHash, true);
+  assert.doesNotMatch(name, /Timing Unverified/);
 });
