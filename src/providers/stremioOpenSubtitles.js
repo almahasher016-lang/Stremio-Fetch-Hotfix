@@ -127,9 +127,12 @@ function playbackExtras(variant = {}) {
   if (variant.reason !== 'exact-metadata') return params;
   const hash = String(variant.playbackHash || '').trim().toLowerCase();
   if (VIDEO_HASH_RE.test(hash)) params.set('videoHash', hash);
-  const filename = String(variant.playbackFilename || '')
-    .split(/[\\/]/).at(-1)
-    .replace(/[\u0000-\u001f\u007f]/g, '')
+  const filename = [...String(variant.playbackFilename || '').split(/[\\/]/).at(-1)]
+    .filter(char => {
+      const code = char.charCodeAt(0);
+      return code > 31 && code !== 127;
+    })
+    .join('')
     .trim()
     .slice(0, 240);
   if (filename) params.set('filename', filename);
