@@ -1,6 +1,6 @@
 import { config } from '../config.js';
 import { searchOpenSubtitles } from './openSubtitles.js';
-import { searchSubdl } from './subdl.js';
+import { searchSubdlWithV2Recovery } from './subdlV2Recovery.js';
 import { searchSubsource } from './subsource.js';
 import { searchStremioWithSourceRecovery } from './stremioSourceRecovery.js';
 import { searchYify } from './yify.js';
@@ -23,7 +23,7 @@ export const providerDefinitions = Object.freeze({
   subdl: {
     name: 'subdl',
     label: 'SubDL',
-    search: searchSubdl,
+    search: searchSubdlWithV2Recovery,
     supports: { movie: true, series: true, hash: false, reference: true },
     configured: () => Boolean(config.subdl.apiKey),
   },
