@@ -2,7 +2,7 @@ import { config } from '../config.js';
 import { searchOpenSubtitles } from './openSubtitles.js';
 import { searchSubdl } from './subdl.js';
 import { searchSubsource } from './subsource.js';
-import { searchStremioOpenSubtitles } from './stremioOpenSubtitles.js';
+import { searchStremioWithSourceRecovery } from './stremioSourceRecovery.js';
 import { searchYify } from './yify.js';
 
 export const providerDefinitions = Object.freeze({
@@ -16,7 +16,7 @@ export const providerDefinitions = Object.freeze({
   stremio: {
     name: 'stremio',
     label: 'Stremio OpenSubtitles v3',
-    search: searchStremioOpenSubtitles,
+    search: searchStremioWithSourceRecovery,
     supports: { movie: true, series: true, hash: false, reference: true },
     configured: () => Boolean(config.stremioOpenSubtitles.enabled && config.stremioOpenSubtitles.baseUrl),
   },
