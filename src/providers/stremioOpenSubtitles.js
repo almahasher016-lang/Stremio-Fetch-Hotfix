@@ -8,6 +8,7 @@ const TITLE_STOP_WORDS = new Set([
   'season', 'saison', 'episode', 'ep', 'el', 'la', 'le', 'les', 'de', 'du', 'des', 'un', 'une',
 ]);
 const TITLE_BOUNDARY_RE = /^(?:s\d{1,2}(?:e\d{1,3})?|e\d{1,3}|\d{1,2}x\d{1,3}|19\d{2}|20\d{2}|4320p|2160p|1080[pi]?|720[pi]?|576[pi]?|480[pi]?|8k|4k|uhd|web|webdl|webrip|hdtv|bluray|brrip|bdrip|remux|dvdrip|x264|x265|h264|h265|hevc|avc|av1|vp9|hdr|hdr10|dovi|dv)$/i;
+const VIDEO_HASH_RE = /^[a-f0-9]{16}$/i;
 
 function cleanImdb(value) {
   const match = String(value || '').match(/tt\d{5,12}/i);
@@ -119,6 +120,24 @@ export function normalizeStremioOpenSubtitlesItem(item, variant = {}) {
   };
 }
 
+function playbackExtras(variant = {}) {
+  const params = new URLSearchParams();
+  // Exact metadata is the single search stage that has authoritative catalog identity and
+  // needs original playback hints. Do not repeat identical upstream requests in broad stages.
+  if (variant.reason !== 'exact-metadata') return params;
+  const hash = String(variant.playbackHash || '').trim().toLowerCase();
+  if (VIDEO_HASH_RE.test(hash)) params.set('videoHash', hash);
+  const filename = String(variant.playbackFilename || '')
+    .split(/[\\/]/).at(-1)
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .trim()
+    .slice(0, 240);
+  if (filename) params.set('filename', filename);
+  // Stremio videoSize can be a stream estimate rather than the hashed file's true byte size.
+  // Omitting it avoids incorrectly eliminating a match; sending a hash is not match proof.
+  return params;
+}
+
 export async function searchStremioOpenSubtitles(variant, {
   fetchJsonImpl = fetchJson,
   configImpl = config,
@@ -127,15 +146,26 @@ export async function searchStremioOpenSubtitles(variant, {
   const id = requestId(variant);
   if (!id) return [];
   const type = variant.type === 'series' ? 'series' : 'movie';
-  const url = `${configImpl.stremioOpenSubtitles.baseUrl}/subtitles/${type}/${encodeURIComponent(id)}.json`;
-  const json = await fetchJsonImpl(url, {
+  const baseUrl = `${configImpl.stremioOpenSubtitles.baseUrl}/subtitles/${type}/${encodeURIComponent(id)}`;
+  const options = {
     signal: variant.signal,
     trustedOrigin: configImpl.stremioOpenSubtitles.baseUrl,
-  });
-  const rows = Array.isArray(json?.subtitles) ? json.subtitles : [];
+  };
   const maxItems = Math.max(1, Number(configImpl.providers.maxProviderItems) || 1);
-  return rows
+  const normalize = json => (Array.isArray(json?.subtitles) ? json.subtitles : [])
     .map(item => normalizeStremioOpenSubtitlesItem(item, variant))
     .filter(Boolean)
     .slice(0, maxItems);
+  const extras = playbackExtras(variant);
+  if (extras.size) {
+    try {
+      const targeted = normalize(await fetchJsonImpl(`${baseUrl}/${extras.toString()}.json`, options));
+      if (targeted.length) return targeted;
+    } catch (error) {
+      if (variant.signal?.aborted || error?.name === 'AbortError') throw error;
+      // Some upstream versions reject extra parameters. Preserve the existing catalog lookup.
+      console.warn('[provider:stremio] Playback-hint search failed; using catalog fallback:', error?.message || error);
+    }
+  }
+  return normalize(await fetchJsonImpl(`${baseUrl}.json`, options));
 }
