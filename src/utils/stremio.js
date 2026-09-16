@@ -100,8 +100,15 @@ function referenceForProxy(baseUrl, item) {
   };
 }
 
+function verifiedV5Timing(item) {
+  return item?.v5Proof?.decision === 'certified' || item?.v5Proof?.decision === 'safe';
+}
+
 function stableReferenceForProxy(baseUrl, item) {
-  if (!item?.timingReferenceEvidence?.exactVideoHash || item?.referenceSyncMode !== 'exact-hash-stable') return null;
+  if (!verifiedV5Timing(item)
+    || item?.actualTimingEvidence?.measured !== true
+    || !item?.timingReferenceEvidence?.exactVideoHash
+    || item?.referenceSyncMode !== 'exact-hash-stable') return null;
   const reference = referenceForProxy(baseUrl, item);
   return reference ? { ...reference, exactVideoHash: true } : null;
 }
@@ -125,25 +132,22 @@ function qualityBadges(item, mode) {
   const proofBadge = v5ProofBadge(item);
   if (proofBadge) badges.push(proofBadge);
   if (item.provider === 'vault') badges.push('💾 Personal');
-  if (item.provider === 'registry') badges.push('📌 Verified Version');
-  if (item.sourceType === 'version-registry-exact-hash') badges.push('🔒 Exact Version');
-  if (item.sourceType === 'personal-vault-exact-hash') badges.push('🔑 Exact Hash');
+  if (item.provider === 'registry') badges.push('📌 Registry Entry');
+  if (item.sourceType === 'version-registry-exact-hash') badges.push('🔒 Exact Identity');
+  if (item.sourceType === 'personal-vault-exact-hash') badges.push('🔑 Exact Hash Identity');
   if (item.releaseMatchTier >= 5) badges.push('🎯 Strong Name Match');
   else if (item.releaseMatchTier >= 3) badges.push('✅ Name Match');
-  if (item.trusted) badges.push('🏆 Verified');
+  if (item.trusted) badges.push('🏆 Trusted Provider');
   if (mode === 'reference') badges.push('🧪 Experimental RefSync');
   if (mode === 'sync') badges.push('⏱ Manual Timing');
   if (styledModeFormat(mode)) badges.push('🎨 Original Styles');
-  if (item.searchReason === 'hash-first' || item.movieHash) badges.push('🔑 Hash');
-  if (item.timingReferenceEvidence?.exactVideoHash) badges.push('🧭 Exact Timeline');
-  const timingVerified = Boolean(
-    Number(item.v5Proof?.confidence?.timing || 0) >= 0.995
-    || item.timingReferenceEvidence?.exactVideoHash
-    || item.sourceType === 'version-registry-exact-hash'
-    || item.sourceType === 'personal-vault-exact-hash'
-    || item.releaseMatchTier >= 3
-  );
-  if (!timingVerified && item.provider !== 'vault' && item.provider !== 'registry') badges.push('⚠ Timing Unverified');
+  if (item.searchReason === 'hash-first' || item.movieHash) badges.push('🔑 Video Hash Identity');
+  // An exact-hash reference is still only metadata until its subtitle cues have been measured.
+  if (verifiedV5Timing(item) && item.actualTimingEvidence?.measured === true) {
+    badges.push('🧭 Measured Timeline');
+  } else {
+    badges.push('⚠ Timing Unverified');
+  }
   if (item.hearingImpaired || item.sdh) badges.push('👂 SDH');
   if (item.machineTranslated || item.automatedTranslated) badges.push('🤖 MT');
   if (item.quality?.score) badges.push(`✓ Text Q${item.quality.score}`);
@@ -234,6 +238,8 @@ export function toStremioSubtitles(results, baseUrl, search = {}) {
         output.length >= config.ranking.maxStremioSubtitles
         || autoSyncCount >= config.ranking.maxAutoSyncOptions
       ) break;
+      // Release-name/FPS heuristics never authorize a purported automatic synchronization.
+      if (!verifiedV5Timing(item) || item.actualTimingEvidence?.measured !== true) continue;
       const syncPlan = detectSyncPlan({
         subtitleRelease: item.parsedRelease || parseRelease(item.releaseName || item.fileName || item.name),
         videoRelease,
@@ -245,6 +251,7 @@ export function toStremioSubtitles(results, baseUrl, search = {}) {
         || syncPlan.confidence < config.ranking.autoSyncMinConfidence
       ) continue;
       const autoSyncFallbacks = rankedFallbacks
+        .filter(candidate => verifiedV5Timing(candidate) && candidate.actualTimingEvidence?.measured === true)
         .map(candidate => ({
           ...candidate,
           syncPlan: detectSyncPlan({
