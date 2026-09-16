@@ -5,6 +5,7 @@ import { prioritizeAccurateSubtitles } from '../utils/accuracyFirst.js';
 import { preflightSubtitleCandidate, preflightTimingReferenceCandidate } from '../utils/encodingProxy.js';
 import { deriveReferenceSyncPlanFromProfiles } from '../utils/referenceSync.js';
 import { recordAccuracyPreflight } from '../utils/metrics.js';
+import { needsTimingDiscovery } from './timingDiscovery.js';
 
 const HARD_REJECT_REASONS = new Set(['low-arabic-ratio', 'wrong-language-persian', 'too-few-cues', 'invalid-timed-cues']);
 const TERMINAL_DELIVERY_STATUSES = new Set([403, 404, 410]);
@@ -245,7 +246,8 @@ export async function applyAccuracyPreflight(results = [], search = {}, {
     inspectedItems.push(...batch);
     cursor += batch.length;
     const validCount = [...inspected.values()].filter(outcome => outcome?.state === 'valid').length;
-    if (validCount >= desiredValid) break;
+    const checkedBatch = inspectedItems.map(item => ({ ...item, accuracyPreflight: inspected.get(candidateKey(item, search)) }));
+    if (validCount >= desiredValid && !needsTimingDiscovery(checkedBatch, search)) break;
   }
 
   const exactReference = config.timingEvidence.enabled

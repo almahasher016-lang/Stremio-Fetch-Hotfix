@@ -1,3 +1,11 @@
+## 5.2.0 - 2026-09-16
+
+- Preserve successful SubDL candidates across later search failures and carry provider-returned catalog identity into unpacked episodes.
+- Retry empty/unmatched OpenSubtitles hash searches without optional byte size, preserving 64-bit-sized inputs and rejecting string-false hash evidence.
+- Continue preflight and bounded recovery when valid Arabic belongs to a different playback source family; cache completed discovery for two minutes while rechecking delivery.
+- Add early source-family search and display distinct release labels; keep all identity, FPS, edition, language and timing-proof gates.
+- Regression coverage includes House of the Dragon S02E02 size drift, movie REMUX, season packs, provider failures and wrong-episode rejection.
+
 ## 5.1.8 - 2026-09-09
 
 - Stop combining authoritative IMDb/TMDb identifiers with a provider year constraint that can differ between festival and commercial releases.
