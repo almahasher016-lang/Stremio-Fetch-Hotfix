@@ -29,6 +29,12 @@ function variant(reason, search, overrides = {}) {
     videoHash: search.videoHash,
     videoSize: search.videoSize,
     durationMs: search.durationMs,
+    // Search variants intentionally clear filename/hash to change provider search modes.
+    // Keep the original playback data separately for Stremio's documented extra fields.
+    // These hints are never accepted as evidence that a returned subtitle matches a hash.
+    playbackFilename: search.filename,
+    playbackHash: search.videoHash,
+    playbackSize: search.videoSize,
     ...overrides,
   };
 }
