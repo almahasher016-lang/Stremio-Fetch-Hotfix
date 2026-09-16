@@ -46,7 +46,7 @@ function originalToken(item) {
 
 test('unmeasured reference never enters an original subtitle delivery token or hides warning', () => {
   const { payload, name } = originalToken(referenceCandidate);
-  assert.equal(payload.reference, undefined);
+  assert.equal(payload.reference, null);
   assert.match(name, /Timing Unverified/);
 });
 
