@@ -1,4 +1,4 @@
-FROM node:24.18.0-slim@sha256:cb4e8f7c443347358b7875e717c29e27bf9befc8f5a26cf18af3c3dec80e58c5
+FROM node:26.8.2-slim@sha256:f7bb8247fdb16250dbec7fd0e24f091c6f5f0a29d256f3aef5816a7a369166b2
 RUN apt-get update \
   && apt-get install -y --no-install-recommends --only-upgrade libpcre2-8-0 \
   && rm -rf /var/lib/apt/lists/*
